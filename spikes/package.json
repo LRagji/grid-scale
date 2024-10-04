@@ -1,0 +1,34 @@
+{
+  "name": "local-store",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "clean-build": "rimraf ./dist && tsc",
+    "copy-files": "npx copyfiles ./package.json ./license.md ./dist/",
+    "clean-prod": "rimraf ./dist/test",
+    "build": "npm run build-test && npm run clean-prod",
+    "build-test": "npm run clean-build && npx tsc && npm run copy-files",
+    "start": "npm run build && node -r dotenv/config dist/src/server.js ./.env",
+    "test": "npm run build-test && node --test ./dist/test ",
+    "docker-local": "docker build -f ./Dockerfile -t notification-hub-svc:local .",
+    "coverage": "c8 --config ./coverage-config.json npm run test"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/node": "^22.7.4",
+    "@types/sinon": "^17.0.3",
+    "c8": "^10.1.2",
+    "dotenv": "^16.4.5",
+    "rimraf": "^6.0.1",
+    "sinon": "^19.0.2",
+    "typescript": "^5.6.2"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.3.0"
+  }
+}
