@@ -78,7 +78,7 @@ export function writeData(writerIdentity: string, diskPaths: Array<string>, samp
                     const misplacedLogicalChunkId = `${prefix}${sep}${bucket1}${sep}${bucket2}${sep}${bucket3}${sep}${bucket4}${sep}${sampleBucketedTime}`;
                     const dataPlacement = dataDisplacements.get(misplacedLogicalChunkId) || new Set<string>();
                     dataPlacement.add(logicalChunkId);
-                    dataDisplacements.set(tagName, dataPlacement);
+                    dataDisplacements.set(misplacedLogicalChunkId, dataPlacement);
                     chunkInfo.incorrectPlacements++;
                 }
                 preparedUpsert.run(sampleTime, systemTime, samples[i + 1]);

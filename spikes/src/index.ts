@@ -92,7 +92,8 @@ if (isMainThread) {
             console.log(`Id: ${r.value.id}`);
             console.log(`Steps:`);
             console.table(Array.from(r.value.steps.entries()).map((_: Record<string, any>) => ({ "Name": _[0], "Time(ms)": _[1] })));
-            // console.log(`Details:`);
+            console.log(`Details:`);
+            console.log(`Total Chunks Written :${r.value.details.chunks.size}, Total Displaced Data: ${r.value.details.dataDisplacements.size}`);
             // console.table(Array.from(r.value.details.chunks.entries()).map((_: Record<string, any>) => _[0]));
             console.log();
         }
@@ -102,16 +103,7 @@ if (isMainThread) {
     });
 
     if (failed.length > 0) console.table(failed);
-    console.timeEnd("Save Operation");
-    // const client = await createClient({ url: 'redis://localhost:6379' })
-    //     .on('error', err => console.log('Redis Client Error', err))
-    //     .connect();
-    // await client.HSET("key", ["field1", "value1", "field2", "value2"]);
-    // let val = await client.HGET("key", "field1");
-    // console.log(val);
-    // val = await client.HGET("key", "field2");
-    // console.log(val);
-    // await client.disconnect();
+    console.timeEnd("Save Operation"); //50K Tags 1 Sample Each: 2:20.134 (m:ss.mmm) [write data:138642ms, updateDisplacements:168ms] on MAC
 
 } else {
 

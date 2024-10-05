@@ -32,9 +32,15 @@ Assumption:
 2. Typically Data will come in with respect to wall clock time and occasionally be out of sync, There has to be a tolerance setting such that reads are not amplified.
     The way to solve this would be to have linked list of index in redis and bigger time buckets like years to limit too many DB's to be opened.
 
+Design Pro:
+1. Fragmentation od Data cause of H scaling and Hashing.(Writers)
+2. When data come in with a lead of lag with respect to system time which grows the cache lookups on redis.(Can we have background-process to clear up mis-placements.)
 
 Work items
-1. Hashing strings to numbers such that similar strings groups together.How does Redis does this what is the algo for key space hashing.
+1. Create a long running thread with cache for 1)OpenDB's 2)RedisConnections 3)Executing Hash on existing items for writers.
+2. Extract out hashing into hashing file so that hash mechanism can be switched.
+3. Extract config into a common config file.
+1. Hashing strings to numbers such that similar strings groups together.How does Redis does this what is the algo for key space hashing. MRUMRU and DBJ2 Algo
 1. Converting table name to tag name. Done by using UNHEX and type=table on sqlite_schema table
 1. Sharing volume mounts across pods(1 writer, inf Readers) to level load IO
 2. Effect of lagging data with respect to wall clock(will this create lot of file io?)
