@@ -34,7 +34,8 @@ Assumption:
 
 
 Work items
-1. Converting table name to tag name.
+1. Hashing strings to numbers such that similar strings groups together.How does Redis does this what is the algo for key space hashing.
+1. Converting table name to tag name. Done by using UNHEX and type=table on sqlite_schema table
 1. Sharing volume mounts across pods(1 writer, inf Readers) to level load IO
 2. Effect of lagging data with respect to wall clock(will this create lot of file io?)
 3. Summarization.(Either with Indexes or one table per tag.)
@@ -49,4 +50,14 @@ Data is normally read in ranges for given tags eg Tag1 from 2010 -> 2024, if a t
 ### What is the maximum size of tag name and encoding?
 
 Maximum size of tag name is 255 UTF-8 characters.
+
+## What is the data layout of data on disk?
+
+Data is stored in *.db files which are sqlite files.
+Following is the hierarchy
+1. data : [Folder] Logical folder to gather everything under one folder, helps with mounting and readers.
+2. scaled-set(n) : [Folder] Logical folder, when a writer scales beyond capacity of attached disks under this folder. Typical mapping could be tenancy.
+3. disk(n) : [Folder] Attached multiple disks, helps to spread IOPS, structure cannot be changed once config is active.
+4. D(*) : [Folder] Logical units aka cells of the grid system which helps in storing data in chunks.
+5. W(*) : [File] The actual sqlite file individual writer will makes its own file for H-Scaling.
 

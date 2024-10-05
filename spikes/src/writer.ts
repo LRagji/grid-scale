@@ -4,15 +4,15 @@ import Database from 'better-sqlite3';
 import { mkdirSync } from "node:fs";
 
 export interface IChunkInfo {
-    dataDisplacements: Map<string, Set<number>>;
+    incorrectPlacements: number;
     absolutePath: string;
     upserts: number;
 }
 
 export interface IWriterOutput {
     preConditionedTables: Set<string>;
-    systemTimeBucketed: number;
-    chunks: Map<string, IChunkInfo>
+    chunks: Map<string, IChunkInfo>;
+    dataDisplacements: Map<string, Set<string>>
 }
 
 export function writeData(writerIdentity: string, diskPaths: Array<string>, sampleSet: Array<[string, number[]]>, tagBucketWidth: number, timeBucketWidth: number, preConditionedTables: Set<string>, prefix = "D", sep = "|", timeBucketTolerance = 1): IWriterOutput {
@@ -21,6 +21,7 @@ export function writeData(writerIdentity: string, diskPaths: Array<string>, samp
     const systemTimeBucketed = systemTime - (systemTime % timeBucketWidth);
     const fileName = `${writerIdentity.toLowerCase()}.db`;
     const chunks = new Map<string, IChunkInfo>();
+    const dataDisplacements = new Map<string, Set<string>>();
 
     for (let payloadIndex = 0; payloadIndex < sampleSet.length; payloadIndex += 1) {
         const tagName = sampleSet[payloadIndex][0] as string;
@@ -39,15 +40,15 @@ export function writeData(writerIdentity: string, diskPaths: Array<string>, samp
         bucket2 = hashBuffer.readInt32LE(4) - (hashBuffer.readInt32LE(4) % tagBucketWidth);
         bucket3 = hashBuffer.readInt32LE(8) - (hashBuffer.readInt32LE(8) % tagBucketWidth);
         bucket4 = hashBuffer.readInt32LE(12) - (hashBuffer.readInt32LE(12) % tagBucketWidth);
-        const chunkId = `${prefix}${sep}${bucket1}${sep}${bucket2}${sep}${bucket3}${sep}${bucket4}${sep}${systemTimeBucketed}`;
+        const logicalChunkId = `${prefix}${sep}${bucket1}${sep}${bucket2}${sep}${bucket3}${sep}${bucket4}${sep}${systemTimeBucketed}`;
 
-        const dbPath = join(diskPath, chunkId, fileName);
+        const dbPath = join(diskPath, logicalChunkId, fileName);
         let db: Database.Database;
 
         const tagNameInHex = Buffer.from(tagName, "utf-8").toString('hex');
         const preConditionedTable = `${dbPath}:${tagName}`;
         if (!preConditionedTables.has(preConditionedTable)) {
-            mkdirSync(join(diskPath, chunkId), { recursive: true });
+            mkdirSync(join(diskPath, logicalChunkId), { recursive: true });
             db = new Database(dbPath);
             db.pragma('journal_mode = WAL');
             const table = (tableName: string) => `CREATE TABLE IF NOT EXISTS [${tableName}] (sampleTime INTEGER PRIMARY KEY NOT NULL, insertTime INTEGER NOT NULL, nValue INTEGER, oValue TEXT);`;
@@ -67,25 +68,27 @@ export function writeData(writerIdentity: string, diskPaths: Array<string>, samp
             insertTime=excluded.insertTime,
             nValue=excluded.nValue;`);
 
-        const chunkInfo = chunks.get(chunkId) || { dataDisplacements: new Map<string, Set<number>>(), absolutePath: dbPath, upserts: 0 } as IChunkInfo;
-        const dataPlacement = chunkInfo.dataDisplacements.get(tagName) || new Set<number>();
+        const chunkInfo = chunks.get(logicalChunkId) || { incorrectPlacements: 0, absolutePath: dbPath, upserts: 0 } as IChunkInfo;
 
         db.transaction(() => {
             for (let i = 0; i < samples.length; i += 2) {
                 const sampleTime = samples[i];
                 const sampleBucketedTime = sampleTime - (sampleTime % timeBucketWidth);
                 if (sampleBucketedTime < (systemTimeBucketed - (timeBucketWidth * timeBucketTolerance)) || sampleBucketedTime > (systemTimeBucketed + (timeBucketWidth * timeBucketTolerance))) {
-                    dataPlacement.add(sampleBucketedTime);
+                    const misplacedLogicalChunkId = `${prefix}${sep}${bucket1}${sep}${bucket2}${sep}${bucket3}${sep}${bucket4}${sep}${sampleBucketedTime}`;
+                    const dataPlacement = dataDisplacements.get(misplacedLogicalChunkId) || new Set<string>();
+                    dataPlacement.add(logicalChunkId);
+                    dataDisplacements.set(tagName, dataPlacement);
+                    chunkInfo.incorrectPlacements++;
                 }
                 preparedUpsert.run(sampleTime, systemTime, samples[i + 1]);
             }
         })();
         db.close();
 
-        chunkInfo.dataDisplacements.set(tagName, dataPlacement);
         chunkInfo.absolutePath = dbPath;
         chunkInfo.upserts += samples.length / 2;
-        chunks.set(chunkId, chunkInfo);
+        chunks.set(logicalChunkId, chunkInfo);
     }
-    return { preConditionedTables, systemTimeBucketed, chunks } as IWriterOutput;
+    return { preConditionedTables, dataDisplacements, chunks } as IWriterOutput;
 }
