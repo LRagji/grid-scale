@@ -1,7 +1,8 @@
-import { createHash } from "node:crypto";
+
 import { join } from "node:path";
 import Database from 'better-sqlite3';
 import { mkdirSync } from "node:fs";
+import { MD5Calculator } from "./chunk-calculator";
 
 export interface IChunkInfo {
     incorrectPlacements: number;
@@ -15,32 +16,17 @@ export interface IWriterOutput {
     dataDisplacements: Map<string, Set<string>>
 }
 
-export function writeData(writerIdentity: string, diskPaths: Array<string>, sampleSet: Array<[string, number[]]>, tagBucketWidth: number, timeBucketWidth: number, preConditionedTables: Set<string>, prefix = "D", sep = "|", timeBucketTolerance = 1): IWriterOutput {
-    const hashAlgorithm = 'md5';
-    const systemTime = Date.now();
-    const systemTimeBucketed = systemTime - (systemTime % timeBucketWidth);
-    const fileName = `${writerIdentity.toLowerCase()}.db`;
+export function writeData(diskPaths: Array<string>, sampleSet: Array<[string, number[]]>, tagBucketWidth: number, timeBucketWidth: number, preConditionedTables: Set<string>, fileName: string, prefix: string, seperatorChar: string, timeBucketTolerance = 1, systemTime = Date.now(), calculator = MD5Calculator): IWriterOutput {
     const chunks = new Map<string, IChunkInfo>();
     const dataDisplacements = new Map<string, Set<string>>();
 
     for (let payloadIndex = 0; payloadIndex < sampleSet.length; payloadIndex += 1) {
         const tagName = sampleSet[payloadIndex][0] as string;
         const samples = sampleSet[payloadIndex][1] as number[];
-        const hashBuffer = createHash(hashAlgorithm)
-            .update(tagName)
-            .digest()
-        let bucket1 = (hashBuffer.readInt32LE(0) % diskPaths.length);
-        let bucket2 = (hashBuffer.readInt32LE(4) % diskPaths.length);
-        let bucket3 = (hashBuffer.readInt32LE(8) % diskPaths.length);
-        let bucket4 = (hashBuffer.readInt32LE(12) % diskPaths.length);
-        const diskIndex = Math.abs(bucket1 + bucket2 + bucket3 + bucket4) % diskPaths.length;
-        const diskPath = diskPaths[diskIndex];
 
-        bucket1 = hashBuffer.readInt32LE(0) - (hashBuffer.readInt32LE(0) % tagBucketWidth);
-        bucket2 = hashBuffer.readInt32LE(4) - (hashBuffer.readInt32LE(4) % tagBucketWidth);
-        bucket3 = hashBuffer.readInt32LE(8) - (hashBuffer.readInt32LE(8) % tagBucketWidth);
-        bucket4 = hashBuffer.readInt32LE(12) - (hashBuffer.readInt32LE(12) % tagBucketWidth);
-        const logicalChunkId = `${prefix}${sep}${bucket1}${sep}${bucket2}${sep}${bucket3}${sep}${bucket4}${sep}${systemTimeBucketed}`;
+        const chunkId = calculator(tagName, systemTime, tagBucketWidth, timeBucketWidth);
+        const diskPath = diskPaths[chunkId.limitIndex(diskPaths.length)];
+        const logicalChunkId = chunkId.logicalChunkId(prefix, seperatorChar);
 
         const dbPath = join(diskPath, logicalChunkId, fileName);
         let db: Database.Database;
@@ -74,8 +60,9 @@ export function writeData(writerIdentity: string, diskPaths: Array<string>, samp
             for (let i = 0; i < samples.length; i += 2) {
                 const sampleTime = samples[i];
                 const sampleBucketedTime = sampleTime - (sampleTime % timeBucketWidth);
-                if (sampleBucketedTime < (systemTimeBucketed - (timeBucketWidth * timeBucketTolerance)) || sampleBucketedTime > (systemTimeBucketed + (timeBucketWidth * timeBucketTolerance))) {
-                    const misplacedLogicalChunkId = `${prefix}${sep}${bucket1}${sep}${bucket2}${sep}${bucket3}${sep}${bucket4}${sep}${sampleBucketedTime}`;
+                if (sampleBucketedTime < (chunkId.timePart - (timeBucketWidth * timeBucketTolerance)) || sampleBucketedTime > (chunkId.timePart + (timeBucketWidth * timeBucketTolerance))) {
+                    const misplacedChunkId = Object.assign({}, chunkId, { timePart: sampleBucketedTime });
+                    const misplacedLogicalChunkId = misplacedChunkId.logicalChunkId(prefix, seperatorChar);
                     const dataPlacement = dataDisplacements.get(misplacedLogicalChunkId) || new Set<string>();
                     dataPlacement.add(logicalChunkId);
                     dataDisplacements.set(misplacedLogicalChunkId, dataPlacement);
@@ -91,4 +78,27 @@ export function writeData(writerIdentity: string, diskPaths: Array<string>, samp
         chunks.set(logicalChunkId, chunkInfo);
     }
     return { preConditionedTables, dataDisplacements, chunks } as IWriterOutput;
+}
+
+export interface IRedisHashMap {
+    set(key: string, fieldValues: string[]): Promise<void>;
+    get(key: string, fieldsOnly: boolean): Promise<string[]>;
+    del(keys: string[]): Promise<void>;
+}
+
+export async function updateDisplacedData(displacedData: Map<string, Set<string>>, writerIdentity: string, redisConnection: IRedisHashMap): Promise<void> {
+    let handles = Array<Promise<void>>();
+    displacedData.forEach(async (value, key) => {
+        const values = [];
+        for (const item of value) {
+            values.push(item);
+            values.push(writerIdentity);
+        }
+        handles.push(redisConnection.set(key, values));
+        if (handles.length === 1000) {
+            await Promise.all(handles);
+            handles = [];
+        }
+    });
+    await Promise.all(handles);
 }
