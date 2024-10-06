@@ -2,7 +2,7 @@
 import { join } from "node:path";
 import Database from 'better-sqlite3';
 import { mkdirSync } from "node:fs";
-import { MD5Calculator } from "./chunk-calculator";
+import { IChunkId, MD5Calculator } from "./chunk-calculator.js";
 
 export interface IChunkInfo {
     incorrectPlacements: number;
@@ -61,7 +61,7 @@ export function writeData(diskPaths: Array<string>, sampleSet: Array<[string, nu
                 const sampleTime = samples[i];
                 const sampleBucketedTime = sampleTime - (sampleTime % timeBucketWidth);
                 if (sampleBucketedTime < (chunkId.timePart - (timeBucketWidth * timeBucketTolerance)) || sampleBucketedTime > (chunkId.timePart + (timeBucketWidth * timeBucketTolerance))) {
-                    const misplacedChunkId = Object.assign({}, chunkId, { timePart: sampleBucketedTime });
+                    const misplacedChunkId: IChunkId = { timePart: sampleBucketedTime, tagHash: chunkId.tagHash, tagPart: chunkId.tagPart, limitIndex: chunkId.limitIndex, logicalChunkId: chunkId.logicalChunkId };
                     const misplacedLogicalChunkId = misplacedChunkId.logicalChunkId(prefix, seperatorChar);
                     const dataPlacement = dataDisplacements.get(misplacedLogicalChunkId) || new Set<string>();
                     dataPlacement.add(logicalChunkId);

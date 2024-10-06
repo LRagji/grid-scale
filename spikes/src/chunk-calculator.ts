@@ -34,3 +34,12 @@ export function MD5Calculator(tagName: string, time: number, tagBucketWidth: num
         }
     }
 }
+
+export function dbFileNameBuilder(id: string | "*"): string {
+    if (id !== "*") {
+        return `ts${id.toLowerCase()}.db`;
+    }
+    else {
+        return `^ts[a-z0-9]+\\.db$`;
+    }
+}

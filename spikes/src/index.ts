@@ -12,9 +12,9 @@ import { cpus } from "node:os"
 import { fileURLToPath } from 'url';
 import { IRedisHashMap, IWriterOutput, updateDisplacedData, writeData } from "./writer.js";
 import { createClient } from 'redis';
-import { MD5Calculator } from './chunk-calculator.js';
+import { dbFileNameBuilder, MD5Calculator } from './chunk-calculator.js';
 import { join } from 'node:path';
-import { read, readdirSync } from 'node:fs';
+import { readdirSync } from 'node:fs';
 import Database from 'better-sqlite3';
 
 interface WorkerInput {
@@ -23,7 +23,6 @@ interface WorkerInput {
     tagBucketWidth: number,
     redisConnection: string,
     type: "writer" | "reader";
-    dbName: (writerId: string | "*") => string,
     prefix: string,
     sep: string
 }
@@ -64,7 +63,7 @@ if (isMainThread) {
     const data = new Map<string, number[]>();
     const samples = new Array<number>();
     for (let tags = 0; tags < totalTags; tags++) {
-        const tagName = Buffer.from(generateRandomString(255)).toString('hex');
+        const tagName = generateRandomString(255);
         if (samples.length === 0) {
             for (let time = 0; time < totalSamplesPerTag; time++) {
                 samples.push(time * 1000);
@@ -75,8 +74,8 @@ if (isMainThread) {
     }
     console.timeEnd("Generate Operation");
 
-    console.time("Save Operation");
-    const totalCPUs = cpus().length;
+    console.time("Operation");
+    const totalCPUs = 1;//cpus().length;
     const workerHandles = new Array<Promise<WorkerOutput>>();
     const chunkSize = Math.ceil(data.size / totalCPUs);
     const dataEntries = Array.from(data.entries());
@@ -89,26 +88,17 @@ if (isMainThread) {
                 redisConnection: 'redis://localhost:6379',
                 prefix: "D",
                 sep: "|",
-                dbName: (id: string | "*") => {
-                    if (id !== "*") {
-                        return `ts${id.toLowerCase()}.db`;
-                    }
-                    else {
-                        return `^ts[a-z0-9]+\\.db$`;
-                    }
-                }
+                type: "reader"
             } as WorkerInput
-            if (false) {
+            if (workerInput.type === "writer") {
                 //Writer
-                workerInput.type = "writer";
                 (workerInput as WorkerInputWriter).disksPaths = [`../data/scaled-set1/disk1`, `../data/scaled-set1/disk2`, `../data/scaled-set1/disk3`, `../data/scaled-set1/disk4`, `../data/scaled-set1/disk5`];
                 (workerInput as WorkerInputWriter).data = dataEntries.slice(thread * chunkSize, (thread + 1) * chunkSize);
             }
             else {
                 //Reader
-                workerInput.type = "reader";
-                (workerInput as WorkerInputReader).setPaths = new Map<string, string[]>();
-                (workerInput as WorkerInputReader).setPaths.set("../data/scaled-set1", ["disk1", "disk2", "disk3", "disk4", "disk5"]);
+                (workerInput as WorkerInputReader).setPaths = new Map<string, string[]>([["../data/scaled-set1", ["disk1", "disk2", "disk3", "disk4", "disk5"]]]);
+                // (workerInput as WorkerInputReader).setPaths.set("../data/scaled-set1", ["disk1", "disk2", "disk3", "disk4", "disk5"]);
                 (workerInput as WorkerInputReader).tags = dataEntries.slice(thread * chunkSize, (thread + 1) * chunkSize).map(_ => _[0]);
                 (workerInput as WorkerInputReader).rangeInclusiveExclusive = [0, 86400000];
             }
@@ -130,9 +120,12 @@ if (isMainThread) {
             console.log(`Id: ${r.value.id}`);
             console.log(`Steps:`);
             console.table(Array.from(r.value.steps.entries()).map((_: Record<string, any>) => ({ "Name": _[0], "Time(ms)": _[1] })));
-            console.log(`Details:`);
-            console.log(`Total Chunks Written :${r.value.details.chunks.size}, Total Displaced Data: ${r.value.details.dataDisplacements.size}`);
-            // console.table(Array.from(r.value.details.chunks.entries()).map((_: Record<string, any>) => _[0]));
+
+            if (r.value.details !== null) {
+                console.log(`Details:`);
+                console.log(`Total Chunks Written :${r.value.details.chunks.size}, Total Displaced Data: ${r.value.details.dataDisplacements.size}`);
+                // console.table(Array.from(r.value.details.chunks.entries()).map((_: Record<string, any>) => _[0]));
+            }
             console.log();
         }
         else {
@@ -141,7 +134,7 @@ if (isMainThread) {
     });
 
     if (failed.length > 0) console.table(failed);
-    console.timeEnd("Save Operation");
+    console.timeEnd("Operation");
 
 } else {
     const client = await createClient({ url: (workerData as WorkerInput).redisConnection })
@@ -169,7 +162,7 @@ if (isMainThread) {
         const steps = new Map<string, number>();
 
         let startTime = Date.now();
-        const fileName = input.dbName(input.id.toString());
+        const fileName = dbFileNameBuilder(input.id.toString());
         const wOutput = writeData(input.disksPaths, input.data, input.tagBucketWidth, input.timeBucketWidth, new Set<string>(), fileName, input.prefix, input.sep);
         steps.set("writeData", Date.now() - startTime);
 
@@ -188,17 +181,24 @@ if (isMainThread) {
     }
     else {
         const input = workerData as WorkerInputReader;
-        const dbFileNameRegex = new RegExp(input.dbName("*"));
+        const dbFileNameRegex = new RegExp(dbFileNameBuilder("*"));
         const steps = new Map<string, number>();
 
         for await (const chunk of paginateByTime(input.tags, input.rangeInclusiveExclusive, input.timeBucketWidth, input.tagBucketWidth, input.prefix, input.sep, input.setPaths, redisClient)) {
-
-            const cursors = readPage(chunk, query);
-            const resultCursor = mergeSortIterators(cursors, (a, b) => a[0] - b[0]);
+            const cursors = readPage(chunk, query, dbFileNameRegex);
+            const resultCursor = mergeSortIterators(cursors, filterByInsertTimeAndSortBySampleTime);
             for (const resultPage of resultCursor) {
                 console.log(resultPage);
             }
         }
+
+        const result = {
+            id: input.id,
+            steps: steps,
+            details: null
+        } as WorkerOutput;
+
+        parentPort.postMessage(result);
 
     }
 
@@ -206,14 +206,14 @@ if (isMainThread) {
 }
 
 export interface IPaginatedChunk {
-    queryPlan: Map<string, { tagNames: string[], orderedFilePaths: Map<string, Set<string>> }>,
+    queryPlan: Map<string, { tagNames: string[], orderedLogicalDirectoryPaths: Map<string, Set<string>> }>,
     timeRangeInclusiveExclusive: [number, number];
 }
 
 async function* paginateByTime(tagNames: string[], timeRangeInclusiveExclusive: [number, number], timeBucketWidth: number, tagBucketWidth: number, prefix: string, sep: string, setPaths: Map<string, string[]>, redisClient: IRedisHashMap): AsyncGenerator<IPaginatedChunk> {
 
     for (let timeIndex = timeRangeInclusiveExclusive[0]; timeIndex < timeRangeInclusiveExclusive[1]; timeIndex += timeBucketWidth) {
-        const results = new Map<string, { tagNames: string[], orderedFilePaths: Map<string, Set<string>> }>();
+        const results = new Map<string, { tagNames: string[], orderedLogicalDirectoryPaths: Map<string, Set<string>> }>();
         for (let tagIndex = 0; tagIndex < tagNames.length; tagIndex++) {
             const tagName = tagNames[tagIndex];
             const chunkId = MD5Calculator(tagName, timeIndex, tagBucketWidth, timeBucketWidth);
@@ -225,22 +225,124 @@ async function* paginateByTime(tagNames: string[], timeRangeInclusiveExclusive: 
             else {
                 const allLogicalChunkIds = await redisClient.get(logicalChunkId, true);
                 allLogicalChunkIds.push(logicalChunkId);
-                const sortedChunkAccessPaths = new Map(allLogicalChunkIds
-                    .sort((a, b) => a[0].localeCompare(b[0]))//TODO:Sorting might be broken
-                    .reverse()
-                    .map((logicalChunkId) => {
-                        const filePaths = new Array<string>();
-                        setPaths.forEach((disks, setPath) => {
-                            const diskIndex = chunkId.limitIndex(disks.length);
-                            filePaths.push(join(setPath, disks[diskIndex], logicalChunkId));
-                        });
-                        return [logicalChunkId, new Set(filePaths)]
-                    }));
-                results.set(logicalChunkId, { tagNames: [tagName], orderedFilePaths: sortedChunkAccessPaths });
+                const sortedChunkDirectoryPaths = new Map(
+                    allLogicalChunkIds
+                        .sort((a, b) => a[0].localeCompare(b[0]))//TODO:Sorting might be broken
+                        .reverse()
+                        .map((logicalChunkId) => {
+                            const directoryPaths = new Array<string>();
+                            setPaths.forEach((disks, setPath) => {
+                                const diskIndex = chunkId.limitIndex(disks.length);
+                                directoryPaths.push(join(setPath, disks[diskIndex], logicalChunkId));
+                            });
+                            return [logicalChunkId, new Set(directoryPaths)]
+                        }));
+                results.set(logicalChunkId, { tagNames: [tagName], orderedLogicalDirectoryPaths: sortedChunkDirectoryPaths });
             }
         }
 
         yield { queryPlan: results, timeRangeInclusiveExclusive: [timeIndex, timeIndex + timeBucketWidth] };
+    }
+}
+
+function filterByInsertTimeAndSortBySampleTime(frame: any[]): [number, number] {
+    if (frame.length === 0) return [-1, -1];
+    let minIndex = -1, purgeIndex = -1;
+    for (let i = 1; i < frame.length; i++) {
+        if (frame[i] === null) continue;
+        if (minIndex === -1) {
+            minIndex = i;
+        }
+        else {
+            if (frame[i].sampleTime < frame[minIndex].sampleTime) {
+                minIndex = i;
+            }
+            else if (frame[i].sampleTime === frame[minIndex].sampleTime) {
+                if (frame[i].insertTime < frame[minIndex].insertTime) {
+                    purgeIndex = i;
+                }
+                else if (frame[i].insertTime > frame[minIndex].insertTime) {
+                    purgeIndex = minIndex;
+                    minIndex = i;
+                }
+                else {
+                    purgeIndex = i;
+                }
+            }
+        }
+    }
+    return [minIndex, purgeIndex];
+};
+
+function query(tagNames: string[], startInclusive: number, endExclusive: number): string {
+    return tagNames
+        .map(tagName => {
+            const tagNamesInHex = Buffer.from(tagName, "utf-8").toString('hex');
+            return `SELECT * FROM [${tagNamesInHex}] WHERE sampleTime >= ${startInclusive} AND sampleTime < ${endExclusive} ORDER BY sampleTime ASC;`;
+        })
+        .join("\n UNION ALL \n");
+
+}
+
+function readPage(page: IPaginatedChunk, query: (tableName: string[], startInclusive: number, endExclusive: number) => string, dbFileNameExp: RegExp): Array<IterableIterator<unknown>> {
+    const resultPointers = new Array<IterableIterator<unknown>>();
+    for (const [logicalChunkId, chunkInfo] of page.queryPlan.entries()) {
+        for (const directoryPaths of chunkInfo.orderedLogicalDirectoryPaths.values()) {
+            for (const directoryPath of directoryPaths) {
+                let matchingDatabases = new Array<string>();
+                try {
+                    matchingDatabases = readdirSync(directoryPath, { recursive: false, withFileTypes: true })
+                        .filter(dirent => dbFileNameExp.test(dirent.name) && dirent.isFile())
+                        .map(dirent => join(directoryPath, dirent.name));
+                }
+                catch (e) {
+                    if (e.code === 'ENOENT') {
+                        continue;//No Directory exists so no DB or Data
+                    }
+                    else {
+                        throw e;
+                    }
+                }
+                for (let index = 0; index < matchingDatabases.length; index++) {
+                    const dbFilePath = matchingDatabases[index];
+                    let db: Database.Database;
+                    try {
+                        db = new Database(dbFilePath, { readonly: true, fileMustExist: true });
+                    }
+                    catch (e) {
+                        console.log(`DB Open Failed for ${directoryPath}`);
+                        continue;//No DB or Data
+                    }
+                    const sqlQuery = query(chunkInfo.tagNames, page.timeRangeInclusiveExclusive[0], page.timeRangeInclusiveExclusive[1]);
+                    resultPointers.push(db.prepare(sqlQuery).iterate());
+                }
+            }
+        }
+    }
+    return resultPointers;
+}
+
+function* mergeSortIterators<T>(iterators: IterableIterator<T>[], compareFunction: (elements: T | null[]) => [number, number]): IterableIterator<T> {
+    const compareFrame = iterators.map(_ => _.next().value || null);
+    let nullCounter = compareFrame.length;
+    while (nullCounter > 0) {
+        const [yieldIndex, purgeIndex] = compareFunction(compareFrame);
+        if (yieldIndex === -1) break;
+        yield compareFrame[yieldIndex];
+
+        compareFrame[yieldIndex] = null;
+        compareFrame[yieldIndex] = iterators[yieldIndex].next().value || null;
+        if (compareFrame[yieldIndex] === null) {
+            nullCounter--;
+        }
+
+        if (purgeIndex !== -1) {
+            compareFrame[purgeIndex] = null;
+            compareFrame[purgeIndex] = iterators[purgeIndex].next().value || null;
+            if (compareFrame[purgeIndex] === null) {
+                nullCounter--;
+            }
+        }
     }
 }
 
@@ -250,62 +352,6 @@ async function* paginateByTime(tagNames: string[], timeRangeInclusiveExclusive: 
 //     nValue: number,
 //     oValue: string
 // }
-
-function query(tagNames: string[], startInclusive: number, endExclusive: number): string {
-    return tagNames
-        .map(tagName => {
-            const tagNamesInHex = Buffer.from(tagName, "utf-8").toString('hex');
-            return `SELECT * FROM [${tagNamesInHex}] WHERE sampleTime >= ${startInclusive} AND sampleTime < ${endExclusive} ORDER BY sampleTime ASC;`;
-        })
-        .join("\n UNINON ALL \n");
-
-}
-
-function readPage(page: IPaginatedChunk, query: (tableName: string[], startInclusive: number, endExclusive: number) => string): Array<IterableIterator<unknown>> {
-    const resultPointers = new Array<IterableIterator<unknown>>();
-    for (const [logicalChunkId, chunkInfo] of page.queryPlan.entries()) {
-        for (const filePaths of chunkInfo.orderedFilePaths.values()) {
-            for (const filePath of filePaths) {
-                let db: Database.Database;
-                try {
-                    db = new Database(filePath, { readonly: true, fileMustExist: true });
-                }
-                catch (e) {
-                    console.log(`DB Open Failed for ${filePath}`);
-                }
-                const sqlQuery = query(chunkInfo.tagNames, page.timeRangeInclusiveExclusive[0], page.timeRangeInclusiveExclusive[1]);
-                resultPointers.push(db.prepare(sqlQuery).iterate());
-            }
-        }
-    }
-    return resultPointers;
-}
-
-function* mergeSortIterators<T>(iterators: Array<IterableIterator<T>>, sortFunction: (a: T, b: T) => number): IterableIterator<T[]> {
-    let frame = new Array<T>();
-    let completed = false;
-    for (let index = 0; index <= iterators.length; index++) {
-        if (index === iterators.length) {
-            if (completed === true) {
-                break;
-            }
-            else {
-                frame.sort(sortFunction);
-                yield frame;
-                index = -1;
-                frame = new Array();
-            }
-        }
-        else {
-            const result = iterators[index].next();
-            completed = index === 0 ? result.done : completed && result.done;
-            if (result.done === true) {
-                continue;
-            }
-            frame.push(result.value);
-        }
-    }
-}
 
 //Performance(Write): 12 Threads 5000*86400=432000000 in 3:32.931 (m:ss.mmm) [19GB on Disk]
 //Performance(Write): 12 Threads 50000*1=50000 in 2:20.134 (m:ss.mmm) [write data:138642ms, updateDisplacements:168ms]
