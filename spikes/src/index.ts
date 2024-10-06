@@ -184,13 +184,20 @@ if (isMainThread) {
         const dbFileNameRegex = new RegExp(dbFileNameBuilder("*"));
         const steps = new Map<string, number>();
 
-        for await (const chunk of paginateByTime(input.tags, input.rangeInclusiveExclusive, input.timeBucketWidth, input.tagBucketWidth, input.prefix, input.sep, input.setPaths, redisClient)) {
-            const cursors = readPage(chunk, query, dbFileNameRegex);
-            const resultCursor = mergeSortIterators(cursors, filterByInsertTimeAndSortBySampleTime);
-            for (const resultPage of resultCursor) {
-                console.log(resultPage);
-            }
+        let startTime = Date.now();
+        const queryPlan = await queryPlanPerTimeBucketWidth(input.tags, input.rangeInclusiveExclusive, input.timeBucketWidth, input.tagBucketWidth, input.prefix, input.sep, input.setPaths, redisClient);
+        steps.set("QueryPlanBuilder", Date.now() - startTime);
+
+        startTime = Date.now();
+        const cursors = readPage(queryPlan, query, dbFileNameRegex);
+        steps.set("DiskDBReads", Date.now() - startTime);
+
+        startTime = Date.now();
+        const resultCursor = mergeSortIterators(cursors, filterByInsertTimeAndSortBySampleTime);
+        for (const resultPage of resultCursor) {
+            console.log(resultPage);
         }
+        steps.set("K-Way Merge", Date.now() - startTime);
 
         const result = {
             id: input.id,
@@ -210,39 +217,39 @@ export interface IPaginatedChunk {
     timeRangeInclusiveExclusive: [number, number];
 }
 
-async function* paginateByTime(tagNames: string[], timeRangeInclusiveExclusive: [number, number], timeBucketWidth: number, tagBucketWidth: number, prefix: string, sep: string, setPaths: Map<string, string[]>, redisClient: IRedisHashMap): AsyncGenerator<IPaginatedChunk> {
+async function queryPlanPerTimeBucketWidth(tagNames: string[], timeRangeInclusiveExclusive: [number, number], timeBucketWidth: number, tagBucketWidth: number, prefix: string, sep: string, setPaths: Map<string, string[]>, redisClient: IRedisHashMap): Promise<IPaginatedChunk> {
+    const startInclusiveTime = timeRangeInclusiveExclusive[0];
+    const endExclusiveTime = startInclusiveTime + timeBucketWidth;
+    const results = new Map<string, { tagNames: string[], orderedLogicalDirectoryPaths: Map<string, Set<string>> }>();
 
-    for (let timeIndex = timeRangeInclusiveExclusive[0]; timeIndex < timeRangeInclusiveExclusive[1]; timeIndex += timeBucketWidth) {
-        const results = new Map<string, { tagNames: string[], orderedLogicalDirectoryPaths: Map<string, Set<string>> }>();
-        for (let tagIndex = 0; tagIndex < tagNames.length; tagIndex++) {
-            const tagName = tagNames[tagIndex];
-            const chunkId = MD5Calculator(tagName, timeIndex, tagBucketWidth, timeBucketWidth);
-            const logicalChunkId = chunkId.logicalChunkId(prefix, sep);
-            //Skip if already exists, just add tag
-            if (results.has(logicalChunkId)) {
-                results.get(logicalChunkId)?.tagNames.push(tagName);
-            }
-            else {
-                const allLogicalChunkIds = await redisClient.get(logicalChunkId, true);
-                allLogicalChunkIds.push(logicalChunkId);
-                const sortedChunkDirectoryPaths = new Map(
-                    allLogicalChunkIds
-                        .sort((a, b) => a[0].localeCompare(b[0]))//TODO:Sorting might be broken
-                        .reverse()
-                        .map((logicalChunkId) => {
-                            const directoryPaths = new Array<string>();
-                            setPaths.forEach((disks, setPath) => {
-                                const diskIndex = chunkId.limitIndex(disks.length);
-                                directoryPaths.push(join(setPath, disks[diskIndex], logicalChunkId));
-                            });
-                            return [logicalChunkId, new Set(directoryPaths)]
-                        }));
-                results.set(logicalChunkId, { tagNames: [tagName], orderedLogicalDirectoryPaths: sortedChunkDirectoryPaths });
-            }
+    for (let tagIndex = 0; tagIndex < tagNames.length; tagIndex++) {
+        const tagName = tagNames[tagIndex];
+        const chunkId = MD5Calculator(tagName, startInclusiveTime, tagBucketWidth, timeBucketWidth);
+        const logicalChunkId = chunkId.logicalChunkId(prefix, sep);
+        //Skip if already exists, just add tag
+        if (results.has(logicalChunkId)) {
+            results.get(logicalChunkId)?.tagNames.push(tagName);
         }
-
-        yield { queryPlan: results, timeRangeInclusiveExclusive: [timeIndex, timeIndex + timeBucketWidth] };
+        else {
+            const allLogicalChunkIds = await redisClient.get(logicalChunkId, true);
+            allLogicalChunkIds.push(logicalChunkId);
+            const sortedChunkDirectoryPaths = new Map(
+                allLogicalChunkIds
+                    .sort((a, b) => a[0].localeCompare(b[0]))//TODO:Sorting might be broken
+                    .reverse()
+                    .map((logicalChunkId) => {
+                        const directoryPaths = new Array<string>();
+                        setPaths.forEach((disks, setPath) => {
+                            const diskIndex = chunkId.limitIndex(disks.length);
+                            directoryPaths.push(join(setPath, disks[diskIndex], logicalChunkId));
+                        });
+                        return [logicalChunkId, new Set(directoryPaths)]
+                    }));
+            results.set(logicalChunkId, { tagNames: [tagName], orderedLogicalDirectoryPaths: sortedChunkDirectoryPaths });
+        }
     }
+
+    return { queryPlan: results, timeRangeInclusiveExclusive: [startInclusiveTime, endExclusiveTime] };
 }
 
 function filterByInsertTimeAndSortBySampleTime(frame: any[]): [number, number] {
