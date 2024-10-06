@@ -2,7 +2,7 @@
 import { join } from "node:path";
 import Database from 'better-sqlite3';
 import { mkdirSync } from "node:fs";
-import { IChunkId, MD5Calculator } from "./chunk-calculator.js";
+import { ChunkCalculator, DJB2Calculator, IChunkId, MD5Calculator } from "./chunk-calculator.js";
 
 export interface IChunkInfo {
     incorrectPlacements: number;
@@ -16,7 +16,7 @@ export interface IWriterOutput {
     dataDisplacements: Map<string, Set<string>>
 }
 
-export function writeData(diskPaths: Array<string>, sampleSet: Array<[string, number[]]>, tagBucketWidth: number, timeBucketWidth: number, preConditionedTables: Set<string>, fileName: string, prefix: string, seperatorChar: string, timeBucketTolerance = 1, systemTime = Date.now(), calculator = MD5Calculator): IWriterOutput {
+export function writeData(diskPaths: Array<string>, sampleSet: Array<[string, number[]]>, tagBucketWidth: number, timeBucketWidth: number, preConditionedTables: Set<string>, fileName: string, prefix: string, seperatorChar: string, timeBucketTolerance = 1, systemTime = Date.now(), calculator: ChunkCalculator = DJB2Calculator): IWriterOutput {
     const chunks = new Map<string, IChunkInfo>();
     const dataDisplacements = new Map<string, Set<string>>();
 

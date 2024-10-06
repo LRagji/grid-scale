@@ -12,7 +12,7 @@ import { cpus } from "node:os"
 import { fileURLToPath } from 'url';
 import { IRedisHashMap, IWriterOutput, updateDisplacedData, writeData } from "./writer.js";
 import { createClient } from 'redis';
-import { dbFileNameBuilder, MD5Calculator } from './chunk-calculator.js';
+import { ChunkCalculator, dbFileNameBuilder, DJB2Calculator, MD5Calculator } from './chunk-calculator.js';
 import { join } from 'node:path';
 import { readdirSync } from 'node:fs';
 import Database from 'better-sqlite3';
@@ -75,7 +75,7 @@ if (isMainThread) {
     console.timeEnd("Generate Operation");
 
     console.time("Operation");
-    const totalCPUs = 1;//cpus().length;
+    const totalCPUs = 1//cpus().length;
     const workerHandles = new Array<Promise<WorkerOutput>>();
     const chunkSize = Math.ceil(data.size / totalCPUs);
     const dataEntries = Array.from(data.entries());
@@ -189,7 +189,7 @@ if (isMainThread) {
         steps.set("QueryPlanBuilder", Date.now() - startTime);
 
         startTime = Date.now();
-        const cursors = readPage(queryPlan, query, dbFileNameRegex);
+        const cursors = databaseReads(queryPlan, query, dbFileNameRegex);
         steps.set("DiskDBReads", Date.now() - startTime);
 
         startTime = Date.now();
@@ -212,19 +212,19 @@ if (isMainThread) {
     await client.disconnect();
 }
 
-export interface IPaginatedChunk {
+export interface IPagePlan {
     queryPlan: Map<string, { tagNames: string[], orderedLogicalDirectoryPaths: Map<string, Set<string>> }>,
     timeRangeInclusiveExclusive: [number, number];
 }
 
-async function queryPlanPerTimeBucketWidth(tagNames: string[], timeRangeInclusiveExclusive: [number, number], timeBucketWidth: number, tagBucketWidth: number, prefix: string, sep: string, setPaths: Map<string, string[]>, redisClient: IRedisHashMap): Promise<IPaginatedChunk> {
+async function queryPlanPerTimeBucketWidth(tagNames: string[], timeRangeInclusiveExclusive: [number, number], timeBucketWidth: number, tagBucketWidth: number, prefix: string, sep: string, setPaths: Map<string, string[]>, redisClient: IRedisHashMap, calculator: ChunkCalculator = DJB2Calculator): Promise<IPagePlan> {
     const startInclusiveTime = timeRangeInclusiveExclusive[0];
     const endExclusiveTime = startInclusiveTime + timeBucketWidth;
     const results = new Map<string, { tagNames: string[], orderedLogicalDirectoryPaths: Map<string, Set<string>> }>();
 
     for (let tagIndex = 0; tagIndex < tagNames.length; tagIndex++) {
         const tagName = tagNames[tagIndex];
-        const chunkId = MD5Calculator(tagName, startInclusiveTime, tagBucketWidth, timeBucketWidth);
+        const chunkId = calculator(tagName, startInclusiveTime, tagBucketWidth, timeBucketWidth);
         const logicalChunkId = chunkId.logicalChunkId(prefix, sep);
         //Skip if already exists, just add tag
         if (results.has(logicalChunkId)) {
@@ -249,49 +249,10 @@ async function queryPlanPerTimeBucketWidth(tagNames: string[], timeRangeInclusiv
         }
     }
 
-    return { queryPlan: results, timeRangeInclusiveExclusive: [startInclusiveTime, endExclusiveTime] };
+    return { queryPlan: results, timeRangeInclusiveExclusive: [startInclusiveTime, Math.min(endExclusiveTime, timeRangeInclusiveExclusive[1])] };
 }
 
-function filterByInsertTimeAndSortBySampleTime(frame: any[]): [number, number] {
-    if (frame.length === 0) return [-1, -1];
-    let minIndex = -1, purgeIndex = -1;
-    for (let i = 1; i < frame.length; i++) {
-        if (frame[i] === null) continue;
-        if (minIndex === -1) {
-            minIndex = i;
-        }
-        else {
-            if (frame[i].sampleTime < frame[minIndex].sampleTime) {
-                minIndex = i;
-            }
-            else if (frame[i].sampleTime === frame[minIndex].sampleTime) {
-                if (frame[i].insertTime < frame[minIndex].insertTime) {
-                    purgeIndex = i;
-                }
-                else if (frame[i].insertTime > frame[minIndex].insertTime) {
-                    purgeIndex = minIndex;
-                    minIndex = i;
-                }
-                else {
-                    purgeIndex = i;
-                }
-            }
-        }
-    }
-    return [minIndex, purgeIndex];
-};
-
-function query(tagNames: string[], startInclusive: number, endExclusive: number): string {
-    return tagNames
-        .map(tagName => {
-            const tagNamesInHex = Buffer.from(tagName, "utf-8").toString('hex');
-            return `SELECT * FROM [${tagNamesInHex}] WHERE sampleTime >= ${startInclusive} AND sampleTime < ${endExclusive} ORDER BY sampleTime ASC;`;
-        })
-        .join("\n UNION ALL \n");
-
-}
-
-function readPage(page: IPaginatedChunk, query: (tableName: string[], startInclusive: number, endExclusive: number) => string, dbFileNameExp: RegExp): Array<IterableIterator<unknown>> {
+function databaseReads(page: IPagePlan, query: (tableName: string[], startInclusive: number, endExclusive: number) => string, dbFileNameExp: RegExp): Array<IterableIterator<unknown>> {
     const resultPointers = new Array<IterableIterator<unknown>>();
     for (const [logicalChunkId, chunkInfo] of page.queryPlan.entries()) {
         for (const directoryPaths of chunkInfo.orderedLogicalDirectoryPaths.values()) {
@@ -329,11 +290,11 @@ function readPage(page: IPaginatedChunk, query: (tableName: string[], startInclu
     return resultPointers;
 }
 
-function* mergeSortIterators<T>(iterators: IterableIterator<T>[], compareFunction: (elements: T | null[]) => [number, number]): IterableIterator<T> {
+function* mergeSortIterators<T>(iterators: IterableIterator<T>[], frameProcessFunction: (elements: T | null[]) => [number, number]): IterableIterator<T> {
     const compareFrame = iterators.map(_ => _.next().value || null);
     let nullCounter = compareFrame.length;
     while (nullCounter > 0) {
-        const [yieldIndex, purgeIndex] = compareFunction(compareFrame);
+        const [yieldIndex, purgeIndex] = frameProcessFunction(compareFrame);
         if (yieldIndex === -1) break;
         yield compareFrame[yieldIndex];
 
@@ -352,6 +313,47 @@ function* mergeSortIterators<T>(iterators: IterableIterator<T>[], compareFunctio
         }
     }
 }
+
+function query(tagNames: string[], startInclusive: number, endExclusive: number): string {
+    return tagNames
+        .map(tagName => {
+            const tagNamesInHex = Buffer.from(tagName, "utf-8").toString('hex');
+            return `SELECT * FROM [${tagNamesInHex}] WHERE sampleTime >= ${startInclusive} AND sampleTime < ${endExclusive} ORDER BY sampleTime ASC;`;
+        })
+        .join("\n UNION ALL \n");
+
+}
+
+function filterByInsertTimeAndSortBySampleTime(frame: any[]): [number, number] {
+    if (frame.length === 0) return [-1, -1];
+    let minIndex = -1, purgeIndex = -1;
+    for (let i = 1; i < frame.length; i++) {
+        if (frame[i] === null) continue;
+        if (minIndex === -1) {
+            minIndex = i;
+        }
+        else {
+            if (frame[i].sampleTime < frame[minIndex].sampleTime) {
+                minIndex = i;
+            }
+            else if (frame[i].sampleTime === frame[minIndex].sampleTime) {
+                if (frame[i].insertTime < frame[minIndex].insertTime) {
+                    purgeIndex = i;
+                }
+                else if (frame[i].insertTime > frame[minIndex].insertTime) {
+                    purgeIndex = minIndex;
+                    minIndex = i;
+                }
+                else {
+                    purgeIndex = i;
+                }
+            }
+        }
+    }
+    return [minIndex, purgeIndex];
+};
+
+
 
 // export interface ISample {
 //     sampleTime: number,

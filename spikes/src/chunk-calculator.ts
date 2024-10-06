@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 
+export type ChunkCalculator = (tagName: string, time: number, tagBucketWidth: number, timeBucketWidth: number) => IChunkId;
+
 export interface IChunkId {
     tagHash: Buffer;
     tagPart: string;
@@ -43,3 +45,26 @@ export function dbFileNameBuilder(id: string | "*"): string {
         return `^ts[a-z0-9]+\\.db$`;
     }
 }
+
+export function DJB2Calculator(tagName: string, time: number, tagBucketWidth: number, timeBucketWidth: number): IChunkId {
+    const tHash = djb2Hash(tagName);
+    const tagPart = (tHash - (tHash % tagBucketWidth)).toString();
+    const timePart = time - (time % timeBucketWidth);
+
+    return {
+        tagHash: new Uint8Array(0) as Buffer,
+        tagPart,
+        timePart,
+        limitIndex: function (limits: number) { return (parseInt(this.tagPart)) % limits },
+        logicalChunkId: function (prefix: string, sep: string) { return `${prefix}${sep}${this.tagPart}${sep}${this.timePart}` }
+    };
+}
+
+function djb2Hash(str: string): number {
+    let hash = 5381;
+    for (let i = 0; i < str.length; i++) {
+        hash = ((hash << 5) + hash) + str.charCodeAt(i); // hash * 33 + c
+    }
+    return hash >>> 0; // Ensure the hash is a positive integer
+}
+
