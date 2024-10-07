@@ -15,6 +15,22 @@
             "outFiles": [
                 "${workspaceFolder}/spikes/dist/src//**/*.js"
             ]
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "args": [
+                "--test"
+            ],
+            "name": "Debug Test",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "program": "${workspaceFolder}/spikes/test/k-way-merge-tests.ts",
+            // "preLaunchTask": "npm: build",
+            "outFiles": [
+                "${workspaceFolder}/spikes/dist//**/*.js"
+            ]
         }
     ]
 }
