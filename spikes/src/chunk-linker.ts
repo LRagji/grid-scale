@@ -1,6 +1,7 @@
 import { createClient, RedisClientType } from "redis";
-import { ChunkId } from "./chunk.js";
+import { ChunkId } from "./chunk-id.js";
 import { TConfig } from "./t-config.js";
+import { logicalChunkId } from "./grid-scale.js";
 
 class RedisHashMap {
 
@@ -48,28 +49,28 @@ export class ChunkLinker {
         this.redis = new RedisHashMap(config.redisConnection);
     }
 
-    public async link(indexed: ChunkId, unIndexed: ChunkId[], selfId: string): Promise<void> {
+    public async link(indexed: logicalChunkId, unIndexed: logicalChunkId[], selfId: string): Promise<void> {
         if (this.isInitialized === false) {
             await this.redis.initialize();
             this.isInitialized = true;
         }
-        const indexedKey = indexed.logicalChunkId;
+
         const values = [];
         for (const item of unIndexed) {
             values.push(item);
             values.push(selfId);
         }
 
-        await this.redis.set(indexedKey, values);
+        await this.redis.set(indexed, values);
     }
 
-    public async getRelated(b: ChunkId): Promise<string[]> {
+    public async getRelated(indexed: logicalChunkId): Promise<string[]> {
         if (this.isInitialized === false) {
             await this.redis.initialize();
             this.isInitialized = true;
         }
-        const key = b.logicalChunkId;
-        const values = await this.redis.get(key, true);
+
+        const values = await this.redis.get(indexed, true);
         return values;
     }
 
