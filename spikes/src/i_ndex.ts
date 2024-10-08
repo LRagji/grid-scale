@@ -36,6 +36,8 @@ const config: TConfig = {
     logicalChunkPrefix: "D",
     logicalChunkSeperator: "|",
     redisConnection: 'redis://localhost:6379',
+    readerThreads: 10,
+    writerThreads: 10
 }
 const gridScale = new GridScale(config);
 const linker = new ChunkLinker(config);
