@@ -25,7 +25,11 @@ function DJB2(input: string): number[] {
     return [hash >>> 0]; // Ensure the hash is a positive integer
 }
 
-export const chunkAlgos = [MD5, DJB2];
+function StringSplit(input: string): number[] {
+    return [parseInt(input.substring(3)), 10]; //Tag1 Tag[x]
+}
+
+export const chunkAlgos = [MD5, DJB2, StringSplit];
 
 export function generateChunkId(tagName: string, time: number, config: TConfig): ChunkId {
     const tagHash = chunkAlgos[config.activeCalculatorIndex](tagName);
