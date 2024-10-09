@@ -39,6 +39,8 @@ const config: TConfig = {
     readerThreads: 10,
     writerThreads: 10
 }
+const insertTime = Date.now();
+const selfId = `${process.pid}-${1}`;
 const gridScale = new GridScale(config);
 const linker = new ChunkLinker(config);
 
@@ -57,34 +59,35 @@ for (let tags = 0; tags < totalTags; tags++) {
 }
 console.timeEnd("Generate Operation");
 
-//1.178s
+//1.041s
 console.time("Split Operation")
-const chunkGroups = gridScale.allocateChunks(generatedData);
+function formatSamples(input: samples, insertTime: number): number[][] {
+    const returnValues = new Array<number[]>();
+    for (let index = 0; index < samples.length; index += 2) {
+        returnValues.push([input[index], insertTime, input[index + 1]]);
+    }
+    return returnValues;
+}
+const chunkInfo = gridScale.allocateChunksWithFormattedSamples<number[]>(generatedData, insertTime, formatSamples);
 console.timeEnd("Split Operation");
 
-//5:21.305 (m:ss.mmm)
+//6:22.962 (m:ss.mmm)
 console.time("Write Operation");
-const selfId = `${process.pid}-${1}`;
-const insertTime = Date.now();
-for (const [logicalChunkId, diskIndexSamplesMap] of chunkGroups) {
+for (const [logicalChunkId, diskIndexSamplesMap] of chunkInfo.chunkAllocations) {
     const chunk = gridScale.getChunk(logicalChunkId);
     for (const [diskIndex, diskSampleSets] of diskIndexSamplesMap) {
-        const sampleSet = new Map<tagName, number[][]>();
-        for (const [tagName, samples] of diskSampleSets) {
-            const formattedSamples = new Array<number[]>();
-            for (let index = 0; index < samples.length; index += 2) {
-                formattedSamples.push([samples[index], insertTime, samples[index + 1]]);
-            }
-            sampleSet.set(tagName, formattedSamples);
-        }
-        chunk.set(diskIndex, sampleSet, selfId);
+        chunk.set(diskIndex, diskSampleSets, selfId);
     }
 }
 console.timeEnd("Write Operation");
 
-
+//13.373s
 console.time("Link Operation");
-//await linker.link();
+let displacedChunks = 0;
+for (const [indexedLogicalChunkId, logicalChunkIds] of chunkInfo.chunkDisplacements) {
+    await linker.link(indexedLogicalChunkId, Array.from(logicalChunkIds.values()), selfId);
+    displacedChunks += logicalChunkIds.size;
+}
 console.timeEnd("Link Operation");
 
 
@@ -93,5 +96,11 @@ gridScale[Symbol.dispose]();
 await linker[Symbol.asyncDispose]();
 console.timeEnd("Close Operation");
 
-console.log("Total Chunks: ", chunkGroups.size);
+console.log(`Fragmentation: ${((displacedChunks / chunkInfo.chunkAllocations.size) * 100).toFixed(0)}% ,Total Chunks: ${chunkInfo.chunkAllocations.size}`);
 
+// Generate Operation: 1.017s
+// Split Operation: 1.041s
+// Write Operation: 6:22.962 (m:ss.mmm)
+// Link Operation: 13.373s
+// Close Operation: 1.801s
+// Fragmentation: 100%,Total Chunks: 50000

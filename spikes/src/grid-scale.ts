@@ -13,20 +13,33 @@ export class GridScale<T> {
 
     constructor(private readonly config: TConfig) { }
 
-    public allocateChunks(sampleSets: Map<tagName, samples>): Map<logicalChunkId, Map<diskIndex, Map<tagName, samples>>> {
-        const chunkGroups = new Map<logicalChunkId, Map<diskIndex, Map<tagName, samples>>>(); //ChunkID->DiskIndex->TagName->Samples[]
+    public allocateChunksWithFormattedSamples<rowType>(sampleSets: Map<tagName, samples>, insertTime: number, formatCallback: (dataToFormat: samples, insertTime: number) => rowType[]): { chunkAllocations: Map<logicalChunkId, Map<diskIndex, Map<tagName, rowType[]>>>, chunkDisplacements: Map<logicalChunkId, Set<logicalChunkId>> } {
+        const chunkGroups = new Map<logicalChunkId, Map<diskIndex, Map<tagName, rowType[]>>>(); //ChunkID->DiskIndex->TagName->Samples[]
+        const chunkDisplacements = new Map<logicalChunkId, Set<logicalChunkId>>(); //ChunkID->DisplacedChunkIDs
         for (const [tagName, samples] of sampleSets) {
             for (let timeIndex = 0; timeIndex < samples.length; timeIndex += 2) {
-                const chunkId = ChunkId.from(tagName, samples[timeIndex], this.config);
-                const diskIndexSamplesMap = chunkGroups.get(chunkId.logicalChunkId) || new Map<diskIndex, Map<tagName, samples>>();
-                const diskIndex = chunkId.tagNameMod(this.config.setPaths.get(this.config.activePath).length);
-                const sampleSets = diskIndexSamplesMap.get(diskIndex) || new Map<tagName, samples>();
-                sampleSets.set(tagName, samples);
+                const chunkIdByInsertTime = ChunkId.from(tagName, insertTime, this.config);
+                //Chunk Allocations
+                const diskIndexSamplesMap = chunkGroups.get(chunkIdByInsertTime.logicalChunkId) || new Map<diskIndex, Map<tagName, rowType[]>>();
+                const diskIndex = chunkIdByInsertTime.tagNameMod(this.config.setPaths.get(this.config.activePath).length);
+                const sampleSets = diskIndexSamplesMap.get(diskIndex) || new Map<tagName, rowType[]>();
+                const formattedSamples = formatCallback(samples, insertTime);
+                sampleSets.set(tagName, formattedSamples);
                 diskIndexSamplesMap.set(diskIndex, sampleSets);
-                chunkGroups.set(chunkId.logicalChunkId, diskIndexSamplesMap);
+                chunkGroups.set(chunkIdByInsertTime.logicalChunkId, diskIndexSamplesMap);
+                //Chunk Misplacement's
+                const chunkIdBySampleTime = ChunkId.from(tagName, samples[timeIndex], this.config);
+                const toleranceWidth = this.config.timeBucketWidth * this.config.timeBucketTolerance;
+                const minimumTolerance = chunkIdByInsertTime.timeBucketed[0] - toleranceWidth;
+                const maximumTolerance = chunkIdByInsertTime.timeBucketed[0] + toleranceWidth;
+                if (chunkIdBySampleTime.timeBucketed[0] < minimumTolerance || chunkIdBySampleTime.timeBucketed[0] > maximumTolerance) {
+                    const displacements = chunkDisplacements.get(chunkIdBySampleTime.logicalChunkId) || new Set<logicalChunkId>();
+                    displacements.add(chunkIdByInsertTime.logicalChunkId);
+                    chunkDisplacements.set(chunkIdBySampleTime.logicalChunkId, displacements);
+                }
             }
         }
-        return chunkGroups;
+        return { chunkAllocations: chunkGroups, chunkDisplacements };
     }
 
     public allocateLinking(sampleSets: Map<tagName, samples>): Map<logicalChunkId, Map<diskIndex, Map<tagName, samples>>> {

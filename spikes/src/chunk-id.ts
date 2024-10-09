@@ -34,9 +34,15 @@ export function generateChunkId(tagName: string, time: number, config: TConfig):
 
 export class ChunkId {
     public readonly logicalChunkId: string;
+    public readonly tagNameBucketed: number[];
+    public readonly timeBucketed: number[];
+
+    private bucket(input: number, width: number): number {
+        return input - (input % width);
+    }
 
     public static from(tagName: string, time: number, config: TConfig): ChunkId {
-        const tagHash = chunkAlgos[config.activeCalculatorIndex](tagName);//Just need to change string to number so only tagName is hashed with algo.
+        const tagHash = chunkAlgos[config.activeCalculatorIndex](tagName);
         return new ChunkId(tagHash, [time], config);
     }
 
@@ -49,8 +55,8 @@ export class ChunkId {
     }
 
     constructor(private readonly tagHash: number[], private readonly timeHash: number[], config: TConfig) {
-        const tagNameMod = this.tagHash.map(val => val - (val % config.tagBucketWidth));
-        const timeMod = this.timeHash.map(val => val - (val % config.timeBucketWidth));
-        this.logicalChunkId = `${config.logicalChunkPrefix}${config.logicalChunkSeperator}${tagNameMod.join("")}${config.logicalChunkSeperator}${timeMod.join("")}`;
+        this.tagNameBucketed = this.tagHash.map(val => this.bucket(val, config.tagBucketWidth));
+        this.timeBucketed = this.timeHash.map(val => this.bucket(val, config.timeBucketWidth));
+        this.logicalChunkId = `${config.logicalChunkPrefix}${config.logicalChunkSeperator}${this.tagNameBucketed.join("")}${config.logicalChunkSeperator}${this.timeBucketed.join("")}`;
     }
 }
