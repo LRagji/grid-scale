@@ -37,7 +37,7 @@ export class ChunkId {
     public readonly tagNameBucketed: number[];
     public readonly timeBucketed: number[];
 
-    private bucket(input: number, width: number): number {
+    public static bucket(input: number, width: number): number {
         return input - (input % width);
     }
 
@@ -55,8 +55,8 @@ export class ChunkId {
     }
 
     constructor(private readonly tagHash: number[], private readonly timeHash: number[], config: TConfig) {
-        this.tagNameBucketed = this.tagHash.map(val => this.bucket(val, config.tagBucketWidth));
-        this.timeBucketed = this.timeHash.map(val => this.bucket(val, config.timeBucketWidth));
+        this.tagNameBucketed = this.tagHash.map(val => ChunkId.bucket(val, config.tagBucketWidth));
+        this.timeBucketed = this.timeHash.map(val => ChunkId.bucket(val, config.timeBucketWidth));
         this.logicalChunkId = `${config.logicalChunkPrefix}${config.logicalChunkSeperator}${this.tagNameBucketed.join("")}${config.logicalChunkSeperator}${this.timeBucketed.join("")}`;
     }
 }

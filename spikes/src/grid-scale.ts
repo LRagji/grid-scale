@@ -1,21 +1,26 @@
 import { Chunk } from "./chunk.js";
 import { ChunkId } from "./chunk-id.js";
 import { TConfig } from "./t-config.js";
+import { ChunkLinker } from "./chunk-linker.js";
 
 export type logicalChunkId = string;
 export type diskIndex = number;
 export type tagName = string;
 export type samples = number[];
+export type setDiskPath = string;
 
 export class GridScale<T> {
 
     private readonly chunkCache = new Map<logicalChunkId, Chunk>();
+    private readonly chunkLinkRegistry: ChunkLinker
 
-    constructor(private readonly config: TConfig) { }
+    constructor(private readonly config: TConfig) {
+        this.chunkLinkRegistry = new ChunkLinker(config);
+    }
 
-    public allocateChunksWithFormattedSamples<rowType>(sampleSets: Map<tagName, samples>, insertTime: number, formatCallback: (dataToFormat: samples, insertTime: number) => rowType[]): { chunkAllocations: Map<logicalChunkId, Map<diskIndex, Map<tagName, rowType[]>>>, chunkDisplacements: Map<logicalChunkId, Set<logicalChunkId>> } {
+    public allocateChunksWithFormattedSamples<rowType>(sampleSets: Map<tagName, samples>, insertTime: number, formatCallback: (dataToFormat: samples, insertTime: number) => rowType[]): { chunkAllocations: Map<logicalChunkId, Map<diskIndex, Map<tagName, rowType[]>>>, chunkDisplacements: Map<logicalChunkId, { insertTimeBucketed: number, related: Set<logicalChunkId> }> } {
         const chunkGroups = new Map<logicalChunkId, Map<diskIndex, Map<tagName, rowType[]>>>(); //ChunkID->DiskIndex->TagName->Samples[]
-        const chunkDisplacements = new Map<logicalChunkId, Set<logicalChunkId>>(); //ChunkID->DisplacedChunkIDs
+        const chunkDisplacements = new Map<logicalChunkId, { insertTimeBucketed: number, related: Set<logicalChunkId> }>(); //ChunkID->DisplacedChunkIDs
         for (const [tagName, samples] of sampleSets) {
             for (let timeIndex = 0; timeIndex < samples.length; timeIndex += 2) {
                 const chunkIdByInsertTime = ChunkId.from(tagName, insertTime, this.config);
@@ -33,8 +38,8 @@ export class GridScale<T> {
                 const minimumTolerance = chunkIdByInsertTime.timeBucketed[0] - toleranceWidth;
                 const maximumTolerance = chunkIdByInsertTime.timeBucketed[0] + toleranceWidth;
                 if (chunkIdBySampleTime.timeBucketed[0] < minimumTolerance || chunkIdBySampleTime.timeBucketed[0] > maximumTolerance) {
-                    const displacements = chunkDisplacements.get(chunkIdBySampleTime.logicalChunkId) || new Set<logicalChunkId>();
-                    displacements.add(chunkIdByInsertTime.logicalChunkId);
+                    const displacements = chunkDisplacements.get(chunkIdBySampleTime.logicalChunkId) || { insertTimeBucketed: chunkIdByInsertTime.timeBucketed[0], related: new Set<logicalChunkId>() };
+                    displacements.related.add(chunkIdByInsertTime.logicalChunkId);
                     chunkDisplacements.set(chunkIdBySampleTime.logicalChunkId, displacements);
                 }
             }
@@ -42,23 +47,48 @@ export class GridScale<T> {
         return { chunkAllocations: chunkGroups, chunkDisplacements };
     }
 
-    public allocateLinking(sampleSets: Map<tagName, samples>): Map<logicalChunkId, Map<diskIndex, Map<tagName, samples>>> {
-        const chunkGroups = new Map<logicalChunkId, Map<diskIndex, Map<tagName, samples>>>(); //ChunkID->DiskIndex->TagName->Samples[]
-        for (const [tagName, samples] of sampleSets) {
-            for (let timeIndex = 0; timeIndex < samples.length; timeIndex += 2) {
-                const chunkId = ChunkId.from(tagName, samples[timeIndex], this.config);
-                const diskIndexSamplesMap = chunkGroups.get(chunkId.logicalChunkId) || new Map<diskIndex, Map<tagName, samples>>();
-                const diskIndex = chunkId.tagNameMod(this.config.setPaths.get(this.config.activePath).length);
-                const sampleSets = diskIndexSamplesMap.get(diskIndex) || new Map<tagName, samples>();
-                sampleSets.set(tagName, samples);
-                diskIndexSamplesMap.set(diskIndex, sampleSets);
-                chunkGroups.set(chunkId.logicalChunkId, diskIndexSamplesMap);
+    public async queryPlanPerTimeBucketWidth(tagNames: tagName[], startInclusiveTime: number): Promise<Map<logicalChunkId, Map<tagName, Map<setDiskPath, diskIndex>>>> {
+        type chunkInfo = { id: logicalChunkId, insertTime: number };
+        const startInclusiveBucketedTime = ChunkId.bucket(startInclusiveTime, this.config.timeBucketWidth);
+        const tempResults = new Map<logicalChunkId, Map<tagName, Map<setDiskPath, diskIndex>>>();
+        const orderedChunkIds = new Array<chunkInfo>();
+
+        for (let tagIndex = 0; tagIndex < tagNames.length; tagIndex++) {
+            const tagName = tagNames[tagIndex];
+            const defaultChunkId = ChunkId.from(tagName, startInclusiveBucketedTime, this.config);
+            const LHSToleranceChunkId = ChunkId.from(tagName, startInclusiveBucketedTime - (this.config.timeBucketWidth * this.config.timeBucketTolerance), this.config);
+            const RHSToleranceChunkId = ChunkId.from(tagName, startInclusiveBucketedTime + (this.config.timeBucketWidth * this.config.timeBucketTolerance), this.config);
+            const displacedChunk = await this.chunkLinkRegistry.getRelated(defaultChunkId.logicalChunkId);
+            const allChunks = new Array<chunkInfo>();
+            for (const [logicalChunkId, value] of Object.entries(displacedChunk)) {
+                allChunks.push({ id: logicalChunkId, insertTime: value.bucketedTime });
+            }
+            allChunks.push({ id: defaultChunkId.logicalChunkId, insertTime: defaultChunkId.timeBucketed[0] });
+            allChunks.push({ id: LHSToleranceChunkId.logicalChunkId, insertTime: LHSToleranceChunkId.timeBucketed[0] });
+            allChunks.push({ id: RHSToleranceChunkId.logicalChunkId, insertTime: RHSToleranceChunkId.timeBucketed[0] });
+
+
+            for (const chunk of allChunks) {
+                const tagDiskAccess = tempResults.get(chunk.id) || new Map<tagName, Map<setDiskPath, diskIndex>>();
+                const diskAccess = tagDiskAccess.get(tagName) || new Map<setDiskPath, diskIndex>();
+                this.config.setPaths.forEach((diskPaths, setPath) => {
+                    const diskIndex = defaultChunkId.tagNameMod(diskPaths.length);
+                    diskAccess.set(setPath, diskIndex);
+                });
+                tagDiskAccess.set(tagName, diskAccess);
+                tempResults.set(chunk.id, tagDiskAccess);
+                orderedChunkIds.push(chunk);
             }
         }
-        return chunkGroups;
+        const results = new Map<logicalChunkId, Map<tagName, Map<setDiskPath, diskIndex>>>();
+        orderedChunkIds.sort((a, b) => a.insertTime - b.insertTime);//Ascending according to insert time.
+        for (let index = orderedChunkIds.length - 1; index >= 0; index--) {//But we need Descending cause of M.V.C.C which writes updated versions of samples to latest time.
+            results.set(orderedChunkIds[index].id, tempResults.get(orderedChunkIds[index].id));
+        }
+        return results;
     }
 
-    public getChunk(logicalChunkId): Chunk {
+    public getChunk(logicalChunkId: logicalChunkId): Chunk {
         if (this.chunkCache.has(logicalChunkId)) {
             return this.chunkCache.get(logicalChunkId);
         }
@@ -81,7 +111,9 @@ export class GridScale<T> {
         }
     }
 
-    [Symbol.dispose]() {
+    public async [Symbol.asyncDispose]() {
         this.chunkCache.forEach(chunk => chunk[Symbol.dispose]());
+        this.chunkCache.clear();
+        await this.chunkLinkRegistry[Symbol.asyncDispose]();
     }
 }

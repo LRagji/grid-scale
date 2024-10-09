@@ -1,5 +1,4 @@
 import { createClient, RedisClientType } from "redis";
-import { ChunkId } from "./chunk-id.js";
 import { TConfig } from "./t-config.js";
 import { logicalChunkId } from "./grid-scale.js";
 
@@ -21,13 +20,8 @@ class RedisHashMap {
         await this.redisClient.HSET(key, fieldValues);
     }
 
-    public async get(key: string, fieldsOnly = true): Promise<string[]> {
-        if (fieldsOnly === true) {
-            return await this.redisClient.HKEYS(key) || [];
-        }
-        else {
-            return [];
-        }
+    public async get(key: string): Promise<Record<string, string>> {
+        return await this.redisClient.HGETALL(key) || {};
     }
 
     public async del(key: string[]): Promise<void> {
@@ -49,7 +43,7 @@ export class ChunkLinker {
         this.redis = new RedisHashMap(config.redisConnection);
     }
 
-    public async link(indexed: logicalChunkId, unIndexed: logicalChunkId[], selfId: string): Promise<void> {
+    public async link(indexed: logicalChunkId, unIndexed: logicalChunkId[], unIndexedBucketedTime: number, selfId: string): Promise<void> {
         if (this.isInitialized === false) {
             await this.redis.initialize();
             this.isInitialized = true;
@@ -58,20 +52,25 @@ export class ChunkLinker {
         const values = [];
         for (const item of unIndexed) {
             values.push(item);
-            values.push(selfId);
+            values.push(JSON.stringify([unIndexedBucketedTime, selfId]));
         }
 
         await this.redis.set(indexed, values);
     }
 
-    public async getRelated(indexed: logicalChunkId): Promise<string[]> {
+    public async getRelated(indexed: logicalChunkId): Promise<Record<string, { selfId: string, bucketedTime: number }>> {
         if (this.isInitialized === false) {
             await this.redis.initialize();
             this.isInitialized = true;
         }
 
-        const values = await this.redis.get(indexed, true);
-        return values;
+        const values = await this.redis.get(indexed);
+        const returnValues: Record<string, { selfId: string, bucketedTime: number }> = {}
+        Object.keys(values).forEach((key) => {
+            const [selfId, bucketedTime] = JSON.parse(values[key]);
+            returnValues[key] = { selfId, bucketedTime };
+        });
+        return returnValues;
     }
 
     public async [Symbol.asyncDispose]() {

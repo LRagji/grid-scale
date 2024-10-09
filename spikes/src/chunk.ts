@@ -53,12 +53,17 @@ class ChunkShard {
     }
 
     private selectSqlStatement(tagNames: string[], startInclusive: number, endExclusive: number): string {
-        return tagNames
+        const unionStatement = tagNames
             .map(tagName => {
-                const tagNamesInHex = Buffer.from(tagName, "utf-8").toString('hex');
-                return `SELECT * FROM [${tagNamesInHex}] WHERE sampleTime >= ${startInclusive} AND sampleTime < ${endExclusive} ORDER BY sampleTime ASC;`;
+                const tagNameInHex = Buffer.from(tagName, "utf-8").toString('hex');
+                return `SELECT *,unhex('${tagNameInHex}') as tagName 
+                FROM [${tagNameInHex}] 
+                WHERE sampleTime >= ${startInclusive} AND sampleTime < ${endExclusive}`;
             })
             .join("\n UNION ALL \n");
+        return `Select * 
+        FROM (${unionStatement}) 
+        ORDER BY tagName,sampleTime ASC;`;
 
     }
 
@@ -108,11 +113,14 @@ export class Chunk {
         });
     }
 
-    public get<T>(diskIndex: number, sectorNames: string[], startInclusive: number, endExclusive: number): IterableIterator<T>[] {
+    public get<T>(diskIndexes: Map<string, number>, sectorNames: string[], startInclusive: number, endExclusive: number): IterableIterator<T>[] {
         const returnIterators = new Array<IterableIterator<T>>();
-        this.config.setPaths.forEach((diskPaths, activePath) => {
-            const diskPath = diskPaths[diskIndex];
-            const directoryPath = join(activePath, diskPath, this.logicalId);
+        diskIndexes.forEach((diskIndex, setPath) => {
+            if (this.config.setPaths.has(setPath) === false) {
+                return;//No set exists so no DB or Data
+            }
+            const diskPath = this.config.setPaths.get(setPath)[diskIndex];
+            const directoryPath = join(setPath, diskPath, this.logicalId);
             let matchingChunkPaths = new Array<string>();
             try {
                 matchingChunkPaths = readdirSync(directoryPath, { recursive: false, withFileTypes: true })
@@ -141,7 +149,7 @@ export class Chunk {
         return returnIterators;
     }
 
-    [Symbol.dispose]() {
+    public [Symbol.dispose]() {
         this.shardsCache.forEach((value, key) => {
             if (value.canBeClosed()) {
                 value[Symbol.dispose]();

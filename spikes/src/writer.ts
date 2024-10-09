@@ -1,5 +1,5 @@
 import { TConfig } from "./t-config.js";
-import { GridScale, samples, tagName } from "./grid-scale.js";
+import { GridScale, samples } from "./grid-scale.js";
 import { ChunkLinker } from "./chunk-linker.js";
 
 
@@ -85,14 +85,14 @@ console.timeEnd("Write Operation");
 console.time("Link Operation");
 let displacedChunks = 0;
 for (const [indexedLogicalChunkId, logicalChunkIds] of chunkInfo.chunkDisplacements) {
-    await linker.link(indexedLogicalChunkId, Array.from(logicalChunkIds.values()), selfId);
-    displacedChunks += logicalChunkIds.size;
+    await linker.link(indexedLogicalChunkId, Array.from(logicalChunkIds.related.values()), logicalChunkIds.insertTimeBucketed, selfId);
+    displacedChunks += logicalChunkIds.related.size;
 }
 console.timeEnd("Link Operation");
 
 
 console.time("Close Operation");
-gridScale[Symbol.dispose]();
+await gridScale[Symbol.asyncDispose]();
 await linker[Symbol.asyncDispose]();
 console.timeEnd("Close Operation");
 
