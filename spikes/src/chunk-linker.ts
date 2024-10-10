@@ -67,7 +67,7 @@ export class ChunkLinker {
         const values = await this.redis.get(indexed);
         const returnValues: Record<string, { selfId: string, bucketedTime: number }> = {}
         Object.keys(values).forEach((key) => {
-            const [selfId, bucketedTime] = JSON.parse(values[key]);
+            const [bucketedTime, selfId] = JSON.parse(values[key]);
             returnValues[key] = { selfId, bucketedTime };
         });
         return returnValues;

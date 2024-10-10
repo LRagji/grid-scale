@@ -26,7 +26,7 @@ function DJB2(input: string): number[] {
 }
 
 function StringSplit(input: string): number[] {
-    return [parseInt(input.substring(3)), 10]; //Tag1 Tag[x]
+    return [parseInt(input.substring(3), 10)]; //Tag1 Tag[x]
 }
 
 export const chunkAlgos = [MD5, DJB2, StringSplit];

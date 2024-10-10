@@ -11,7 +11,9 @@
             "skipFiles": [
                 "<node_internals>/**"
             ],
-            "program": "${workspaceFolder}/spikes/src/index.ts",
+            "preLaunchTask": "npm: build - spikes",
+            "cwd": "${workspaceFolder}/spikes",
+            "program": "${workspaceFolder}/spikes/src/reader.ts",
             "outFiles": [
                 "${workspaceFolder}/spikes/dist/src//**/*.js"
             ]

@@ -48,15 +48,16 @@ class ChunkShard {
     }
 
     public get<T>(sectorNames: string[], startInclusive: number, endExclusive: number): IterableIterator<T> {
-        return this.db.prepare<unknown, T>(this.selectSqlStatement(sectorNames, startInclusive, endExclusive))
-            .iterate(null);
+        return this.db.prepare<unknown[], T>(this.selectSqlStatement(sectorNames, startInclusive, endExclusive))
+            .raw()
+            .iterate();
     }
 
     private selectSqlStatement(tagNames: string[], startInclusive: number, endExclusive: number): string {
         const unionStatement = tagNames
             .map(tagName => {
                 const tagNameInHex = Buffer.from(tagName, "utf-8").toString('hex');
-                return `SELECT *,unhex('${tagNameInHex}') as tagName 
+                return `SELECT *,cast( unhex('${tagNameInHex}') as TEXT) as tagName 
                 FROM [${tagNameInHex}] 
                 WHERE sampleTime >= ${startInclusive} AND sampleTime < ${endExclusive}`;
             })
@@ -87,7 +88,7 @@ export class Chunk {
     private readonly chunkNameRegex: RegExp;
 
     constructor(private readonly config: TConfig, private readonly logicalId: string) {
-        this.chunkNameRegex = new RegExp("^" + this.config.fileNamePre + "[a-z0-9]+\\" + this.config.fileNamePost + "$");//`^ts[a-z0-9]+\\.db$`;
+        this.chunkNameRegex = new RegExp("^" + this.config.fileNamePre + "[a-z0-9-]+\\" + this.config.fileNamePost + "$");//`^ts[a-z0-9]+\\.db$`;
     }
 
     private getChunkShard(chunkShardPath: string, mode: TChunkAccessMode): ChunkShard {

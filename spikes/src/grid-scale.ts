@@ -51,7 +51,7 @@ export class GridScale<T> {
         type chunkInfo = { id: logicalChunkId, insertTime: number };
         const startInclusiveBucketedTime = ChunkId.bucket(startInclusiveTime, this.config.timeBucketWidth);
         const tempResults = new Map<logicalChunkId, Map<tagName, Map<setDiskPath, diskIndex>>>();
-        const orderedChunkIds = new Array<chunkInfo>();
+        let orderedChunkIds = new Array<chunkInfo>();
 
         for (let tagIndex = 0; tagIndex < tagNames.length; tagIndex++) {
             const tagName = tagNames[tagIndex];
@@ -81,7 +81,7 @@ export class GridScale<T> {
             }
         }
         const results = new Map<logicalChunkId, Map<tagName, Map<setDiskPath, diskIndex>>>();
-        orderedChunkIds.sort((a, b) => a.insertTime - b.insertTime);//Ascending according to insert time.
+        orderedChunkIds = orderedChunkIds.sort((a, b) => a.insertTime - b.insertTime);//Ascending according to insert time.
         for (let index = orderedChunkIds.length - 1; index >= 0; index--) {//But we need Descending cause of M.V.C.C which writes updated versions of samples to latest time.
             results.set(orderedChunkIds[index].id, tempResults.get(orderedChunkIds[index].id));
         }
