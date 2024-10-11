@@ -5,15 +5,15 @@ import { dirname, join } from "node:path";
 
 type TChunkAccessMode = "readwrite" | "readonly";
 
-class ChunkShard {
+export class ChunkShard {
     private db: Database.Database;
     private readonly preConditionedSectors = new Set<string>();
     private readonly tableSqlStatement = (tableName: string) => `CREATE TABLE IF NOT EXISTS [${tableName}] (sampleTime INTEGER PRIMARY KEY NOT NULL, insertTime INTEGER NOT NULL, nValue INTEGER, oValue TEXT);`;
     private readonly indexSqlStatement = (tableName: string) => `CREATE INDEX IF NOT EXISTS [timeIndex_${tableName}] ON [${tableName}] (sampleTime,insertTime,nValue);`;
-    private readonly upsertSqlStatement = (tableName: string) => `Insert into [${tableName}] (sampleTime,insertTime,nValue) values (?,?,?)
+    private readonly upsertSqlStatement = (tableName: string) => `INSERT INTO [${tableName}] (sampleTime,insertTime,nValue) values (?,?,?)
             ON CONFLICT(sampleTime) DO UPDATE SET
-            insertTime=excluded.insertTime,
-            nValue=excluded.nValue;`;
+            insertTime=EXCLUDED.insertTime,
+            nValue=EXCLUDED.nValue;`;
 
     constructor(private readonly path: string, private readonly mode: TChunkAccessMode) {
         if (this.mode === "readwrite") {
@@ -62,7 +62,7 @@ class ChunkShard {
                 WHERE sampleTime >= ${startInclusive} AND sampleTime < ${endExclusive}`;
             })
             .join("\n UNION ALL \n");
-        return `Select * 
+        return `SELECT * 
         FROM (${unionStatement}) 
         ORDER BY tagName,sampleTime ASC;`;
 
@@ -72,7 +72,7 @@ class ChunkShard {
         return this.db !== undefined && this.db.open && !this.db.inTransaction;
     }
 
-    [Symbol.dispose]() {
+    public [Symbol.dispose]() {
         if (this.canBeClosed()) {
             this.db.close();
         }
@@ -83,7 +83,6 @@ class ChunkShard {
 }
 
 export class Chunk {
-
     private readonly shardsCache = new Map<string, ChunkShard>();
     private readonly chunkNameRegex: RegExp;
 
@@ -104,7 +103,7 @@ export class Chunk {
         }
     }
 
-    public set<T>(diskIndex: number, sectorValues: Map<string, T[][]>, selfId: string,): void {
+    public set<T extends Array<any>>(diskIndex: number, sectorValues: Map<string, T[]>, selfId: string,): void {
         sectorValues.forEach((values, sectorName) => {
             const parentDirectory = this.config.activePath;
             const diskPaths = this.config.setPaths.get(parentDirectory) || ["./default-data/"];
@@ -158,5 +157,4 @@ export class Chunk {
             }
         });
     }
-
 }

@@ -1,4 +1,4 @@
-import { GridScale, tagName } from "./grid-scale.js";
+import { GridScaleBase, tagName } from "./grid-scale.js";
 import { kWayMerge } from "./k-way-merge.js";
 import { TConfig } from "./t-config.js";
 import { CommonConfig, generateTagNames } from "./utils.js";
@@ -8,17 +8,17 @@ import { CommonConfig, generateTagNames } from "./utils.js";
 //Merge
 
 const config: TConfig = CommonConfig();
-const gridScale = new GridScale(config);
+const gridScale = new GridScaleBase(config);
 const totalTags = 50000;
 const startInclusiveTime = 0;//Date.now();
-const endExclusiveTime = startInclusiveTime + config.timeBucketWidth;
+const endExclusiveTime = 1//startInclusiveTime + config.timeBucketWidth;
 
 console.time("Generate Operation");
 const tagNames = generateTagNames(totalTags);
 console.timeEnd("Generate Operation");
 
 console.time("QueryPlan Operation")
-const queryPlan = await gridScale.queryPlanPerTimeBucketWidth(tagNames, startInclusiveTime);
+const queryPlan = await gridScale.readQueryPlanPageByTime(tagNames, startInclusiveTime);
 console.timeEnd("QueryPlan Operation");
 
 console.time("Read Operation")
@@ -69,7 +69,7 @@ resultCursor.forEach((cursors, tagName) => {
         return;
     }
     const details = Array.from(kWayMerge(cursors, frameParseFunction));
-    // console.log(`Merging ${cursors.length} cursors for ${tagName} Data Length: ${details.length}`);
+    //console.log(`Merging ${cursors.length} cursors for ${tagName} Data Length: ${details.length}`);
 
     // for (const data of kWayMerge(cursors, frameParseFunction)) {
     //      console.log(data);

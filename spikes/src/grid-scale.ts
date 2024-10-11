@@ -2,23 +2,32 @@ import { Chunk } from "./chunk.js";
 import { ChunkId } from "./chunk-id.js";
 import { TConfig } from "./t-config.js";
 import { ChunkLinker } from "./chunk-linker.js";
+import { cpus } from "node:os";
+import { Worker } from "node:worker_threads";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { ChunkCache } from "./chunk-cache.js";
+import { BackgroundThread } from "./background-thread.js";
+import { deserialize, IThreadCommunication } from "./threads/i-thread-communication.js";
 
 export type logicalChunkId = string;
 export type diskIndex = number;
 export type tagName = string;
 export type samples = number[];
 export type setDiskPath = string;
+export type upsertPlan<rowType> = { chunkAllocations: Map<logicalChunkId, Map<diskIndex, Map<tagName, rowType[]>>>, chunkDisplacements: Map<logicalChunkId, { insertTimeBucketed: number, related: Set<logicalChunkId> }> };
 
-export class GridScale<T> {
+export class GridScaleBase<rowType> {
 
-    private readonly chunkCache = new Map<logicalChunkId, Chunk>();
-    private readonly chunkLinkRegistry: ChunkLinker
+    private readonly chunkCache: ChunkCache;
+    protected readonly chunkLinkRegistry: ChunkLinker
 
     constructor(private readonly config: TConfig) {
+        this.chunkCache = new ChunkCache(config, config.maxDBOpen, 10);
         this.chunkLinkRegistry = new ChunkLinker(config);
     }
 
-    public allocateChunksWithFormattedSamples<rowType>(sampleSets: Map<tagName, samples>, insertTime: number, formatCallback: (dataToFormat: samples, insertTime: number) => rowType[]): { chunkAllocations: Map<logicalChunkId, Map<diskIndex, Map<tagName, rowType[]>>>, chunkDisplacements: Map<logicalChunkId, { insertTimeBucketed: number, related: Set<logicalChunkId> }> } {
+    protected upsertPlan<rawRowType extends Array<any>>(sampleSets: Map<tagName, rawRowType>, insertTime: number, formatCallback: (dataToFormat: samples, insertTime: number) => rowType[]): upsertPlan<rowType> {
         const chunkGroups = new Map<logicalChunkId, Map<diskIndex, Map<tagName, rowType[]>>>(); //ChunkID->DiskIndex->TagName->Samples[]
         const chunkDisplacements = new Map<logicalChunkId, { insertTimeBucketed: number, related: Set<logicalChunkId> }>(); //ChunkID->DisplacedChunkIDs
         for (const [tagName, samples] of sampleSets) {
@@ -47,7 +56,8 @@ export class GridScale<T> {
         return { chunkAllocations: chunkGroups, chunkDisplacements };
     }
 
-    public async queryPlanPerTimeBucketWidth(tagNames: tagName[], startInclusiveTime: number): Promise<Map<logicalChunkId, Map<tagName, Map<setDiskPath, diskIndex>>>> {
+    public async readQueryPlanPageByTime(tagNames: tagName[], startInclusiveTime: number)
+        : Promise<Map<logicalChunkId, Map<tagName, Map<setDiskPath, diskIndex>>>> {
         type chunkInfo = { id: logicalChunkId, insertTime: number };
         const startInclusiveBucketedTime = ChunkId.bucket(startInclusiveTime, this.config.timeBucketWidth);
         const tempResults = new Map<logicalChunkId, Map<tagName, Map<setDiskPath, diskIndex>>>();
@@ -89,31 +99,107 @@ export class GridScale<T> {
     }
 
     public getChunk(logicalChunkId: logicalChunkId): Chunk {
-        if (this.chunkCache.has(logicalChunkId)) {
-            return this.chunkCache.get(logicalChunkId);
-        }
-        else {
-            if (this.chunkCache.size > this.config.maxDBOpen) {
-                const bulkEviction = Math.min(10, this.chunkCache.size, this.config.maxDBOpen);
-                let evicted = 0;
-                for (const [id, chunk] of this.chunkCache.entries()) {
-                    if (evicted >= bulkEviction) {
-                        break;
-                    }
-                    chunk[Symbol.dispose]();
-                    this.chunkCache.delete(id);
-                    evicted++;
-                }
-            }
-            const chunk = new Chunk(this.config, logicalChunkId);
-            this.chunkCache.set(logicalChunkId, chunk);
-            return chunk;
-        }
+        return this.chunkCache.getChunk(logicalChunkId);
     }
 
     public async [Symbol.asyncDispose]() {
-        this.chunkCache.forEach(chunk => chunk[Symbol.dispose]());
-        this.chunkCache.clear();
+        this.chunkCache[Symbol.dispose]();
         await this.chunkLinkRegistry[Symbol.asyncDispose]();
     }
+}
+
+export class GridScaleWriter<rowType extends Array<any>> extends GridScaleBase<rowType> {
+
+    private readonly selfStoreThread: BackgroundThread;
+    private readonly workers = new Array<Worker>();
+
+    constructor(config: TConfig, workerCount: number) {
+        super(config);
+        const totalWorkers = Math.max(cpus.length, Math.min(0, workerCount));
+        const workerFilePath = join(dirname(fileURLToPath(import.meta.url)), './threads/long-running-thread.js');
+        for (let index = 0; index < totalWorkers; index++) {
+            this.workers.push(new Worker(workerFilePath, { workerData: { config, cacheLimit: config.maxDBOpen, bulkDropLimit: 10 } }));
+        }
+        if (this.workers.length === 0) {
+            this.selfStoreThread = new BackgroundThread();
+            this.selfStoreThread.initialize(`${process.pid}`, { config, cacheLimit: config.maxDBOpen, bulkDropLimit: 10 });
+        }
+    }
+
+    public async store<rawRowType extends Array<any>>(rawData: Map<tagName, rawRowType>, rowTransformer: (dataToFormat: rawRowType, insertTime: number) => rowType[], insertTime = Date.now()): Promise<void> {
+        const writerPartIdentifier = `${process.pid}`;
+        console.time("Split Operation")
+        const upsertPlan = super.upsertPlan(rawData, insertTime, rowTransformer);
+        console.timeEnd("Split Operation");
+
+        console.time("Write Operation");
+        if (this.selfStoreThread !== undefined) {
+            const payload = {
+                header: 'Execute',
+                subHeader: 'Store',
+                payload: upsertPlan
+            } as IThreadCommunication<upsertPlan<rowType>>;
+            this.selfStoreThread.work(payload);
+        }
+        else {
+            const chunkSize = Math.ceil(upsertPlan.chunkAllocations.size / this.workers.length);
+            const workLoad = Array.from(upsertPlan.chunkAllocations.entries());
+            const workerHandles = new Array<Promise<IThreadCommunication<unknown>>>();
+            for (let workerIndex = 0; workerIndex < this.workers.length; workerIndex++) {
+                workerHandles.push(new Promise<IThreadCommunication<unknown>>((resolve, reject) => {
+                    const worker = this.workers[workerIndex];
+                    const payload = {
+                        header: 'Execute',
+                        subHeader: 'Store',
+                        payload: { chunkAllocations: new Map(workLoad.splice(0, chunkSize)), chunkDisplacements: new Map() }
+                    } as IThreadCommunication<upsertPlan<rowType>>;
+                    worker.postMessage(JSON.stringify(payload));
+                    worker.once('message', (message) => {
+                        worker.removeAllListeners();
+                        const comMessage = deserialize(message);
+                        if (comMessage.subHeader.toLowerCase() === "error") {
+                            reject(new Error(comMessage.payload));
+                        }
+                        else {
+                            resolve(comMessage);
+                        }
+                    });
+                    worker.on('error', (error) => {
+                        worker.removeAllListeners();
+                        reject(error);
+                    });
+                }));
+            }
+            await Promise.all(workerHandles);
+        }
+        console.timeEnd("Write Operation");
+
+        //13.373s
+        console.time("Link Operation");
+        let displacedChunks = 0;
+        for (const [indexedLogicalChunkId, logicalChunkIds] of upsertPlan.chunkDisplacements) {
+            await this.chunkLinkRegistry.link(indexedLogicalChunkId, Array.from(logicalChunkIds.related.values()), logicalChunkIds.insertTimeBucketed, `${writerPartIdentifier}-${insertTime}`);
+            displacedChunks += logicalChunkIds.related.size;
+        }
+        console.timeEnd("Link Operation");
+
+        console.log(`Fragmentation: ${((displacedChunks / upsertPlan.chunkAllocations.size) * 100).toFixed(0)}% ,Total Chunks: ${upsertPlan.chunkAllocations.size}`);
+    }
+
+    public async [Symbol.asyncDispose]() {
+        await super[Symbol.asyncDispose]();
+        if (this.selfStoreThread !== undefined) {
+            this.selfStoreThread[Symbol.dispose]();
+        }
+        const payload = {
+            header: "Shutdown",
+            subHeader: "Shutdown",
+            payload: ''
+        } as IThreadCommunication<string>;
+        for (let index = 0; index < this.workers.length; index++) {
+            this.workers[index].postMessage(JSON.stringify(payload));
+            this.workers[index] = null;
+        }
+    }
+
 }

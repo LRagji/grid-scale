@@ -13,7 +13,7 @@
             ],
             "preLaunchTask": "npm: build - spikes",
             "cwd": "${workspaceFolder}/spikes",
-            "program": "${workspaceFolder}/spikes/src/reader.ts",
+            "program": "${workspaceFolder}/spikes/src/writer.ts",
             "outFiles": [
                 "${workspaceFolder}/spikes/dist/src//**/*.js"
             ]
