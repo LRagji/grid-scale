@@ -1,7 +1,7 @@
 import assert from "node:assert";
 import { describe, it } from "node:test";
 
-import { kWayMerge } from "../src/k-way-merge.js";
+import { kWayMerge } from "../src/merge/k-way-merge.js";
 
 
 describe("K-Way merging", () => {
