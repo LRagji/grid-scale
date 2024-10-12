@@ -19,9 +19,15 @@ export class ChunkCache {
                     if (evicted >= bulkEviction) {
                         break;
                     }
+                    if (chunk.canBeDisposed() === false) {
+                        continue;
+                    }
                     chunk[Symbol.dispose]();
                     this.chunkCache.delete(id);
                     evicted++;
+                }
+                if (evicted === 0) {
+                    throw new Error(`Chunk cache is full & no chunks can be evicted this time, please retry later.`);
                 }
             }
             const chunk = new Chunk(this.config, logicalChunkId);

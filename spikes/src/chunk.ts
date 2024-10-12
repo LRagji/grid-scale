@@ -7,6 +7,7 @@ type TChunkAccessMode = "readwrite" | "readonly";
 
 export class ChunkShard {
     private db: Database.Database;
+    private readCursorOpen = false;
     private readonly preConditionedSectors = new Set<string>();
     private readonly tableSqlStatement = (tableName: string) => `CREATE TABLE IF NOT EXISTS [${tableName}] (sampleTime INTEGER PRIMARY KEY NOT NULL, insertTime INTEGER NOT NULL, nValue INTEGER, oValue TEXT);`;
     private readonly indexSqlStatement = (tableName: string) => `CREATE INDEX IF NOT EXISTS [timeIndex_${tableName}] ON [${tableName}] (sampleTime,insertTime,nValue);`;
@@ -47,10 +48,17 @@ export class ChunkShard {
         })();
     }
 
-    public get<T>(sectorNames: string[], startInclusive: number, endExclusive: number): IterableIterator<T> {
-        return this.db.prepare<unknown[], T>(this.selectSqlStatement(sectorNames, startInclusive, endExclusive))
+    public *get<T>(sectorNames: string[], startInclusive: number, endExclusive: number): IterableIterator<T> {
+        const cursor = this.db.prepare<unknown[], T>(this.selectSqlStatement(sectorNames, startInclusive, endExclusive))
             .raw()
             .iterate();
+        let value = cursor.next();
+        while (!value.done) {
+            this.readCursorOpen = true;
+            yield value.value as T;
+            value = cursor.next();
+        }
+        this.readCursorOpen = false;
     }
 
     private selectSqlStatement(tagNames: string[], startInclusive: number, endExclusive: number): string {
@@ -68,12 +76,12 @@ export class ChunkShard {
 
     }
 
-    public canBeClosed() {
-        return this.db !== undefined && this.db.open && !this.db.inTransaction;
+    public canBeDisposed() {
+        return this.db !== undefined && this.db.open && !this.db.inTransaction && !this.readCursorOpen;
     }
 
     public [Symbol.dispose]() {
-        if (this.canBeClosed()) {
+        if (this.canBeDisposed()) {
             this.db.close();
         }
         else {
@@ -149,9 +157,18 @@ export class Chunk {
         return returnIterators;
     }
 
+    public canBeDisposed(): boolean {
+        for (const value of this.shardsCache.values()) {
+            if (!value.canBeDisposed()) {
+                return false;//Return false on first non-disposable
+            }
+        }
+        return true;
+    }
+
     public [Symbol.dispose]() {
         this.shardsCache.forEach((value, key) => {
-            if (value.canBeClosed()) {
+            if (value.canBeDisposed()) {
                 value[Symbol.dispose]();
                 this.shardsCache.delete(key);
             }
