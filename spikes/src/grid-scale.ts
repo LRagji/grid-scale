@@ -7,8 +7,8 @@ import { Worker } from "node:worker_threads";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ChunkCache } from "./chunk-cache.js";
-import { BackgroundThread } from "./background-thread.js";
-import { deserialize, IThreadCommunication } from "./threads/i-thread-communication.js";
+import { BackgroundPlugin, BackgroundPluginInitializeParam } from "./background-plugin.js";
+import { deserialize, IThreadCommunication, serialize } from "./threads/i-thread-communication.js";
 
 export type logicalChunkId = string;
 export type diskIndex = number;
@@ -110,64 +110,62 @@ export class GridScaleBase<rowType> {
 
 export class GridScaleWriter<rowType extends Array<any>> extends GridScaleBase<rowType> {
 
-    private readonly selfStoreThread: BackgroundThread;
+    private readonly selfStoreThread: BackgroundPlugin;
     private readonly workers = new Array<Worker>();
+    private readonly writerPartIdentifier = `${process.pid}`;
 
     constructor(config: TConfig, workerCount: number) {
         super(config);
-        const totalWorkers = Math.max(cpus.length, Math.min(0, workerCount));
+        const totalWorkers = Math.min(cpus().length, Math.max(0, workerCount));
         const workerFilePath = join(dirname(fileURLToPath(import.meta.url)), './threads/long-running-thread.js');
+        const pluginParameter = { config, cacheLimit: config.maxDBOpen, bulkDropLimit: 10 } as BackgroundPluginInitializeParam;
         for (let index = 0; index < totalWorkers; index++) {
-            this.workers.push(new Worker(workerFilePath, { workerData: { config, cacheLimit: config.maxDBOpen, bulkDropLimit: 10 } }));
+            this.workers.push(new Worker(workerFilePath, { workerData: [pluginParameter] }));
         }
         if (this.workers.length === 0) {
-            this.selfStoreThread = new BackgroundThread();
-            this.selfStoreThread.initialize(`${process.pid}`, { config, cacheLimit: config.maxDBOpen, bulkDropLimit: 10 });
+            this.selfStoreThread = new BackgroundPlugin();
+            this.selfStoreThread.initialize(this.writerPartIdentifier, pluginParameter);
         }
     }
 
     public async store<rawRowType extends Array<any>>(rawData: Map<tagName, rawRowType>, rowTransformer: (dataToFormat: rawRowType, insertTime: number) => rowType[], insertTime = Date.now()): Promise<void> {
-        const writerPartIdentifier = `${process.pid}`;
         console.time("Split Operation")
         const upsertPlan = super.upsertPlan(rawData, insertTime, rowTransformer);
         console.timeEnd("Split Operation");
 
         console.time("Write Operation");
-        if (this.selfStoreThread !== undefined) {
-            const payload = {
-                header: 'Execute',
-                subHeader: 'Store',
+        if (this.workers.length === 0) {
+            const pluginPayload = {
+                header: BackgroundPlugin.invokeHeader,
+                subHeader: BackgroundPlugin.invokeSubHeaders.Store,
                 payload: upsertPlan
             } as IThreadCommunication<upsertPlan<rowType>>;
-            this.selfStoreThread.work(payload);
+            this.selfStoreThread.work(pluginPayload);
         }
         else {
             const chunkSize = Math.ceil(upsertPlan.chunkAllocations.size / this.workers.length);
             const workLoad = Array.from(upsertPlan.chunkAllocations.entries());
-            const workerHandles = new Array<Promise<IThreadCommunication<unknown>>>();
+            const workerHandles = new Array<Promise<IThreadCommunication<string>>>();
             for (let workerIndex = 0; workerIndex < this.workers.length; workerIndex++) {
-                workerHandles.push(new Promise<IThreadCommunication<unknown>>((resolve, reject) => {
+                workerHandles.push(new Promise<IThreadCommunication<string>>((resolve, reject) => {
                     const worker = this.workers[workerIndex];
-                    const payload = {
-                        header: 'Execute',
-                        subHeader: 'Store',
+                    const pluginPayload = {
+                        header: BackgroundPlugin.invokeHeader,
+                        subHeader: BackgroundPlugin.invokeSubHeaders.Store,
                         payload: { chunkAllocations: new Map(workLoad.splice(0, chunkSize)), chunkDisplacements: new Map() }
                     } as IThreadCommunication<upsertPlan<rowType>>;
-                    worker.postMessage(JSON.stringify(payload));
-                    worker.once('message', (message) => {
-                        worker.removeAllListeners();
-                        const comMessage = deserialize(message);
-                        if (comMessage.subHeader.toLowerCase() === "error") {
-                            reject(new Error(comMessage.payload));
-                        }
-                        else {
-                            resolve(comMessage);
-                        }
-                    });
-                    worker.on('error', (error) => {
+                    worker.once('error', (error) => {
                         worker.removeAllListeners();
                         reject(error);
                     });
+
+                    worker.once('message', (message) => {
+                        worker.removeAllListeners();
+                        const comMessage = deserialize<string>(message);
+                        resolve(comMessage);
+                    });
+
+                    worker.postMessage(serialize(pluginPayload));
                 }));
             }
             await Promise.all(workerHandles);
@@ -178,7 +176,7 @@ export class GridScaleWriter<rowType extends Array<any>> extends GridScaleBase<r
         console.time("Link Operation");
         let displacedChunks = 0;
         for (const [indexedLogicalChunkId, logicalChunkIds] of upsertPlan.chunkDisplacements) {
-            await this.chunkLinkRegistry.link(indexedLogicalChunkId, Array.from(logicalChunkIds.related.values()), logicalChunkIds.insertTimeBucketed, `${writerPartIdentifier}-${insertTime}`);
+            await this.chunkLinkRegistry.link(indexedLogicalChunkId, Array.from(logicalChunkIds.related.values()), logicalChunkIds.insertTimeBucketed, `${this.writerPartIdentifier}-${insertTime}`);
             displacedChunks += logicalChunkIds.related.size;
         }
         console.timeEnd("Link Operation");
@@ -186,7 +184,7 @@ export class GridScaleWriter<rowType extends Array<any>> extends GridScaleBase<r
         console.log(`Fragmentation: ${((displacedChunks / upsertPlan.chunkAllocations.size) * 100).toFixed(0)}% ,Total Chunks: ${upsertPlan.chunkAllocations.size}`);
     }
 
-    public async [Symbol.asyncDispose]() {
+    public async[Symbol.asyncDispose]() {
         await super[Symbol.asyncDispose]();
         if (this.selfStoreThread !== undefined) {
             this.selfStoreThread[Symbol.dispose]();
@@ -197,7 +195,7 @@ export class GridScaleWriter<rowType extends Array<any>> extends GridScaleBase<r
             payload: ''
         } as IThreadCommunication<string>;
         for (let index = 0; index < this.workers.length; index++) {
-            this.workers[index].postMessage(JSON.stringify(payload));
+            this.workers[index].postMessage(serialize(payload));
             this.workers[index] = null;
         }
     }

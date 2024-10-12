@@ -1,65 +1,58 @@
 import { parentPort, MessagePort, threadId, workerData, isMainThread } from "node:worker_threads";
-import { BackgroundThread } from "../background-thread.js";
-import { ISyncRunner } from "./i-sync-runner.js";
+import { BackgroundPlugin } from "../background-plugin.js";
+import { ISyncPlugin } from "./i-sync-plugin.js";
 import { deserialize, IThreadCommunication, serialize } from "./i-thread-communication.js";
 
 export class LongRunningThread {
-    private readonly runners: Map<string, ISyncRunner<any>> = new Map<string, ISyncRunner<any>>();
 
-    constructor(private readonly messagePort: MessagePort, private readonly identity: string, syncWorkItems: { runner: ISyncRunner<any>, args: any }[]) {
-        syncWorkItems.forEach((item) => {
-            item.runner.initialize(identity, item.args);
-            this.runners.set(item.runner.name, item.runner);
+    private readonly plugins: Map<string, ISyncPlugin<any>> = new Map<string, ISyncPlugin<any>>();
+
+    constructor(private readonly messagePort: MessagePort, private readonly identity: string, plugins: ISyncPlugin<any>[], pluginInitializeArgs: any[]) {
+        let index = 0;
+        plugins.forEach((plugin) => {
+            plugin.initialize(identity, pluginInitializeArgs[index]);
+            this.plugins.set(plugin.name, plugin);
+            index++;
         });
     }
 
-    public async start(): Promise<void> {
+    public start() {
         this.messagePort.on('message', this.work.bind(this));
-        this.messagePort.on('error', (error) => {
-            console.error(`Error in worker: ${error.message}`);
-            this.stop();
-        });
+        this.messagePort.on('error', this.stop.bind(this));
     }
 
-    public async stop(): Promise<void> {
+    public stop() {
         this.messagePort.removeAllListeners();
-        this.runners.forEach((runner) => runner[Symbol.dispose]());
-        this.runners.clear();
+        this.plugins.forEach((runner) => runner[Symbol.dispose]());
+        this.plugins.clear();
         this.messagePort.close();
     }
 
-    public async work(message: Buffer): Promise<void> {
+    public work(workMessage: Buffer) {
         try {
-            const parsedPayload = deserialize(message);
-            switch (parsedPayload.header) {
-                case "Shutdown":
-                    await this.stop();
-                    break;
-                default:
-                    const runner = this.runners.get(parsedPayload.header);
-                    if (runner != undefined) {
-                        const response = runner.work(parsedPayload);
-                        this.messagePort.postMessage(serialize(response));
-                    }
-                    else {
-                        throw new Error(`Unknown header: ${parsedPayload.header}`);
-                    }
-                    break;
+            const parsedPayload = deserialize(workMessage) as IThreadCommunication<any>;
+            if (parsedPayload.header.toLowerCase() === "shutdown") {
+                this.stop();
+                return;
+            }
+
+            const plugin = this.plugins.get(parsedPayload.header);
+            if (plugin != undefined) {
+                const response = plugin.work(parsedPayload);
+                this.messagePort.postMessage(serialize(response));
+            }
+            else {
+                throw new Error(`Unknown header: ${parsedPayload.header}`);
             }
 
         } catch (error) {
-            console.error(`Error in worker[${this.identity}]: ${error.message}`);
             const payload: IThreadCommunication<String> = {
                 header: "Error",
-                subHeader: "Error",
+                subHeader: `Error in worker[${this.identity}]`,
                 payload: error.message
             };
             this.messagePort.postMessage(serialize(payload));
         }
-    }
-
-    public async [Symbol.asyncDispose]() {
-        await this.stop();
     }
 
     public [Symbol.dispose]() {
@@ -67,7 +60,7 @@ export class LongRunningThread {
     }
 }
 
-if (!isMainThread) {
-    const longRunning = new LongRunningThread(parentPort, `${process.pid}-${threadId}`, [{ runner: new BackgroundThread(), args: { config: workerData, cacheLimit: 100, bulkDropLimit: 10 } }]);
+if (isMainThread === false) {
+    const longRunning = new LongRunningThread(parentPort, `${process.pid}-${threadId}`, [new BackgroundPlugin()], workerData as any[]);
     longRunning.start();
 }

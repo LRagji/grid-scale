@@ -1,6 +1,5 @@
 import { TConfig } from "./t-config.js";
-import { GridScaleBase, GridScaleWriter, samples } from "./grid-scale.js";
-import { ChunkLinker } from "./chunk-linker.js";
+import { GridScaleWriter, samples } from "./grid-scale.js";
 import { CommonConfig, generateRandomSamples } from "./utils.js";
 
 
@@ -12,12 +11,12 @@ import { CommonConfig, generateRandomSamples } from "./utils.js";
 // For Read generate a query plan and get data parallel.
 
 
-const totalTags = 1000;
-const totalSamplesPerTag = 10;
+const totalTags = 50000;
+const totalSamplesPerTag = 1;
 const config: TConfig = CommonConfig()
 const insertTime = Date.now();
 //const selfId = `${process.pid}-${1}`;
-const gridScale = new GridScaleWriter<number[]>(config, 1);
+const gridScale = new GridScaleWriter<number[]>(config, 10);
 //const linker = new ChunkLinker(config);
 
 function formatSamples(input: samples, insertTime: number): number[][] {
@@ -79,3 +78,19 @@ await gridScale[Symbol.asyncDispose]();
 // Link Operation: 13.373s
 // Close Operation: 1.801s
 // Fragmentation: 100%,Total Chunks: 50000
+
+// Single Thread
+// Generate Operation: 12.966ms
+// Split Operation: 117.912ms
+// Write Operation: 25.318s
+// Link Operation: 65.455ms
+// Fragmentation: 100% ,Total Chunks: 100
+// Total: 25.503s
+
+// 10 Threads
+// Generate Operation: 18.07ms
+// Split Operation: 127.049ms
+// Write Operation: 5.455s
+// Link Operation: 60.543ms
+// Fragmentation: 100 % , Total Chunks: 100
+// Total: 5.644s
