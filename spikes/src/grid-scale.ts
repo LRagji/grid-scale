@@ -1,4 +1,3 @@
-import { Chunk } from "./chunk.js";
 import { ChunkId } from "./chunk-id.js";
 import { TConfig } from "./t-config.js";
 import { ChunkLinker } from "./chunk-linker.js";
@@ -6,10 +5,9 @@ import { cpus } from "node:os";
 import { Worker } from "node:worker_threads";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { ChunkCache } from "./chunk-cache.js";
 import { BackgroundPlugin, BackgroundPluginInitializeParam } from "./background-plugin.js";
 import { deserialize, IThreadCommunication, serialize } from "./threads/i-thread-communication.js";
-import { kWayMerge } from "./merge/k-way-merge.js";
+import { randomInt } from "node:crypto";
 
 export type logicalChunkId = string;
 export type diskIndex = number;
@@ -17,17 +15,18 @@ export type tagName = string;
 export type samples = number[];
 export type setDiskPath = string;
 export type upsertPlan<rowType> = { chunkAllocations: Map<logicalChunkId, Map<diskIndex, Map<tagName, rowType[]>>>, chunkDisplacements: Map<logicalChunkId, { insertTimeBucketed: number, related: Set<logicalChunkId> }> };
+export type queryPlan = Map<logicalChunkId, Map<tagName, Map<setDiskPath, diskIndex>>>;
+export type distributedQueryPlan = { planId: string, plan: queryPlan, interestedTags: tagName[], startInclusiveTime: number, endExclusiveTime: number, pageSize: number };
+export type distributedIteratorResult<dataType> = { value: dataType, done: boolean };
 
 export class GridScaleBase<rowType extends Array<any>> {
 
-    private readonly chunkCache: ChunkCache;
     protected readonly chunkLinkRegistry: ChunkLinker
     private readonly selfStoreThread: BackgroundPlugin;
     private readonly workers = new Array<Worker>();
     private readonly writerPartIdentifier = `${process.pid}`;
 
     constructor(private readonly config: TConfig, workerCount: number) {
-        this.chunkCache = new ChunkCache(config, config.maxDBOpen, 10);
         this.chunkLinkRegistry = new ChunkLinker(config);
         const totalWorkers = Math.min(cpus().length, Math.max(0, workerCount));
         const workerFilePath = join(dirname(fileURLToPath(import.meta.url)), './threads/long-running-thread.js');
@@ -58,26 +57,29 @@ export class GridScaleBase<rowType extends Array<any>> {
         else {
             const chunkSize = Math.ceil(upsertPlan.chunkAllocations.size / this.workers.length);
             const workLoad = Array.from(upsertPlan.chunkAllocations.entries());
-            const workerHandles = new Array<Promise<IThreadCommunication<string>>>();
+            const workerHandles = new Array<Promise<string>>();
             for (let workerIndex = 0; workerIndex < this.workers.length; workerIndex++) {
-                workerHandles.push(new Promise<IThreadCommunication<string>>((resolve, reject) => {
+                workerHandles.push(new Promise<string>((resolve, reject) => {
                     const worker = this.workers[workerIndex];
                     const pluginPayload = {
                         header: BackgroundPlugin.invokeHeader,
                         subHeader: BackgroundPlugin.invokeSubHeaders.Store,
                         payload: { chunkAllocations: new Map(workLoad.splice(0, chunkSize)), chunkDisplacements: new Map() }
                     } as IThreadCommunication<upsertPlan<rowType>>;
-                    worker.once('error', (error) => {
-                        worker.removeAllListeners();
+
+                    const workerErrorHandler = (error: Error) => {
+                        worker.off('message', workerMessageHandler);
                         reject(error);
-                    });
+                    };
 
-                    worker.once('message', (message) => {
-                        worker.removeAllListeners();
+                    const workerMessageHandler = (message: any) => {
+                        worker.off('error', workerErrorHandler);
                         const comMessage = deserialize<string>(message);
-                        resolve(comMessage);
-                    });
+                        resolve(comMessage.payload);
+                    };
 
+                    worker.once('error', workerErrorHandler);
+                    worker.once('message', workerMessageHandler);
                     worker.postMessage(serialize(pluginPayload));
                 }));
             }
@@ -125,39 +127,22 @@ export class GridScaleBase<rowType extends Array<any>> {
         return { chunkAllocations: chunkGroups, chunkDisplacements };
     }
 
-    public async *read(tagNames: tagName[], startInclusiveTime: number, endExclusiveTime: number, diagnostics = new Map<string, any>()): AsyncIterableIterator<IterableIterator<rowType>> {
+    public async *read(tagNames: tagName[], startInclusiveTime: number, endExclusiveTime: number, diagnostics = new Map<string, any>()): AsyncIterableIterator<AsyncIterableIterator<rowType>> {
         let startTime = startInclusiveTime;
+        let queryId = `${Date.now()}-${randomInt(281474976710655)}`;
         let pageNumber = 0;
         while (startTime < endExclusiveTime) {
             let diagnosticTime = Date.now();
             const pageEndTime = Math.min(startTime + this.config.timeBucketWidth, endExclusiveTime);
 
             //Generate Query Plan Operation
+            //[ChunkId]|[TagName]|[DiskSetPath]|[DiskIndex]
             const queryPlan = await this.readQueryPlanPageByTime(tagNames, startTime);
             diagnostics.set(`${pageNumber}-Query Plan`, Date.now() - diagnosticTime);
 
             diagnosticTime = Date.now();
-            //Actual Disk Search & Open Operations
-            const resultCursor = new Map<tagName, IterableIterator<rowType>[]>();
-            for (const [chunkId, tagDiskInfo] of queryPlan) {
-                const chunk = this.chunkCache.getChunk(chunkId);
-                for (const [tagName, diskInfo] of tagDiskInfo) {
-                    const cursors = resultCursor.get(tagName) || new Array<IterableIterator<rowType>>();
-                    cursors.push(...chunk.get<rowType>(diskInfo, [tagName], startTime, pageEndTime));
-                    resultCursor.set(tagName, cursors);
-                }
-            }
-            diagnostics.set(`${pageNumber}-Disk Search & Open`, Date.now() - diagnosticTime);
-
-            diagnosticTime = Date.now();
-            //Iterate & Merge Operation
-            for (const [tagName, cursors] of resultCursor) {
-                if (cursors.length === 0) {
-                    continue;
-                }
-                yield kWayMerge<rowType>(cursors, GridScaleBase.frameMerge<rowType>);
-            }
-            diagnostics.set(`${pageNumber}-Iteration & Merge`, Date.now() - diagnosticTime);
+            yield this.distributePlan<rowType>(queryPlan, tagNames, startTime, pageEndTime, 10000, `${queryId}-${pageNumber}`);
+            diagnostics.set(`${pageNumber}-Worker Disk Search, Open, Merge & Iterate`, Date.now() - diagnosticTime);
 
             pageNumber++;
             startTime = pageEndTime;
@@ -165,36 +150,71 @@ export class GridScaleBase<rowType extends Array<any>> {
 
     }
 
-    private static frameMerge<T>(elements: T[]): { yieldIndex: number, purgeIndexes: number[] } {
-        let purgeIndexes = [];
-        let yieldIndex = -1;
-        elements.forEach((element, index) => {
-            if (element == null || Array.isArray(element) === false || (Array.isArray(element) && element.length === 0)) {
-                purgeIndexes.push(index);
-            }
-            if (index === 0) {
-                yieldIndex = index;
-            }
-            else {
-                //TagName need to be compared
-                if (element[4] === elements[yieldIndex][4] && element[0] < elements[yieldIndex][0]) {
-                    yieldIndex = index;
+    private async *distributePlan<rowType>(queryPlan: queryPlan, tagNames: tagName[], startInclusiveTime: number, endExclusiveTime: number, pageSize: number, queryId: string): AsyncIterableIterator<rowType> {
+        if (this.workers.length === 0) {
+            const pluginPayload = {
+                header: BackgroundPlugin.invokeHeader,
+                subHeader: BackgroundPlugin.invokeSubHeaders.Iterate,
+                payload: { planId: queryId, plan: queryPlan, interestedTags: tagNames, startInclusiveTime, endExclusiveTime, pageSize }
+            } as IThreadCommunication<distributedQueryPlan>;
+            let result = this.selfStoreThread.work(pluginPayload) as IThreadCommunication<distributedIteratorResult<Array<rowType>>>;
+            while (result.payload.done === false) {
+                for (const row of result.payload.value) {
+                    yield row;
                 }
-                else if (element[4] === elements[yieldIndex][4] && element[0] === elements[yieldIndex][0]) {
-                    //Compare Insert time in descending order MVCC
-                    if (elements[1] > elements[yieldIndex][1]) {
-                        purgeIndexes.push(yieldIndex);
-                        yieldIndex = index;
-                    }
-                    else {
-                        purgeIndexes.push(index);
-                    }
-                }
+                result = this.selfStoreThread.work(pluginPayload) as IThreadCommunication<distributedIteratorResult<Array<rowType>>>;
             }
+        }
+        else {
+            const chunkSize = Math.ceil(tagNames.length / this.workers.length);
+            const workerPayloads = new Array<distributedQueryPlan>();
+            for (let workerIndex = 0; workerIndex < this.workers.length; workerIndex++) {
+                const distributedQueryPlan: distributedQueryPlan = { planId: `${queryId}-${workerIndex}`, plan: queryPlan, interestedTags: tagNames.splice(0, chunkSize), startInclusiveTime, endExclusiveTime, pageSize };
+                workerPayloads.push(distributedQueryPlan);
+            }
+            while (workerPayloads.some(payload => payload !== null)) {
+                const workerHandles = new Array<Promise<distributedIteratorResult<Array<rowType>>>>();
+                for (let workerIndex = 0; workerIndex < this.workers.length; workerIndex++) {
+                    if (workerPayloads[workerIndex] === null) {
+                        workerHandles.push(Promise.resolve({ value: [], done: true }));
+                        continue;
+                    }
+                    workerHandles.push(new Promise<distributedIteratorResult<Array<rowType>>>((resolve, reject) => {
+                        const worker = this.workers[workerIndex];
+                        const pluginPayload = {
+                            header: BackgroundPlugin.invokeHeader,
+                            subHeader: BackgroundPlugin.invokeSubHeaders.Iterate,
+                            payload: workerPayloads[workerIndex]
+                        } as IThreadCommunication<distributedQueryPlan>;
 
-        });
-        return { yieldIndex, purgeIndexes };
-    };
+                        const workerErrorHandler = (error: Error) => {
+                            worker.off('message', workerMessageHandler);
+                            reject(error);
+                        };
+                        const workerMessageHandler = (message: any) => {
+                            worker.off('error', workerErrorHandler);
+                            const comMessage = deserialize<distributedIteratorResult<Array<rowType>>>(message);
+                            resolve(comMessage.payload);
+                        };
+
+                        worker.once('error', workerErrorHandler);
+                        worker.once('message', workerMessageHandler);
+                        worker.postMessage(serialize(pluginPayload));
+                    }));
+                }
+
+                for (let responseIndex = 0; responseIndex < workerHandles.length; responseIndex++) {
+                    const response = await workerHandles[responseIndex];
+                    for (const row of response.value) {
+                        yield row;
+                    }
+                    if (response.done === true) {
+                        workerPayloads[responseIndex] = null;
+                    }
+                }
+            }
+        }
+    }
 
     private updateQueryPlan(tagName: tagName, logicalId: logicalChunkId, diskIndexFn: (size: number) => number, queryPlanByRef: Map<logicalChunkId, Map<tagName, Map<setDiskPath, diskIndex>>>) {
         const tagDiskAccess = queryPlanByRef.get(logicalId) || new Map<tagName, Map<setDiskPath, diskIndex>>();
@@ -207,8 +227,7 @@ export class GridScaleBase<rowType extends Array<any>> {
         queryPlanByRef.set(logicalId, tagDiskAccess);
     }
 
-    private async readQueryPlanPageByTime(tagNames: tagName[], startInclusiveTime: number)
-        : Promise<Map<logicalChunkId, Map<tagName, Map<setDiskPath, diskIndex>>>> {
+    private async readQueryPlanPageByTime(tagNames: tagName[], startInclusiveTime: number): Promise<queryPlan> {
         type chunkInfo = { id: logicalChunkId, insertTime: number };
         const startInclusiveBucketedTime = ChunkId.bucket(startInclusiveTime, this.config.timeBucketWidth);
         const tempResults = new Map<logicalChunkId, Map<tagName, Map<setDiskPath, diskIndex>>>();
@@ -255,7 +274,6 @@ export class GridScaleBase<rowType extends Array<any>> {
     }
 
     public async[Symbol.asyncDispose]() {
-        this.chunkCache[Symbol.dispose]();
         await this.chunkLinkRegistry[Symbol.asyncDispose]();
         if (this.selfStoreThread !== undefined) {
             this.selfStoreThread[Symbol.dispose]();

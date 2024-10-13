@@ -7,24 +7,24 @@ import { CommonConfig, generateTagNames } from "./utils.js";
 //Merge
 
 const config: TConfig = CommonConfig();
-const gridScale = new GridScaleBase<any[]>(config, 0);
+const gridScale = new GridScaleBase<any[]>(config, 10);
 const totalTags = 50000;
 const startInclusiveTime = 0;//Date.now();
 const endExclusiveTime = 1//startInclusiveTime + config.timeBucketWidth;
 
-console.time("Generate Operation");
-const tagNames = generateTagNames(totalTags);
-console.timeEnd("Generate Operation");
+const tagNames = generateTagNames(totalTags, 1);
 
 console.time("Total")
+const resultTagNames = new Set<string>();
 const diagnostics = new Map<string, number>();
 const pageCursor = gridScale.read(tagNames, startInclusiveTime, endExclusiveTime, diagnostics);
 for await (const tagCursor of pageCursor) {// Iterates through time pages
-    for (const dataRow of tagCursor) { //Iterates through logical chunk pages.
-        console.log(dataRow);
+    for await (const dataRow of tagCursor) { //Iterates through logical chunk pages.
+        resultTagNames.add(dataRow[4]);
     }
-    break;
+    //break;
 }
+console.log(`Total Tags: ${resultTagNames.size}`);
 console.timeEnd("Total")
 for (const [key, value] of diagnostics) {
     console.log(`${key} ${value}`);

@@ -25,10 +25,7 @@ function formatSamples(input: samples, insertTime: number): number[][] {
     return returnValues;
 }
 
-//1.050s
-console.time("Generate Operation");
 const generatedData = generateRandomSamples(totalTags, totalSamplesPerTag);
-console.timeEnd("Generate Operation");
 
 console.time("Total")
 const diagnostics = new Map<string, number>();

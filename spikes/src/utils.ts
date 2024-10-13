@@ -16,9 +16,9 @@ function generateIndexedString(length: number, index: number) {
     return `Tag${index}`;
 }
 
-export function generateTagNames(totalTags: number): Array<string> {
+export function generateTagNames(totalTags: number, increment: number = 1): Array<string> {
     const tagNames = new Array<string>();
-    for (let tagIndex = 0; tagIndex < totalTags; tagIndex++) {
+    for (let tagIndex = 0; (tagIndex / increment) < totalTags; tagIndex += increment) {
         const tagName = generateIndexedString(255, tagIndex);
         tagNames.push(tagName);
     }
