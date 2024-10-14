@@ -3,7 +3,7 @@ import { distributedQueryPlan, tagName, upsertPlan } from "./grid-scale.js";
 import { kWayMerge } from "./merge/k-way-merge.js";
 import { TConfig } from "./t-config.js";
 import { ISyncPlugin } from "./threads/i-sync-plugin.js";
-import { IThreadCommunication } from "./threads/i-thread-communication.js";
+import { HeaderPayload, IThreadCommunication } from "./threads/i-thread-communication.js";
 
 export type BackgroundPluginInitializeParam = { config: TConfig, cacheLimit: number, bulkDropLimit: number };
 
@@ -98,7 +98,7 @@ export class BackgroundPlugin implements ISyncPlugin<BackgroundPluginInitializeP
             resultPage.done = true;
         }
         return {
-            header: "Response",
+            header: HeaderPayload.Response,
             subHeader: "Response",
             payload: resultPage
         } as IThreadCommunication<IteratorResult<Array<unknown>>>;
@@ -142,7 +142,7 @@ export class BackgroundPlugin implements ISyncPlugin<BackgroundPluginInitializeP
             }
         }
         return {
-            header: "Response",
+            header: HeaderPayload.Response,
             subHeader: "Response",
             payload: "Success"
         };
