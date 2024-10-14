@@ -1,8 +1,10 @@
 import v8 from "node:v8"
 
+export enum HeaderPayload { "Shutdown" = "Shutdown", "Response" = "Response", "Error" = "Error" }
+
 export interface IThreadCommunication<payloadType> {
     payload: payloadType;
-    header: string | "Shutdown" | "Response" | "Error";
+    header: string | HeaderPayload;
     subHeader: string;
 }
 

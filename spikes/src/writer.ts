@@ -10,6 +10,7 @@ import { CommonConfig, generateRandomSamples } from "./utils.js";
 // For Write collect all chunks and set data parallel.
 // For Read generate a query plan and get data parallel.
 
+console.log(`Started`);
 
 const totalTags = 50000;
 const totalSamplesPerTag = 1;

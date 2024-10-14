@@ -6,6 +6,8 @@ import { CommonConfig, generateTagNames } from "./utils.js";
 //Read
 //Merge
 
+console.log(`Started`);
+
 const config: TConfig = CommonConfig();
 const gridScale = new GridScaleBase<any[]>(config, 10);
 const totalTags = 50000;

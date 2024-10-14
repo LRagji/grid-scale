@@ -10,7 +10,7 @@ export type BackgroundPluginInitializeParam = { config: TConfig, cacheLimit: num
 export class BackgroundPlugin implements ISyncPlugin<BackgroundPluginInitializeParam> {
 
     public static readonly invokeHeader: "BackgroundPlugin" = "BackgroundPlugin";
-    public static readonly invokeSubHeaders = { "Store": "Store", "Iterate": "Iterate" };
+    public static readonly invokeSubHeaders = { "Store": "Store", "Iterate": "Iterate", "CloseQuery": "CloseQuery" };
 
     public readonly name = BackgroundPlugin.invokeHeader;
 
@@ -23,38 +23,21 @@ export class BackgroundPlugin implements ISyncPlugin<BackgroundPluginInitializeP
         this.identity = identity;
     }
 
-    work(input: IThreadCommunication<upsertPlan<Array<unknown>> | distributedQueryPlan>): IThreadCommunication<string | IteratorResult<Array<unknown>>> {
+    work(input: IThreadCommunication<string | upsertPlan<Array<unknown>> | distributedQueryPlan>): IThreadCommunication<string | IteratorResult<Array<unknown>>> {
         switch (input.subHeader) {
             case BackgroundPlugin.invokeSubHeaders.Store:
                 return this.store(input.payload as upsertPlan<Array<unknown>>);
                 break;
+            case BackgroundPlugin.invokeSubHeaders.CloseQuery:
+                const queryId = input.payload as string;
+                if (this.activeQueries.has(queryId)) {
+                    const queryIterator = this.activeQueries.get(queryId);
+                    queryIterator.return();
+                    this.activeQueries.delete(queryId);
+                }
+                break;
             case BackgroundPlugin.invokeSubHeaders.Iterate:
-                const distributedQueryPlan = input.payload as distributedQueryPlan;
-                let existingQuery = this.activeQueries.get(distributedQueryPlan.planId);
-                if (existingQuery == null) {
-                    existingQuery = this.resultIterate(distributedQueryPlan);
-                    this.activeQueries.set(distributedQueryPlan.planId, existingQuery);
-                }
-                let iteratorResult = existingQuery.next();
-                const resultPage: IteratorResult<Array<unknown>> = {
-                    value: new Array<unknown>(), done: false as boolean
-                };
-                while (iteratorResult.done === false && resultPage.value.length < (distributedQueryPlan.pageSize - 1)) {
-                    resultPage.value.push(iteratorResult.value);
-                    iteratorResult = existingQuery.next();
-                }
-                if (iteratorResult.done === false && resultPage.value.length === (distributedQueryPlan.pageSize - 1)) {
-                    resultPage.value.push(iteratorResult.value);
-                }
-                if (iteratorResult.done && resultPage.value.length === 0) {
-                    this.activeQueries.delete(distributedQueryPlan.planId);
-                    resultPage.done = true;
-                }
-                return {
-                    header: "Response",
-                    subHeader: "Response",
-                    payload: resultPage
-                } as IThreadCommunication<IteratorResult<Array<unknown>>>;
+                return this.read(input.payload as distributedQueryPlan);
                 break;
             default:
                 throw new Error(`Unknown subHeader: ${input.subHeader}`);
@@ -92,31 +75,61 @@ export class BackgroundPlugin implements ISyncPlugin<BackgroundPluginInitializeP
         return { yieldIndex, purgeIndexes };
     };
 
-    private * resultIterate<rowType>(distributedQueryPlan: distributedQueryPlan): IterableIterator<rowType> {
-        //Actual Disk Search & Open Operations
-        const whiteListedTags = new Set<string>(distributedQueryPlan.interestedTags);
-        const tagWiseDiskIterators = new Map<tagName, IterableIterator<rowType>[]>();
-        for (const [chunkId, tagDiskInfo] of distributedQueryPlan.plan) {
-            const chunk = this.chunkCache.getChunk(chunkId);
-            for (const [tagName, diskInfo] of tagDiskInfo) {
-                if (whiteListedTags.has(tagName) === false) {
-                    continue;
-                }
-                const iterators = chunk.get<rowType>(diskInfo, [tagName], distributedQueryPlan.startInclusiveTime, distributedQueryPlan.endExclusiveTime);
-                if (iterators.length > 0) {
-                    //Gather all the iterators for a tag from every chunk(For MVCC and H-Scale Merge)
-                    const existingIterators = tagWiseDiskIterators.get(tagName) || [];
-                    existingIterators.push(...iterators);
-                    tagWiseDiskIterators.set(tagName, existingIterators);
+    private read(distributedQueryPlan: distributedQueryPlan): IThreadCommunication<IteratorResult<Array<unknown>>> {
+        let existingQuery = this.activeQueries.get(distributedQueryPlan.planId);
+        if (existingQuery == null) {
+            existingQuery = this.resultIterate(distributedQueryPlan);
+            this.activeQueries.set(distributedQueryPlan.planId, existingQuery);
+        }
+        let iteratorResult = existingQuery.next();
+        const resultPage: IteratorResult<Array<unknown>> = {
+            value: new Array<unknown>(), done: false as boolean
+        };
+        while (iteratorResult.done === false && resultPage.value.length < (distributedQueryPlan.pageSize - 1)) {
+            resultPage.value.push(iteratorResult.value);
+            iteratorResult = existingQuery.next();
+        }
+        //Capture the last element if iterator is not done.
+        if (iteratorResult.done === false && resultPage.value.length === (distributedQueryPlan.pageSize - 1)) {
+            resultPage.value.push(iteratorResult.value);
+        }
+        if (iteratorResult.done && resultPage.value.length === 0) {
+            this.activeQueries.delete(distributedQueryPlan.planId);
+            resultPage.done = true;
+        }
+        return {
+            header: "Response",
+            subHeader: "Response",
+            payload: resultPage
+        } as IThreadCommunication<IteratorResult<Array<unknown>>>;
+    }
 
+    private *resultIterate<rowType>(distributedQueryPlan: distributedQueryPlan): IterableIterator<rowType> {
+        for (const [logicalChunkId, whiteListedTags] of distributedQueryPlan.plan.groupedTags) {
+            //Actual Disk Search & Open Operations
+            const tagWiseDiskIterators = new Map<tagName, IterableIterator<rowType>[]>();
+            for (const [chunkId, tagDiskInfo] of distributedQueryPlan.plan.plan) {
+                for (const [tagName, diskInfo] of tagDiskInfo) {
+                    if (whiteListedTags.has(tagName) === false) {
+                        continue;
+                    }
+                    const chunk = this.chunkCache.getChunk(chunkId);//It is already cached.
+                    const iterators = chunk.get<rowType>(diskInfo, [tagName], distributedQueryPlan.startInclusiveTime, distributedQueryPlan.endExclusiveTime);
+                    if (iterators.length > 0) {
+                        //Gather all the iterators for a tag from every chunk(For MVCC and H-Scale Merge)
+                        const existingIterators = tagWiseDiskIterators.get(tagName) || [];
+                        existingIterators.push(...iterators);
+                        tagWiseDiskIterators.set(tagName, existingIterators);
+
+                    }
                 }
             }
-        }
-        // Merge & Iterate Operation
-        const results = new Array<unknown>();
-        for (const [tagName, iterators] of tagWiseDiskIterators) {
-            for (const dataRow of kWayMerge<rowType>(iterators, BackgroundPlugin.frameMerge<rowType>)) {
-                yield dataRow;
+            // Merge & Iterate Operation
+            const results = new Array<unknown>();
+            for (const [tagName, iterators] of tagWiseDiskIterators) {
+                for (const dataRow of kWayMerge<rowType>(iterators, BackgroundPlugin.frameMerge<rowType>)) {
+                    yield dataRow;
+                }
             }
         }
     }

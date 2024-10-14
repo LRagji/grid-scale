@@ -51,11 +51,9 @@ export function CommonConfig(): TConfig {
         fileNamePost: ".db",
         timeBucketTolerance: 1,
         activeCalculatorIndex: 2,
-        maxDBOpen: 1000,
+        maxDBOpen: 5,
         logicalChunkPrefix: "D",
         logicalChunkSeperator: "|",
-        redisConnection: 'redis://localhost:6379',
-        readerThreads: 10,
-        writerThreads: 10
+        redisConnection: 'redis://localhost:6379'
     } as TConfig;
 }

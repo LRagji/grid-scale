@@ -6,7 +6,7 @@ import { Worker } from "node:worker_threads";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { BackgroundPlugin, BackgroundPluginInitializeParam } from "./background-plugin.js";
-import { deserialize, IThreadCommunication, serialize } from "./threads/i-thread-communication.js";
+import { deserialize, HeaderPayload, IThreadCommunication, serialize } from "./threads/i-thread-communication.js";
 import { randomInt } from "node:crypto";
 
 export type logicalChunkId = string;
@@ -15,27 +15,27 @@ export type tagName = string;
 export type samples = number[];
 export type setDiskPath = string;
 export type upsertPlan<rowType> = { chunkAllocations: Map<logicalChunkId, Map<diskIndex, Map<tagName, rowType[]>>>, chunkDisplacements: Map<logicalChunkId, { insertTimeBucketed: number, related: Set<logicalChunkId> }> };
-export type queryPlan = Map<logicalChunkId, Map<tagName, Map<setDiskPath, diskIndex>>>;
-export type distributedQueryPlan = { planId: string, plan: queryPlan, interestedTags: tagName[], startInclusiveTime: number, endExclusiveTime: number, pageSize: number };
+export type queryPlan = { plan: Map<logicalChunkId, Map<tagName, Map<setDiskPath, diskIndex>>>, groupedTags: Map<logicalChunkId, Set<tagName>> };
+export type distributedQueryPlan = { planId: string, plan: queryPlan, startInclusiveTime: number, endExclusiveTime: number, pageSize: number };
 
 export class GridScaleBase<rowType extends Array<any>> {
 
     protected readonly chunkLinkRegistry: ChunkLinker
-    private readonly selfStoreThread: BackgroundPlugin;
-    private readonly workers = new Array<Worker>();
+    private readonly selfWorker: BackgroundPlugin;
+    private readonly externalWorkers = new Array<Worker>();
     private readonly writerPartIdentifier = `${process.pid}`;
 
-    constructor(private readonly config: TConfig, workerCount: number) {
+    constructor(private readonly config: TConfig, workerCount: number = 0) {
         this.chunkLinkRegistry = new ChunkLinker(config);
         const totalWorkers = Math.min(cpus().length, Math.max(0, workerCount));
         const workerFilePath = join(dirname(fileURLToPath(import.meta.url)), './threads/long-running-thread.js');
         const pluginParameter = { config, cacheLimit: config.maxDBOpen, bulkDropLimit: 10 } as BackgroundPluginInitializeParam;
         for (let index = 0; index < totalWorkers; index++) {
-            this.workers.push(new Worker(workerFilePath, { workerData: [pluginParameter] }));
+            this.externalWorkers.push(new Worker(workerFilePath, { workerData: [pluginParameter] }));
         }
-        if (this.workers.length === 0) {
-            this.selfStoreThread = new BackgroundPlugin();
-            this.selfStoreThread.initialize(this.writerPartIdentifier, pluginParameter);
+        if (this.externalWorkers.length === 0) {
+            this.selfWorker = new BackgroundPlugin();
+            this.selfWorker.initialize(this.writerPartIdentifier, pluginParameter);
         }
     }
 
@@ -45,21 +45,21 @@ export class GridScaleBase<rowType extends Array<any>> {
         diagnostics.set("Query Plan", Date.now() - diagnosticTime);
 
         diagnosticTime = Date.now();
-        if (this.workers.length === 0) {
+        if (this.externalWorkers.length === 0) {
             const pluginPayload = {
                 header: BackgroundPlugin.invokeHeader,
                 subHeader: BackgroundPlugin.invokeSubHeaders.Store,
                 payload: upsertPlan
             } as IThreadCommunication<upsertPlan<rowType>>;
-            this.selfStoreThread.work(pluginPayload);
+            this.selfWorker.work(pluginPayload);
         }
         else {
-            const chunkSize = Math.ceil(upsertPlan.chunkAllocations.size / this.workers.length);
+            const chunkSize = Math.ceil(upsertPlan.chunkAllocations.size / this.externalWorkers.length);
             const workLoad = Array.from(upsertPlan.chunkAllocations.entries());
             const workerHandles = new Array<Promise<string>>();
-            for (let workerIndex = 0; workerIndex < this.workers.length; workerIndex++) {
+            for (let workerIndex = 0; workerIndex < this.externalWorkers.length; workerIndex++) {
                 workerHandles.push(new Promise<string>((resolve, reject) => {
-                    const worker = this.workers[workerIndex];
+                    const worker = this.externalWorkers[workerIndex];
                     const pluginPayload = {
                         header: BackgroundPlugin.invokeHeader,
                         subHeader: BackgroundPlugin.invokeSubHeaders.Store,
@@ -74,7 +74,12 @@ export class GridScaleBase<rowType extends Array<any>> {
                     const workerMessageHandler = (message: any) => {
                         worker.off('error', workerErrorHandler);
                         const comMessage = deserialize<string>(message);
-                        resolve(comMessage.payload);
+                        if (comMessage.header === HeaderPayload.Error) {
+                            reject(new Error(comMessage.subHeader + comMessage.payload));
+                        }
+                        if (comMessage.header === HeaderPayload.Response) {
+                            resolve(comMessage.payload);
+                        }
                     };
 
                     worker.once('error', workerErrorHandler);
@@ -140,7 +145,7 @@ export class GridScaleBase<rowType extends Array<any>> {
             diagnostics.set(`${pageNumber}-Query Plan`, Date.now() - diagnosticTime);
 
             diagnosticTime = Date.now();
-            yield this.distributePlan<rowType>(queryPlan, tagNames, startTime, pageEndTime, 10000, `${queryId}-${pageNumber}`);
+            yield this.distributePlan<rowType>(queryPlan, startTime, pageEndTime, 10000, `${queryId}-${pageNumber}`);
             diagnostics.set(`${pageNumber}-Worker Disk Search, Open, Merge & Iterate`, Date.now() - diagnosticTime);
 
             pageNumber++;
@@ -149,66 +154,106 @@ export class GridScaleBase<rowType extends Array<any>> {
 
     }
 
-    private async *distributePlan<rowType>(queryPlan: queryPlan, tagNames: tagName[], startInclusiveTime: number, endExclusiveTime: number, pageSize: number, queryId: string): AsyncIterableIterator<rowType> {
-        if (this.workers.length === 0) {
-            const pluginPayload = {
+    private async *distributePlan<rowType>(queryPlan: queryPlan, startInclusiveTime: number, endExclusiveTime: number, pageSize: number, queryId: string): AsyncIterableIterator<rowType> {
+        if (this.externalWorkers.length === 0) {
+            const pluginIteratePayload = {
                 header: BackgroundPlugin.invokeHeader,
                 subHeader: BackgroundPlugin.invokeSubHeaders.Iterate,
-                payload: { planId: queryId, plan: queryPlan, interestedTags: tagNames, startInclusiveTime, endExclusiveTime, pageSize }
+                payload: { planId: queryId, plan: queryPlan, startInclusiveTime, endExclusiveTime, pageSize }
             } as IThreadCommunication<distributedQueryPlan>;
-            let result = this.selfStoreThread.work(pluginPayload) as IThreadCommunication<IteratorResult<Array<rowType>>>;
-            while (result.payload.done === false) {
-                for (const row of result.payload.value) {
-                    yield row;
+            try {
+                let result = this.selfWorker.work(pluginIteratePayload) as IThreadCommunication<IteratorResult<Array<rowType>>>;
+                while (result.payload.done === false) {
+                    for (const row of result.payload.value) {
+                        yield row;
+                    }
+                    result = this.selfWorker.work(pluginIteratePayload) as IThreadCommunication<IteratorResult<Array<rowType>>>;
                 }
-                result = this.selfStoreThread.work(pluginPayload) as IThreadCommunication<IteratorResult<Array<rowType>>>;
+            }
+            finally {
+                const pluginCloseQueryPayload = {
+                    header: BackgroundPlugin.invokeHeader,
+                    subHeader: BackgroundPlugin.invokeSubHeaders.CloseQuery,
+                    payload: queryId
+                } as IThreadCommunication<string>;
+                this.selfWorker.work(pluginCloseQueryPayload);
             }
         }
         else {
-            const chunkSize = Math.ceil(tagNames.length / this.workers.length);
-            const workerPayloads = new Array<distributedQueryPlan>();
-            for (let workerIndex = 0; workerIndex < this.workers.length; workerIndex++) {
-                const distributedQueryPlan: distributedQueryPlan = { planId: `${queryId}-${workerIndex}`, plan: queryPlan, interestedTags: tagNames.splice(0, chunkSize), startInclusiveTime, endExclusiveTime, pageSize };
-                workerPayloads.push(distributedQueryPlan);
-            }
-            while (workerPayloads.some(payload => payload !== null)) {
-                const workerHandles = new Array<Promise<IteratorResult<Array<rowType>>>>();
-                for (let workerIndex = 0; workerIndex < this.workers.length; workerIndex++) {
-                    if (workerPayloads[workerIndex] === null) {
-                        workerHandles.push(Promise.resolve({ value: [], done: true }));
-                        continue;
-                    }
-                    workerHandles.push(new Promise<IteratorResult<Array<rowType>>>((resolve, reject) => {
-                        const worker = this.workers[workerIndex];
-                        const pluginPayload = {
-                            header: BackgroundPlugin.invokeHeader,
-                            subHeader: BackgroundPlugin.invokeSubHeaders.Iterate,
-                            payload: workerPayloads[workerIndex]
-                        } as IThreadCommunication<distributedQueryPlan>;
-
-                        const workerErrorHandler = (error: Error) => {
-                            worker.off('message', workerMessageHandler);
-                            reject(error);
-                        };
-                        const workerMessageHandler = (message: any) => {
-                            worker.off('error', workerErrorHandler);
-                            const comMessage = deserialize<IteratorResult<Array<rowType>>>(message);
-                            resolve(comMessage.payload);
-                        };
-
-                        worker.once('error', workerErrorHandler);
-                        worker.once('message', workerMessageHandler);
-                        worker.postMessage(serialize(pluginPayload));
-                    }));
+            const workerPayloads = new Array<distributedQueryPlan>(this.externalWorkers.length).fill(null);
+            let incrementingIndex = 0;
+            queryPlan.groupedTags.forEach((tags, logicalChunkId) => {
+                const workerIndex = incrementingIndex % this.externalWorkers.length;
+                let existingPayload = workerPayloads[workerIndex];
+                if (existingPayload === null) {
+                    const groupedTags = new Map<logicalChunkId, Set<tagName>>();
+                    groupedTags.set(logicalChunkId, tags);
+                    existingPayload = { planId: `${queryId}-${workerIndex}-${logicalChunkId}`, plan: { plan: queryPlan.plan, groupedTags }, startInclusiveTime, endExclusiveTime, pageSize };
                 }
+                else {
+                    existingPayload.planId += `-${logicalChunkId}`;
+                    existingPayload.plan.groupedTags.set(logicalChunkId, tags);
+                }
+                workerPayloads[workerIndex] = existingPayload;
+                incrementingIndex++;
+            });
+            try {
+                while (workerPayloads.some(payload => payload !== null)) {
+                    const workerHandles = new Array<Promise<IteratorResult<Array<rowType>>>>();
+                    for (let workerIndex = 0; workerIndex < this.externalWorkers.length; workerIndex++) {
+                        if (workerPayloads[workerIndex] === null) {
+                            workerHandles.push(Promise.resolve({ value: [], done: true }));
+                            continue;
+                        }
+                        workerHandles.push(new Promise<IteratorResult<Array<rowType>>>((resolve, reject) => {
+                            const worker = this.externalWorkers[workerIndex];
+                            const pluginIteratePayload = {
+                                header: BackgroundPlugin.invokeHeader,
+                                subHeader: BackgroundPlugin.invokeSubHeaders.Iterate,
+                                payload: workerPayloads[workerIndex]
+                            } as IThreadCommunication<distributedQueryPlan>;
 
-                for (let responseIndex = 0; responseIndex < workerHandles.length; responseIndex++) {
-                    const response = await workerHandles[responseIndex];
-                    for (const row of response.value) {
-                        yield row;
+                            const workerErrorHandler = (error: Error) => {
+                                worker.off('message', workerMessageHandler);
+                                reject(error);
+                            };
+                            const workerMessageHandler = (message: any) => {
+                                worker.off('error', workerErrorHandler);
+                                const comMessage = deserialize(message);
+                                if (comMessage.header === HeaderPayload.Error) {
+                                    reject(new Error((comMessage as IThreadCommunication<string>).subHeader + (comMessage as IThreadCommunication<string>).payload));
+                                }
+                                if (comMessage.header === HeaderPayload.Response) {
+                                    resolve((comMessage as IThreadCommunication<IteratorResult<Array<rowType>>>).payload);
+                                }
+                            };
+
+                            worker.once('error', workerErrorHandler);
+                            worker.once('message', workerMessageHandler);
+                            worker.postMessage(serialize(pluginIteratePayload));
+                        }));
                     }
-                    if (response.done === true) {
-                        workerPayloads[responseIndex] = null;
+
+                    for (let responseIndex = 0; responseIndex < workerHandles.length; responseIndex++) {
+                        const response = await workerHandles[responseIndex];
+                        for (const row of response.value) {
+                            yield row;
+                        }
+                        if (response.done === true) {
+                            workerPayloads[responseIndex] = null;
+                        }
+                    }
+                }
+            }
+            finally {
+                for (let workerIndex = 0; workerIndex < this.externalWorkers.length; workerIndex++) {
+                    if (workerPayloads[workerIndex] !== null) {
+                        const pluginCloseQueryPayload = {
+                            header: BackgroundPlugin.invokeHeader,
+                            subHeader: BackgroundPlugin.invokeSubHeaders.CloseQuery,
+                            payload: workerPayloads[workerIndex].planId
+                        } as IThreadCommunication<string>;
+                        this.externalWorkers[workerIndex].postMessage(serialize(pluginCloseQueryPayload));
                     }
                 }
             }
@@ -232,11 +277,16 @@ export class GridScaleBase<rowType extends Array<any>> {
         const tempResults = new Map<logicalChunkId, Map<tagName, Map<setDiskPath, diskIndex>>>();
         let orderedChunkIds = new Array<chunkInfo>();
         const visitedChunkIds = new Map<logicalChunkId, logicalChunkId[]>();
+        const tagsGroupedByLogicalChunkId = new Map<logicalChunkId, Set<tagName>>();
 
         for (let tagIndex = 0; tagIndex < tagNames.length; tagIndex++) {
             const tagName = tagNames[tagIndex];
             const defaultChunkId = ChunkId.from(tagName, startInclusiveBucketedTime, this.config);
             const diskIndexFn = defaultChunkId.tagNameMod.bind(defaultChunkId);
+
+            const existingTags = tagsGroupedByLogicalChunkId.get(defaultChunkId.logicalChunkId) || new Set<tagName>();
+            existingTags.add(tagName);
+            tagsGroupedByLogicalChunkId.set(defaultChunkId.logicalChunkId, existingTags);
 
             if (visitedChunkIds.has(defaultChunkId.logicalChunkId)) {
                 for (const chunkId of visitedChunkIds.get(defaultChunkId.logicalChunkId)) {
@@ -269,22 +319,22 @@ export class GridScaleBase<rowType extends Array<any>> {
         for (let index = orderedChunkIds.length - 1; index >= 0; index--) {//But we need Descending cause of M.V.C.C which writes updated versions of samples to latest time.
             results.set(orderedChunkIds[index].id, tempResults.get(orderedChunkIds[index].id));
         }
-        return results;
+        return { groupedTags: tagsGroupedByLogicalChunkId, plan: results };
     }
 
     public async[Symbol.asyncDispose]() {
         await this.chunkLinkRegistry[Symbol.asyncDispose]();
-        if (this.selfStoreThread !== undefined) {
-            this.selfStoreThread[Symbol.dispose]();
+        if (this.selfWorker !== undefined) {
+            this.selfWorker[Symbol.dispose]();
         }
         const payload = {
-            header: "Shutdown",
-            subHeader: "Shutdown",
+            header: HeaderPayload.Shutdown,
+            subHeader: "Shutdown called from Dispose",
             payload: ''
         } as IThreadCommunication<string>;
-        for (let index = 0; index < this.workers.length; index++) {
-            this.workers[index].postMessage(serialize(payload));
-            this.workers[index] = null;
+        for (let index = 0; index < this.externalWorkers.length; index++) {
+            this.externalWorkers[index].postMessage(serialize(payload));
+            this.externalWorkers[index] = null;
         }
     }
 }

@@ -48,17 +48,25 @@ export class ChunkShard {
         })();
     }
 
-    public *get<T>(sectorNames: string[], startInclusive: number, endExclusive: number): IterableIterator<T> {
-        const cursor = this.db.prepare<unknown[], T>(this.selectSqlStatement(sectorNames, startInclusive, endExclusive))
-            .raw()
-            .iterate();
-        let value = cursor.next();
-        while (!value.done) {
-            this.readCursorOpen = true;
-            yield value.value as T;
-            value = cursor.next();
-        }
+    public acquireAutoReleaseReadCursor() {
+        this.readCursorOpen = true;
+    }
+
+    public releaseReadCursor() {
         this.readCursorOpen = false;
+    }
+
+    public *get<T>(sectorNames: string[], startInclusive: number, endExclusive: number): IterableIterator<T> {
+        try {
+            this.readCursorOpen = true;
+            const cursor = this.db.prepare<unknown[], T>(this.selectSqlStatement(sectorNames, startInclusive, endExclusive))
+                .raw()
+                .iterate();
+            yield* cursor;
+        }
+        finally {
+            this.readCursorOpen = false;
+        }
     }
 
     private selectSqlStatement(tagNames: string[], startInclusive: number, endExclusive: number): string {
@@ -146,6 +154,7 @@ export class Chunk {
             matchingChunkPaths.forEach(chunkShardPath => {
                 try {
                     const chunkShard = this.getChunkShard(chunkShardPath, "readonly");
+                    chunkShard.acquireAutoReleaseReadCursor();
                     returnIterators.push(chunkShard.get<T>(sectorNames, startInclusive, endExclusive));
                 }
                 catch (e) {
@@ -159,7 +168,7 @@ export class Chunk {
 
     public canBeDisposed(): boolean {
         for (const value of this.shardsCache.values()) {
-            if (!value.canBeDisposed()) {
+            if (value.canBeDisposed() === false) {
                 return false;//Return false on first non-disposable
             }
         }

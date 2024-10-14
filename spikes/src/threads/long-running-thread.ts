@@ -1,7 +1,7 @@
 import { parentPort, MessagePort, threadId, workerData, isMainThread } from "node:worker_threads";
 import { BackgroundPlugin } from "../background-plugin.js";
 import { ISyncPlugin } from "./i-sync-plugin.js";
-import { deserialize, IThreadCommunication, serialize } from "./i-thread-communication.js";
+import { deserialize, HeaderPayload, IThreadCommunication, serialize } from "./i-thread-communication.js";
 
 export class LongRunningThread {
 
@@ -31,7 +31,7 @@ export class LongRunningThread {
     public work(workMessage: Buffer) {
         try {
             const parsedPayload = deserialize(workMessage) as IThreadCommunication<any>;
-            if (parsedPayload.header.toLowerCase() === "shutdown") {
+            if (parsedPayload.header === HeaderPayload.Shutdown) {
                 this.stop();
                 return;
             }
@@ -47,7 +47,7 @@ export class LongRunningThread {
 
         } catch (error) {
             const payload: IThreadCommunication<String> = {
-                header: "Error",
+                header: HeaderPayload.Error,
                 subHeader: `Error in worker[${this.identity}]`,
                 payload: error.message
             };

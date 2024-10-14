@@ -11,6 +11,4 @@ export type TConfig = {
     logicalChunkPrefix: string;
     logicalChunkSeperator: string;
     redisConnection: string;
-    readerThreads: number;
-    writerThreads: number;
 }
