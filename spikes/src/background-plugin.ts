@@ -1,5 +1,5 @@
 import { ChunkCache } from "./chunk-cache.js";
-import { distributedIteratorResult, distributedQueryPlan, queryPlan, tagName, upsertPlan } from "./grid-scale.js";
+import { distributedQueryPlan, tagName, upsertPlan } from "./grid-scale.js";
 import { kWayMerge } from "./merge/k-way-merge.js";
 import { TConfig } from "./t-config.js";
 import { ISyncPlugin } from "./threads/i-sync-plugin.js";
@@ -23,7 +23,7 @@ export class BackgroundPlugin implements ISyncPlugin<BackgroundPluginInitializeP
         this.identity = identity;
     }
 
-    work(input: IThreadCommunication<upsertPlan<Array<unknown>> | distributedQueryPlan>): IThreadCommunication<string | distributedIteratorResult<Array<unknown>>> {
+    work(input: IThreadCommunication<upsertPlan<Array<unknown>> | distributedQueryPlan>): IThreadCommunication<string | IteratorResult<Array<unknown>>> {
         switch (input.subHeader) {
             case BackgroundPlugin.invokeSubHeaders.Store:
                 return this.store(input.payload as upsertPlan<Array<unknown>>);
@@ -36,7 +36,9 @@ export class BackgroundPlugin implements ISyncPlugin<BackgroundPluginInitializeP
                     this.activeQueries.set(distributedQueryPlan.planId, existingQuery);
                 }
                 let iteratorResult = existingQuery.next();
-                const resultPage: distributedIteratorResult<Array<unknown>> = { value: new Array<unknown>(), done: false };
+                const resultPage: IteratorResult<Array<unknown>> = {
+                    value: new Array<unknown>(), done: false as boolean
+                };
                 while (iteratorResult.done === false && resultPage.value.length < (distributedQueryPlan.pageSize - 1)) {
                     resultPage.value.push(iteratorResult.value);
                     iteratorResult = existingQuery.next();
@@ -52,7 +54,7 @@ export class BackgroundPlugin implements ISyncPlugin<BackgroundPluginInitializeP
                     header: "Response",
                     subHeader: "Response",
                     payload: resultPage
-                } as IThreadCommunication<distributedIteratorResult<Array<unknown>>>;
+                } as IThreadCommunication<IteratorResult<Array<unknown>>>;
                 break;
             default:
                 throw new Error(`Unknown subHeader: ${input.subHeader}`);
@@ -90,7 +92,7 @@ export class BackgroundPlugin implements ISyncPlugin<BackgroundPluginInitializeP
         return { yieldIndex, purgeIndexes };
     };
 
-    private *resultIterate<rowType>(distributedQueryPlan: distributedQueryPlan): IterableIterator<rowType> {
+    private * resultIterate<rowType>(distributedQueryPlan: distributedQueryPlan): IterableIterator<rowType> {
         //Actual Disk Search & Open Operations
         const whiteListedTags = new Set<string>(distributedQueryPlan.interestedTags);
         const tagWiseDiskIterators = new Map<tagName, IterableIterator<rowType>[]>();

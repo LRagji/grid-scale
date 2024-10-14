@@ -17,7 +17,6 @@ export type setDiskPath = string;
 export type upsertPlan<rowType> = { chunkAllocations: Map<logicalChunkId, Map<diskIndex, Map<tagName, rowType[]>>>, chunkDisplacements: Map<logicalChunkId, { insertTimeBucketed: number, related: Set<logicalChunkId> }> };
 export type queryPlan = Map<logicalChunkId, Map<tagName, Map<setDiskPath, diskIndex>>>;
 export type distributedQueryPlan = { planId: string, plan: queryPlan, interestedTags: tagName[], startInclusiveTime: number, endExclusiveTime: number, pageSize: number };
-export type distributedIteratorResult<dataType> = { value: dataType, done: boolean };
 
 export class GridScaleBase<rowType extends Array<any>> {
 
@@ -157,12 +156,12 @@ export class GridScaleBase<rowType extends Array<any>> {
                 subHeader: BackgroundPlugin.invokeSubHeaders.Iterate,
                 payload: { planId: queryId, plan: queryPlan, interestedTags: tagNames, startInclusiveTime, endExclusiveTime, pageSize }
             } as IThreadCommunication<distributedQueryPlan>;
-            let result = this.selfStoreThread.work(pluginPayload) as IThreadCommunication<distributedIteratorResult<Array<rowType>>>;
+            let result = this.selfStoreThread.work(pluginPayload) as IThreadCommunication<IteratorResult<Array<rowType>>>;
             while (result.payload.done === false) {
                 for (const row of result.payload.value) {
                     yield row;
                 }
-                result = this.selfStoreThread.work(pluginPayload) as IThreadCommunication<distributedIteratorResult<Array<rowType>>>;
+                result = this.selfStoreThread.work(pluginPayload) as IThreadCommunication<IteratorResult<Array<rowType>>>;
             }
         }
         else {
@@ -173,13 +172,13 @@ export class GridScaleBase<rowType extends Array<any>> {
                 workerPayloads.push(distributedQueryPlan);
             }
             while (workerPayloads.some(payload => payload !== null)) {
-                const workerHandles = new Array<Promise<distributedIteratorResult<Array<rowType>>>>();
+                const workerHandles = new Array<Promise<IteratorResult<Array<rowType>>>>();
                 for (let workerIndex = 0; workerIndex < this.workers.length; workerIndex++) {
                     if (workerPayloads[workerIndex] === null) {
                         workerHandles.push(Promise.resolve({ value: [], done: true }));
                         continue;
                     }
-                    workerHandles.push(new Promise<distributedIteratorResult<Array<rowType>>>((resolve, reject) => {
+                    workerHandles.push(new Promise<IteratorResult<Array<rowType>>>((resolve, reject) => {
                         const worker = this.workers[workerIndex];
                         const pluginPayload = {
                             header: BackgroundPlugin.invokeHeader,
@@ -193,7 +192,7 @@ export class GridScaleBase<rowType extends Array<any>> {
                         };
                         const workerMessageHandler = (message: any) => {
                             worker.off('error', workerErrorHandler);
-                            const comMessage = deserialize<distributedIteratorResult<Array<rowType>>>(message);
+                            const comMessage = deserialize<IteratorResult<Array<rowType>>>(message);
                             resolve(comMessage.payload);
                         };
 
