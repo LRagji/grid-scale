@@ -10,13 +10,14 @@ import { CommonConfig, generateRandomSamples } from "./utils.js";
 // For Write collect all chunks and set data parallel.
 // For Read generate a query plan and get data parallel.
 
-console.log(`Started`);
+const threads = 10;
+console.log(`Started with ${threads} threads`);
 
 const totalTags = 50000;
 const totalSamplesPerTag = 1;
 const config: TConfig = CommonConfig()
 const insertTime = Date.now();
-const gridScale = new GridScaleBase<number[]>(config, 10);
+const gridScale = new GridScaleBase<number[]>(config, threads);
 
 function formatSamples(input: samples, insertTime: number): number[][] {
     const returnValues = new Array<number[]>();

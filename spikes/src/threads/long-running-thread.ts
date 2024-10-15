@@ -61,6 +61,6 @@ export class LongRunningThread {
 }
 
 if (isMainThread === false) {
-    const longRunning = new LongRunningThread(parentPort, `${process.pid}-${threadId}`, [new BackgroundPlugin()], workerData as any[]);
+    const longRunning = new LongRunningThread(parentPort, `${process.pid}-${threadId}`, [new BackgroundPlugin()], [workerData] as any[]);
     longRunning.start();
 }

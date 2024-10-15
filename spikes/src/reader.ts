@@ -5,11 +5,11 @@ import { CommonConfig, generateTagNames } from "./utils.js";
 //Query Plan
 //Read
 //Merge
-
-console.log(`Started`);
+const threads = 10;
+console.log(`Started with ${threads} threads`);
 
 const config: TConfig = CommonConfig();
-const gridScale = new GridScaleBase<any[]>(config, 10);
+const gridScale = new GridScaleBase<any[]>(config, threads);
 const totalTags = 50000;
 const startInclusiveTime = 0;//Date.now();
 const endExclusiveTime = 1//startInclusiveTime + config.timeBucketWidth;

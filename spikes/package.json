@@ -30,6 +30,7 @@
   },
   "dependencies": {
     "better-sqlite3": "^11.3.0",
+    "express-service-bootstrap": "^0.11.0",
     "redis": "^4.7.0"
   }
 }
