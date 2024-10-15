@@ -1,8 +1,6 @@
 import { ChunkId } from "./chunk-id.js";
 import { TConfig } from "./t-config.js";
 import { ChunkLinker } from "./chunk-linker.js";
-import { cpus } from "node:os";
-import { Worker } from "node:worker_threads";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { BackgroundPlugin, BackgroundPluginInitializeParam } from "./background-plugin.js";
@@ -27,10 +25,9 @@ export class GridScaleBase<rowType extends Array<any>> {
 
     constructor(private readonly config: TConfig, workerCount: number = 0) {
         this.chunkLinkRegistry = new ChunkLinker(config);
-        const totalWorkers = Math.min(cpus().length, Math.max(0, workerCount));
         const workerFilePath = join(dirname(fileURLToPath(import.meta.url)), './threads/long-running-thread.js');
         const pluginParameter = { config, cacheLimit: config.maxDBOpen, bulkDropLimit: 10 } as BackgroundPluginInitializeParam;
-        this.workerManager = new WorkerManager(totalWorkers, workerFilePath, pluginParameter, BackgroundPlugin, this.writerPartIdentifier);
+        this.workerManager = new WorkerManager(workerCount, workerFilePath, pluginParameter, BackgroundPlugin, this.writerPartIdentifier);
     }
 
     public async store<rawRowType extends Array<any>>(rawData: Map<tagName, rawRowType>, rowTransformer: (dataToFormat: rawRowType, insertTime: number) => rowType[], insertTime = Date.now(), diagnostics = new Map<string, any>()): Promise<void> {
