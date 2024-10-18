@@ -1,5 +1,5 @@
 import { parentPort, MessagePort, threadId, workerData, isMainThread } from "node:worker_threads";
-import { BackgroundPlugin } from "../background-plugin.js";
+// import { BackgroundPlugin } from "../background-plugin.js";
 import { ISyncPlugin } from "./i-sync-plugin.js";
 import { deserialize, HeaderPayload, IThreadCommunication, serialize } from "./i-thread-communication.js";
 
@@ -60,7 +60,7 @@ export class LongRunningThread {
     }
 }
 
-if (isMainThread === false) {
-    const longRunning = new LongRunningThread(parentPort, `${process.pid}-${threadId}`, [new BackgroundPlugin()], [workerData] as any[]);
-    longRunning.start();
-}
+// if (isMainThread === false) {
+//     const longRunning = new LongRunningThread(parentPort, `${process.pid}-${threadId}`, [new BackgroundPlugin()], [workerData] as any[]);
+//     longRunning.start();
+// }

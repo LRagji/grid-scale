@@ -1,15 +1,22 @@
-import { Chunk } from "./chunk.js";
-import { logicalChunkId } from "./grid-scale";
-import { TConfig } from "./t-config.js";
+import { BootstrapConstructor } from "express-service-bootstrap";
+import { IChunk } from "./chunk/i-chunk.js";
+import { ShardAccessMode } from "./types/shard-access-mode.js";
 
-export class ChunkCache {
-    private readonly chunkCache = new Map<logicalChunkId, Chunk>();
+export class ChunkCache<T extends IChunk> {
+    private readonly chunkCache = new Map<string, T>();
 
-    constructor(private readonly config: TConfig, private readonly cacheLimit: number, private readonly bulkDropLimit: number) { }
+    constructor(
+        private readonly chunkType: new (...args: any[]) => T,
+        private readonly cacheLimit: number,
+        private readonly bulkDropLimit: number,
+        private readonly mergeFunction: <T>(cursors: IterableIterator<T>[]) => IterableIterator<T>,
+        private readonly searchRegex: RegExp,
+        private readonly injectableConstructor: BootstrapConstructor = new BootstrapConstructor()) { }
 
-    public getChunk(logicalChunkId: logicalChunkId): Chunk {
-        if (this.chunkCache.has(logicalChunkId)) {
-            return this.chunkCache.get(logicalChunkId);
+    public getChunk(connectionPath: string, mode: ShardAccessMode, callerSignature: string): T {
+        const cacheKey = connectionPath + mode;
+        if (this.chunkCache.has(cacheKey)) {
+            return this.chunkCache.get(connectionPath);
         }
         else {
             if (this.chunkCache.size > this.cacheLimit) {
@@ -30,14 +37,16 @@ export class ChunkCache {
                     throw new Error(`Chunk cache is full & no chunks can be evicted this time, please retry later.`);
                 }
             }
-            const chunk = new Chunk(this.config, logicalChunkId);
-            this.chunkCache.set(logicalChunkId, chunk);
+            const chunk = this.injectableConstructor.createInstance<T>(this.chunkType, [connectionPath, mode, this.mergeFunction, callerSignature, this.searchRegex, this.injectableConstructor]);
+            this.chunkCache.set(cacheKey, chunk);
             return chunk;
         }
     }
 
-    public [Symbol.dispose]() {
-        this.chunkCache.forEach(chunk => chunk[Symbol.dispose]());
+    public async [Symbol.asyncDispose]() {
+        const handles = Array.from(this.chunkCache.values())
+            .map(chunk => chunk[Symbol.asyncDispose]());
+        await Promise.allSettled(handles);
         this.chunkCache.clear();
     }
 }
