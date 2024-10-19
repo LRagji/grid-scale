@@ -14,10 +14,11 @@ export class ChunkSqlite implements IChunk {
     private readonly preConditionedSectors = new Set<string>();
     private readonly tableSqlStatement = (tableName: string) => `CREATE TABLE IF NOT EXISTS [${tableName}] (sampleTime INTEGER PRIMARY KEY NOT NULL, insertTime INTEGER NOT NULL, nValue INTEGER, oValue TEXT);`;
     private readonly indexSqlStatement = (tableName: string) => `CREATE INDEX IF NOT EXISTS [timeIndex_${tableName}] ON [${tableName}] (sampleTime,insertTime,nValue);`;
-    private readonly upsertSqlStatement = (tableName: string) => `INSERT INTO [${tableName}] (sampleTime,insertTime,nValue) values (?,?,?)
+    private readonly upsertSqlStatement = (tableName: string) => `INSERT INTO [${tableName}] (sampleTime,insertTime,nValue,oValue) values (?,?,?,?)
             ON CONFLICT(sampleTime) DO UPDATE SET
             insertTime=EXCLUDED.insertTime,
-            nValue=EXCLUDED.nValue;`;
+            nValue=EXCLUDED.nValue,
+            oValue=EXCLUDED.oValue;`;
 
     constructor(
         private readonly directoryPath: string,

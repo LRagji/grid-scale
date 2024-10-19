@@ -5,43 +5,11 @@ import { GridScale } from "./grid-scale.js";
 import { kWayMerge } from "./merge/k-way-merge.js";
 import { RedisHashMap } from "./non-volatile-hash-map/redis-hash-map.js";
 import { TConfig } from "./t-config.js";
-import { CommonConfig, generateTagNames } from "./utils.js";
+import { CommonConfig, frameMerge, generateTagNames } from "./utils.js";
 
 //Query Plan
 //Read
 //Merge
-function frameMerge<T>(elements: T[]): { yieldIndex: number, purgeIndexes: number[] } {
-    let purgeIndexes = [];
-    let yieldIndex = -1;
-    for (let elementIndex = 0; elementIndex < elements.length; elementIndex++) {
-        const element = elements[elementIndex];
-        if (element == null || Array.isArray(element) === false || (Array.isArray(element) && element.length === 0)) {
-            purgeIndexes.push(elementIndex);
-            continue;
-        }
-
-        if (yieldIndex === -1) {
-            yieldIndex = elementIndex;
-        }
-        else {
-            //TagName need to be compared
-            if (element[4] === elements[yieldIndex][4] && element[0] < elements[yieldIndex][0]) {
-                yieldIndex = elementIndex;
-            }
-            else if (element[4] === elements[yieldIndex][4] && element[0] === elements[yieldIndex][0]) {
-                //Compare Insert time in descending order MVCC
-                if (elements[1] > elements[yieldIndex][1]) {
-                    purgeIndexes.push(yieldIndex);
-                    yieldIndex = elementIndex;
-                }
-                else {
-                    purgeIndexes.push(elementIndex);
-                }
-            }
-        }
-    };
-    return { yieldIndex, purgeIndexes };
-};
 const threads = 10;
 console.log(`Started with ${threads} threads`);
 

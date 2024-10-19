@@ -25,15 +25,15 @@ export function generateTagNames(totalTags: number, increment: number = 1): Arra
     return tagNames;
 }
 
-export function generateRandomSamples(totalTags: number, totalSamplesPerTag: number): Map<string, number[]> {
-    const generatedData = new Map<string, number[]>();
-    const samples = new Array<number>();
+export function generateRandomSamples(totalTags: number, totalSamplesPerTag: number, columns: ((time: number, tag: string) => number | string | null)[]): Map<string, number[]> {
+    const generatedData = new Map<string, any[]>();
+    const samples = new Array<number | string | null>();
     const tagNames = generateTagNames(totalTags);
     tagNames.forEach(tagName => {
         if (samples.length === 0) {
             for (let time = 0; time < totalSamplesPerTag; time++) {
                 samples.push(time * 1000);
-                samples.push(Math.floor(Math.random() * 100));
+                columns.forEach(column => samples.push(column(time, tagName)));
             }
         }
         generatedData.set(tagName, samples);
@@ -57,3 +57,36 @@ export function CommonConfig(): TConfig {
         redisConnection: 'redis://localhost:6379'
     } as TConfig;
 }
+
+export function frameMerge<T>(elements: T[]): { yieldIndex: number, purgeIndexes: number[] } {
+    let purgeIndexes = [];
+    let yieldIndex = -1;
+    for (let elementIndex = 0; elementIndex < elements.length; elementIndex++) {
+        const element = elements[elementIndex];
+        if (element == null || Array.isArray(element) === false || (Array.isArray(element) && element.length === 0)) {
+            purgeIndexes.push(elementIndex);
+            continue;
+        }
+
+        if (yieldIndex === -1) {
+            yieldIndex = elementIndex;
+        }
+        else {
+            //TagName need to be compared
+            if (element[4] === elements[yieldIndex][4] && element[0] < elements[yieldIndex][0]) {
+                yieldIndex = elementIndex;
+            }
+            else if (element[4] === elements[yieldIndex][4] && element[0] === elements[yieldIndex][0]) {
+                //Compare Insert time in descending order MVCC
+                if (elements[1] > elements[yieldIndex][1]) {
+                    purgeIndexes.push(yieldIndex);
+                    yieldIndex = elementIndex;
+                }
+                else {
+                    purgeIndexes.push(elementIndex);
+                }
+            }
+        }
+    };
+    return { yieldIndex, purgeIndexes };
+};

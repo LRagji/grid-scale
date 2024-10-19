@@ -7,13 +7,27 @@
         {
             "type": "node",
             "request": "launch",
-            "name": "Launch Program",
+            "name": "Launch Reader",
             "skipFiles": [
                 "<node_internals>/**"
             ],
             "preLaunchTask": "npm: build - spikes",
             "cwd": "${workspaceFolder}/spikes",
             "program": "${workspaceFolder}/spikes/src/reader.ts",
+            "outFiles": [
+                "${workspaceFolder}/spikes/dist/src//**/*.js"
+            ]
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "Launch Writer",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "preLaunchTask": "npm: build - spikes",
+            "cwd": "${workspaceFolder}/spikes",
+            "program": "${workspaceFolder}/spikes/src/writer.ts",
             "outFiles": [
                 "${workspaceFolder}/spikes/dist/src//**/*.js"
             ]

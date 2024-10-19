@@ -27,7 +27,13 @@ export class GridScale {
 
         timings = Date.now();
         for (const [logicalChunkId, [timeBucket, displacedChunks]] of upsertPlan.chunkDisplacements) {
-            await this.chunkRegistry.set(logicalChunkId, Array.from(displacedChunks.values()));
+            const fieldValues = new Array<string>();
+            const displacedChunkIds = Array.from(displacedChunks.values());
+            for (const displacedChunkId of displacedChunkIds) {
+                fieldValues.push(displacedChunkId);
+                fieldValues.push(Date.now().toString());
+            }
+            await this.chunkRegistry.set(logicalChunkId, fieldValues);
         }
         diagnostics.set("linkTime", Date.now() - timings);
     }
