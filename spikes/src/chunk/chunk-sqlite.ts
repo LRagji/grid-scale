@@ -99,6 +99,9 @@ export class ChunkSqlite implements IChunk {
             if (cursors.length === 1) {
                 yield* cursors[0];
             }
+            else if (cursors.length === 0) {
+                return;
+            }
             else {
                 yield* this.mergeFunction(cursors);
             }

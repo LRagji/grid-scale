@@ -28,6 +28,7 @@ export function* kWayMerge<T>(iterators: IterableIterator<T>[], frameProcessFunc
                     compareFrame[purgeIndex] = nextCursor.value;
                     if (nextCursor.done === true) {
                         doneCounter--;
+                        endReachedIndexes.add(purgeIndex);
                     }
                 }
             }
