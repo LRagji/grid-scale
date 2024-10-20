@@ -37,14 +37,17 @@ Design Pro:
 2. When data come in with a lead of lag with respect to system time which grows the cache lookups on redis.(Can we have background-process to clear up mis-placements.)
 
 Work items
-1. Create a long running thread with cache for 1)OpenDB's 2)RedisConnections 3)Executing Hash on existing items for writers.
-2. Extract out hashing into hashing file so that hash mechanism can be switched.
-3. Extract config into a common config file.
-1. Hashing strings to numbers such that similar strings groups together.How does Redis does this what is the algo for key space hashing. MRUMRU and DBJ2 Algo
-1. Converting table name to tag name. Done by using UNHEX and type=table on sqlite_schema table
-1. Sharing volume mounts across pods(1 writer, inf Readers) to level load IO
-2. Effect of lagging data with respect to wall clock(will this create lot of file io?)
-3. Summarization.(Either with Indexes or one table per tag.)
+1. Refactor K-Merge Algo with chunk merge class.This has a bug for tags
+2. Refactor Threading Sub-system.
+3. Let sqlite chunk take table schema as input.(Table Creation,Index,Upsert & Select Statements)
+4. Move to multi threading.
+5. Unit tests
+6. Cache for table names which exists in a DB, instead of querying them everytime.
+7. Perfect Hashing algo for converting strings to sequential int's Looks at Dynamo DB hashing also.
+8. Test with 5 million tags on one day data :D
+9. Perf & Memory testing.
+10. Effect of lagging data with respect to wall clock(will this create lot of file io?)
+11. Summarization.(Either with Indexes or one table per tag.)
 
 
 F.A.Q

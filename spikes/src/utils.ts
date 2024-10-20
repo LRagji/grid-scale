@@ -51,42 +51,9 @@ export function CommonConfig(): TConfig {
         fileNamePost: ".db",
         timeBucketTolerance: 1,
         activeCalculatorIndex: 2,
-        maxDBOpen: 5,
+        maxDBOpen: 100,
         logicalChunkPrefix: "D",
         logicalChunkSeperator: "|",
         redisConnection: 'redis://localhost:6379'
     } as TConfig;
 }
-
-export function frameMerge<T>(elements: T[]): { yieldIndex: number, purgeIndexes: number[] } {
-    let purgeIndexes = [];
-    let yieldIndex = -1;
-    for (let elementIndex = 0; elementIndex < elements.length; elementIndex++) {
-        const element = elements[elementIndex];
-        if (element == null || Array.isArray(element) === false || (Array.isArray(element) && element.length === 0)) {
-            purgeIndexes.push(elementIndex);
-            continue;
-        }
-
-        if (yieldIndex === -1) {
-            yieldIndex = elementIndex;
-        }
-        else {
-            //TagName need to be compared
-            if (element[4] === elements[yieldIndex][4] && element[0] < elements[yieldIndex][0]) {
-                yieldIndex = elementIndex;
-            }
-            else if (element[4] === elements[yieldIndex][4] && element[0] === elements[yieldIndex][0]) {
-                //Compare Insert time in descending order MVCC
-                if (elements[1] > elements[yieldIndex][1]) {
-                    purgeIndexes.push(yieldIndex);
-                    yieldIndex = elementIndex;
-                }
-                else {
-                    purgeIndexes.push(elementIndex);
-                }
-            }
-        }
-    };
-    return { yieldIndex, purgeIndexes };
-};

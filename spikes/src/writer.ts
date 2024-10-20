@@ -1,11 +1,9 @@
 import { TConfig } from "./t-config.js";
 import { GridScale } from "./grid-scale.js";
-import { CommonConfig, frameMerge, generateRandomSamples } from "./utils.js";
+import { CommonConfig, generateRandomSamples } from "./utils.js";
 import { RedisHashMap } from "./non-volatile-hash-map/redis-hash-map.js";
 import { ChunkPlanner } from "./chunk-planner.js";
-import { ChunkCache } from "./chunk-cache.js";
-import { ChunkSqlite } from "./chunk/chunk-sqlite.js";
-import { kWayMerge } from "./merge/k-way-merge.js";
+import { GridThreadPlugin } from "./multi-threads/grid-thread-plugin.js";
 
 
 // Invoke an Instance of chunk-container
@@ -22,12 +20,11 @@ const totalTags = 50000;
 const totalSamplesPerTag = 1;
 const config: TConfig = CommonConfig()
 const insertTime = Date.now();
-const fileRegex = new RegExp("^" + config.fileNamePre + "[a-z0-9-]+\\" + config.fileNamePost + "$");//`^ts[a-z0-9]+\\.db$`;
 const chunkRegistry = new RedisHashMap(config.redisConnection);
 await chunkRegistry.initialize();
 const chunkPlanner = new ChunkPlanner(chunkRegistry, config);
-const chunkCache = new ChunkCache<ChunkSqlite>(ChunkSqlite, 30, 10, <T>(cursors) => kWayMerge<T>(cursors, frameMerge<T>), fileRegex);
-const gridScale = new GridScale(chunkRegistry, chunkPlanner, chunkCache, (identity) => config.fileNamePre + identity + config.fileNamePost, <T>(cursors) => kWayMerge<T>(cursors, frameMerge<T>));
+const gridThreadPlugin = new GridThreadPlugin(process.pid.toString(), config.fileNamePre, config.fileNamePost, config.maxDBOpen, 4, 0);
+const gridScale = new GridScale(chunkRegistry, chunkPlanner, gridThreadPlugin);
 
 const insertTimeCol = (time: number, tag: string) => insertTime;
 const numericCol = (time: number, tag: string) => Math.floor(Math.random() * 1000);
@@ -47,8 +44,8 @@ for (const [key, value] of diagnostics) {
 console.time("Close Operation");
 await (chunkRegistry[Symbol.asyncDispose] && chunkRegistry[Symbol.asyncDispose]() || Promise.resolve(chunkRegistry[Symbol.dispose] && chunkRegistry[Symbol.dispose]()));
 await (chunkPlanner[Symbol.asyncDispose] && chunkPlanner[Symbol.asyncDispose]() || Promise.resolve(chunkPlanner[Symbol.dispose] && chunkPlanner[Symbol.dispose]()));
-await (chunkCache[Symbol.asyncDispose] && chunkCache[Symbol.asyncDispose]() || Promise.resolve(chunkCache[Symbol.dispose] && chunkCache[Symbol.dispose]()));
 await (gridScale[Symbol.asyncDispose] && gridScale[Symbol.asyncDispose]() || Promise.resolve(gridScale[Symbol.dispose] && gridScale[Symbol.dispose]()));
+await gridThreadPlugin[Symbol.asyncDispose]();
 console.timeEnd("Close Operation");
 
 
