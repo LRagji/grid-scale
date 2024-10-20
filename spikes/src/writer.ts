@@ -4,6 +4,7 @@ import { CommonConfig, generateRandomSamples } from "./utils.js";
 import { RedisHashMap } from "./non-volatile-hash-map/redis-hash-map.js";
 import { ChunkPlanner } from "./chunk-planner.js";
 import { GridThreadPlugin } from "./multi-threads/grid-thread-plugin.js";
+import { BootstrapConstructor } from "express-service-bootstrap";
 
 
 // Invoke an Instance of chunk-container
@@ -23,7 +24,8 @@ const insertTime = Date.now();
 const chunkRegistry = new RedisHashMap(config.redisConnection);
 await chunkRegistry.initialize();
 const chunkPlanner = new ChunkPlanner(chunkRegistry, config);
-const gridThreadPlugin = new GridThreadPlugin(process.pid.toString(), config.fileNamePre, config.fileNamePost, config.maxDBOpen, 4, 0);
+const gridThreadPlugin = new GridThreadPlugin(false, null, new BootstrapConstructor());
+gridThreadPlugin.initialize(process.pid.toString(), config.fileNamePre, config.fileNamePost, config.maxDBOpen, 4, 0);
 const gridScale = new GridScale(chunkRegistry, chunkPlanner, gridThreadPlugin);
 
 const insertTimeCol = (time: number, tag: string) => insertTime;

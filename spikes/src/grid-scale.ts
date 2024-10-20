@@ -1,5 +1,7 @@
 import { ChunkPlanner } from "./chunk-planner.js";
 import { GridThreadPlugin } from "./multi-threads/grid-thread-plugin.js";
+import { IProxyMethod, serialize } from "./multi-threads/i-proxy-method.js";
+import { LongRunnerProxy } from "./multi-threads/long-runner-proxy.js";
 import { INonVolatileHashMap } from "./non-volatile-hash-map/i-non-volatile-hash-map.js";
 
 export class GridScale {
@@ -7,7 +9,8 @@ export class GridScale {
     constructor(
         private readonly chunkRegistry: INonVolatileHashMap,
         private readonly chunkPlanner: ChunkPlanner,
-        private readonly gridThreadPlugin: GridThreadPlugin
+        private readonly gridThreadPlugin: GridThreadPlugin,
+        private readonly workers: LongRunnerProxy[]
     ) { }
 
     public async store(records: Map<string, any[]>, recordLength: number, recordTimestampIndex: number, insertTime = Date.now(), diagnostics = new Map<string, any>()): Promise<void> {
@@ -16,22 +19,14 @@ export class GridScale {
         diagnostics.set("planTime", Date.now() - timings);
 
         timings = Date.now();
-        // const distributedWork = Array.from(upsertPlan.chunkAllocations.entries());
-        // const backgroundPluginPayloads: IThreadCommunication<typeof distributedWork[0]>[] = distributedWork
-        //     .map(([connectionPath, tagRecords]) =>
-        //     ({
-        //         header: BackgroundPlugin.invokeHeader,
-        //         subHeader: BackgroundPlugin.invokeSubHeaders.Store,
-        //         payload: [connectionPath, tagRecords]
-        //     }));
-        //await this.workerManager.execute<typeof distributedWork[0], string>(backgroundPluginPayloads)
-        // for (const [connectionPath, tagRecords] of upsertPlan.chunkAllocations) {
-        //     const chunk = this.chunkCache.getChunk(connectionPath, "write", this.writeFileName(this.selfIdentity));
-        //     chunk.bulkSet(tagRecords);
-        // }
-        for (const [connectionPath, tagRecords] of upsertPlan.chunkAllocations) {
-            this.gridThreadPlugin.write(connectionPath, tagRecords);
+        const writePayload = Array.from(upsertPlan.chunkAllocations.entries());
+        const chunkSize = Math.ceil(writePayload.length / this.workers.length);
+        const promiseHandles = new Array<Promise<void>>();
+        for (let workerIdx = 0; workerIdx < this.workers.length; workerIdx++) {
+            const bulkWrites = writePayload.splice(0, chunkSize);
+            promiseHandles.push(this.workers[workerIdx].invokeRemoteMethod("bulkWrite", [bulkWrites]));
         }
+        await Promise.all(promiseHandles);
         diagnostics.set("writeTime", Date.now() - timings);
 
         timings = Date.now();
@@ -53,18 +48,31 @@ export class GridScale {
         diagnostics.set("planTime", Date.now() - timings);
 
         timings = Date.now();
+        const pageSize = 1000;
+        const workerPromises = new Array<[unknown, Promise<any[]>]>();
+        const chunkSize = Math.ceil(iterationPlan.chunkReads.length / this.workers.length);
+        for (let workerIdx = 0; workerIdx < this.workers.length; workerIdx++) {
+            const plan = {
+                queryId: "queryId_" + Math.random().toString() + "_" + workerIdx,
+                plan: iterationPlan.chunkReads.splice(0, chunkSize),
+                startInclusive, endExclusive
+            };
+
+            const promise = this.workers[workerIdx].invokeRemoteMethod<any[]>("bulkIterate", [plan]);
+            workerPromises.push([plan, promise]);
+        }
+
+        do {
+            const results = await Promise.race(workerPromises.map(async ([plan, readPromise], idx) => await readPromise));
+        }
+        while (workerPromises.length > 0)
+
         for (const [connectionPaths, tagSet] of iterationPlan.chunkReads) {
             const queryId = "queryId" + Math.random().toString();
-            const pageSize = 1000;
             try {
                 let pagedData = new Array<any>();
                 do {
                     pagedData = this.gridThreadPlugin.iterate(queryId, connectionPaths, tagSet, startInclusive, endExclusive, pageSize);
-                    // const chunkIterators = new Array<IterableIterator<any>>();
-                    // for (const connectionPath of connectionPaths) {
-                    //     const chunk = this.chunkCache.getChunk(connectionPath, "read", this.writeFileName(process.pid.toString()));
-                    //     chunkIterators.push(chunk.bulkIterator(Array.from(tagSet.values()), startInclusive, endExclusive));
-                    // }
                     yield* pagedData;
                 }
                 while (pagedData.length >= pageSize);
