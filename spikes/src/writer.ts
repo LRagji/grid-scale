@@ -3,8 +3,8 @@ import { GridScale } from "./grid-scale.js";
 import { CommonConfig, generateRandomSamples } from "./utils.js";
 import { RedisHashMap } from "./non-volatile-hash-map/redis-hash-map.js";
 import { ChunkPlanner } from "./chunk-planner.js";
-import { GridThreadPlugin } from "./multi-threads/grid-thread-plugin.js";
-import { BootstrapConstructor } from "express-service-bootstrap";
+import { LongRunnerProxies } from "./multi-threads/long-runner-proxies.js";
+import { fileURLToPath } from 'node:url';
 
 
 // Invoke an Instance of chunk-container
@@ -24,9 +24,12 @@ const insertTime = Date.now();
 const chunkRegistry = new RedisHashMap(config.redisConnection);
 await chunkRegistry.initialize();
 const chunkPlanner = new ChunkPlanner(chunkRegistry, config);
-const gridThreadPlugin = new GridThreadPlugin(false, null, new BootstrapConstructor());
-gridThreadPlugin.initialize(process.pid.toString(), config.fileNamePre, config.fileNamePost, config.maxDBOpen, 4, 0);
-const gridScale = new GridScale(chunkRegistry, chunkPlanner, gridThreadPlugin);
+const workerFilePath = fileURLToPath(new URL("./multi-threads/background-worker.js", import.meta.url));
+const proxies = new LongRunnerProxies(threads, workerFilePath);
+for (let idx = 0; idx < proxies.WorkerCount; idx++) {
+    await proxies.invokeRemoteMethod("initialize", [`${process.pid.toString()}-${idx}`, config.fileNamePre, config.fileNamePost, config.maxDBOpen, 4, 0], idx);
+}
+const gridScale = new GridScale(chunkRegistry, chunkPlanner, proxies);
 
 const insertTimeCol = (time: number, tag: string) => insertTime;
 const numericCol = (time: number, tag: string) => Math.floor(Math.random() * 1000);
@@ -47,7 +50,7 @@ console.time("Close Operation");
 await (chunkRegistry[Symbol.asyncDispose] && chunkRegistry[Symbol.asyncDispose]() || Promise.resolve(chunkRegistry[Symbol.dispose] && chunkRegistry[Symbol.dispose]()));
 await (chunkPlanner[Symbol.asyncDispose] && chunkPlanner[Symbol.asyncDispose]() || Promise.resolve(chunkPlanner[Symbol.dispose] && chunkPlanner[Symbol.dispose]()));
 await (gridScale[Symbol.asyncDispose] && gridScale[Symbol.asyncDispose]() || Promise.resolve(gridScale[Symbol.dispose] && gridScale[Symbol.dispose]()));
-await gridThreadPlugin[Symbol.asyncDispose]();
+await proxies[Symbol.asyncDispose]();
 console.timeEnd("Close Operation");
 
 

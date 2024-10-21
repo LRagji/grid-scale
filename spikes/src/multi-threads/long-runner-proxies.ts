@@ -2,10 +2,11 @@ import { cpus } from "node:os";
 import { deserialize, DisposeMethodPayload, IProxyMethod, serialize } from "./i-proxy-method.js";
 import { Worker } from "node:worker_threads";
 
-export class LongRunnerProxy {
+export class LongRunnerProxies {
 
     private readonly workersExistingWork = new Array<Promise<any>>();
     private readonly workers: Array<Worker> = new Array<Worker>()
+    public readonly WorkerCount: number;
 
     constructor(workerCount: number, workerFilePath: string) {
         const parsedWorkerCount = Math.min(cpus().length, Math.max(0, workerCount));
@@ -13,6 +14,7 @@ export class LongRunnerProxy {
             this.workers.push(new Worker(workerFilePath, { workerData: null }));
         }
         this.workersExistingWork = new Array<Promise<any>>(this.workers.length);
+        this.WorkerCount = this.workers.length;
     }
 
     public async invokeRemoteMethod<T>(methodName: string, methodArguments: any[], workerIndex = 0, methodInvocationId = Number.NaN): Promise<T> {
