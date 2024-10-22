@@ -24,7 +24,7 @@ const insertTime = Date.now();
 const chunkRegistry = new RedisHashMap(config.redisConnection);
 await chunkRegistry.initialize();
 const chunkPlanner = new ChunkPlanner(chunkRegistry, config);
-const workerFilePath = fileURLToPath(new URL("./multi-threads/background-worker.js", import.meta.url));
+const workerFilePath = fileURLToPath(new URL("./background-worker.js", import.meta.url));
 const proxies = new LongRunnerProxies(threads, workerFilePath);
 await proxies.initialize();
 for (let idx = 0; idx < proxies.WorkerCount; idx++) {

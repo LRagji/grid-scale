@@ -1,9 +1,9 @@
 import { BootstrapConstructor } from "express-service-bootstrap";
-import { ChunkCache } from "../chunk-cache.js";
-import { IChunk } from "../chunk/i-chunk.js";
-import { gridKWayMerge } from "../merge/grid-row-merge.js";
-import { ChunkSqlite } from "../chunk/chunk-sqlite.js";
-import { LongRunner } from "./long-runner.js";
+import { ChunkCache } from "./chunk-cache.js";
+import { IChunk } from "./chunk/i-chunk.js";
+import { gridKWayMerge } from "./merge/grid-row-merge.js";
+import { ChunkSqlite } from "./chunk/chunk-sqlite.js";
+import { LongRunner } from "./multi-threads/long-runner.js";
 import { isMainThread, parentPort, MessagePort } from "node:worker_threads";
 
 export class GridThreadPlugin extends LongRunner {

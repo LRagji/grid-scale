@@ -16,7 +16,7 @@ const config: TConfig = CommonConfig();
 const chunkRegistry = new RedisHashMap(config.redisConnection);
 await chunkRegistry.initialize();
 const chunkPlanner = new ChunkPlanner(chunkRegistry, config);
-const workerFilePath = fileURLToPath(new URL("./multi-threads/background-worker.js", import.meta.url));
+const workerFilePath = fileURLToPath(new URL("./background-worker.js", import.meta.url));
 const proxies = new LongRunnerProxies(threads, workerFilePath);
 await proxies.initialize();
 for (let idx = 0; idx < proxies.WorkerCount; idx++) {
@@ -32,7 +32,7 @@ const tagNames = generateTagNames(totalTags, 1);
 console.time("Total")
 const results = [];
 
-for (let i = 0; i < 10; i++) {
+for (let i = 0; i < 1; i++) {
     const time = Date.now();
     const resultTagNames = new Set<string>();
     const diagnostics = new Map<string, number>();
