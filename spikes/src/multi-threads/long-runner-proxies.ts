@@ -4,26 +4,48 @@ import { Worker } from "node:worker_threads";
 
 export class LongRunnerProxies {
 
-    private readonly workersExistingWork = new Array<Promise<any>>();
+    private workersExistingWork = new Array<Promise<any>>();
     private readonly workers: Array<Worker> = new Array<Worker>()
-    public readonly WorkerCount: number;
+    public WorkerCount: number;
+    private selfWorker: any;
 
-    constructor(workerCount: number, workerFilePath: string) {
-        const parsedWorkerCount = Math.min(cpus().length, Math.max(0, workerCount));
+    constructor(private readonly workerCount: number, private readonly workerFilePath: string) { }
+
+    public async initialize() {
+        const parsedWorkerCount = Math.min(cpus().length, Math.max(0, this.workerCount));
         for (let index = 0; index < parsedWorkerCount; index++) {
-            this.workers.push(new Worker(workerFilePath, { workerData: null }));
+            //TODO:Have Handshake with threads that they are ready to accept commands.
+            this.workers.push(new Worker(this.workerFilePath, { workerData: null }));
+        }
+        if (this.workers.length === 0) {
+            const module = await import(this.workerFilePath);
+            this.selfWorker = module.default;
+            this.WorkerCount = 1;
+        }
+        else {
+            this.WorkerCount = this.workers.length;
         }
         this.workersExistingWork = new Array<Promise<any>>(this.workers.length);
-        this.WorkerCount = this.workers.length;
     }
 
-    public async invokeRemoteMethod<T>(methodName: string, methodArguments: any[], workerIndex = 0, methodInvocationId = Number.NaN): Promise<T> {
+    public async invokeMethod<T>(methodName: string, methodArguments: any[], workerIndex = 0, methodInvocationId = Number.NaN): Promise<T> {
         const workerIdx = Math.max(0, Math.min(workerIndex, this.workers.length - 1));
-        if (this.workersExistingWork[workerIdx] !== undefined) {
-            await this.workersExistingWork[workerIdx];
+
+        if (workerIdx === 0 && this.selfWorker !== undefined) {
+            return this.selfWorker[methodName](...methodArguments);
         }
-        this.workersExistingWork[workerIdx] = new Promise<T>((resolve, reject) => {
-            const worker = this.workers[workerIdx];
+        else {
+            return this.invokeRemoteMethod(methodName, methodArguments, workerIdx, methodInvocationId);
+        }
+    }
+
+    private async invokeRemoteMethod<T>(methodName: string, methodArguments: any[], workerIndex = 0, methodInvocationId = Number.NaN): Promise<T> {
+
+        if (this.workersExistingWork[workerIndex] !== undefined) {
+            await this.workersExistingWork[workerIndex];
+        }
+        this.workersExistingWork[workerIndex] = new Promise<T>((resolve, reject) => {
+            const worker = this.workers[workerIndex];
             const workerErrorHandler = (error: Error) => {
                 worker.off('message', workerMessageHandler);
                 reject(error);
@@ -46,14 +68,17 @@ export class LongRunnerProxies {
             worker.once('error', workerErrorHandler);
             worker.once('message', workerMessageHandler);
 
-            const methodInvocationPayload: IProxyMethod = { workerId: workerIdx, invocationId: methodInvocationId, methodName, methodArguments, returnValue: null };
+            const methodInvocationPayload: IProxyMethod = { workerId: workerIndex, invocationId: methodInvocationId, methodName, methodArguments, returnValue: null };
             worker.postMessage(serialize(methodInvocationPayload));
 
         });
-        return this.workersExistingWork[workerIdx]
+        return this.workersExistingWork[workerIndex]
     }
 
     public async[Symbol.asyncDispose]() {
+        if (this.selfWorker !== undefined) {
+            await this.selfWorker[Symbol.asyncDispose]();
+        }
         await Promise.allSettled(this.workersExistingWork);
         for (const worker of this.workers) {
             worker.postMessage(serialize(DisposeMethodPayload));

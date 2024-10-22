@@ -18,7 +18,7 @@ export class GridScale {
         timings = Date.now();
         const promiseHandles = new Array<Promise<void>>();
         for (let workerIdx = 0; workerIdx < upsertPlan.chunkAllocations.length; workerIdx++) {
-            promiseHandles.push(this.remoteProxies.invokeRemoteMethod("bulkWrite", [upsertPlan.chunkAllocations[workerIdx]], workerIdx));
+            promiseHandles.push(this.remoteProxies.invokeMethod("bulkWrite", [upsertPlan.chunkAllocations[workerIdx]], workerIdx));
         }
         await Promise.all(promiseHandles);
         diagnostics.set("writeTime", Date.now() - timings);
@@ -51,7 +51,7 @@ export class GridScale {
                 for (let workerIdx = startInclusiveWorkerIndex; workerIdx < endExclusiveWorkerIndex; workerIdx++) {
                     const plans = iterationPlan.affinityDistributedChunkReads[workerIdx];
                     const resultPromise = async () => {
-                        const results = await this.remoteProxies.invokeRemoteMethod<any[]>("bulkIterate", [queryId, plans, startInclusive, endExclusive, pageSize], workerIdx);
+                        const results = await this.remoteProxies.invokeMethod<any[]>("bulkIterate", [queryId, plans, startInclusive, endExclusive, pageSize], workerIdx);
                         return [workerIdx, results];
                     }
                     workerPromises.set(workerIdx, resultPromise());
@@ -76,7 +76,7 @@ export class GridScale {
         finally {
             workerPromises.clear();
             for (let workerIdx = 0; workerIdx < iterationPlan.affinityDistributedChunkReads.length; workerIdx++) {
-                await this.remoteProxies.invokeRemoteMethod<any[]>("clearIteration", [queryId]);
+                await this.remoteProxies.invokeMethod<any[]>("clearIteration", [queryId], workerIdx);
             }
         }
         diagnostics.set("yieldTime", Date.now() - timings);

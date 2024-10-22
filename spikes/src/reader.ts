@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 //Query Plan
 //Read
 //Merge
-const threads = 10;
+const threads = 0;
 console.log(`Started with ${threads} threads`);
 
 const config: TConfig = CommonConfig();
@@ -18,8 +18,9 @@ await chunkRegistry.initialize();
 const chunkPlanner = new ChunkPlanner(chunkRegistry, config);
 const workerFilePath = fileURLToPath(new URL("./multi-threads/background-worker.js", import.meta.url));
 const proxies = new LongRunnerProxies(threads, workerFilePath);
+await proxies.initialize();
 for (let idx = 0; idx < proxies.WorkerCount; idx++) {
-    await proxies.invokeRemoteMethod("initialize", [`${process.pid.toString()}-${idx}`, config.fileNamePre, config.fileNamePost, config.maxDBOpen, 4, 0], idx);
+    await proxies.invokeMethod("initialize", [`${process.pid.toString()}-${idx}`, config.fileNamePre, config.fileNamePost, config.maxDBOpen, 4, 0], idx);
 }
 const gridScale = new GridScale(chunkRegistry, chunkPlanner, proxies);
 const totalTags = 50000;

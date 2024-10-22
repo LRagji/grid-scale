@@ -6,7 +6,7 @@ export class LongRunner {
     private readonly methodNameSet = new Set<string>();
 
     public constructor(
-        shouldActivateMessagePort: boolean = !isMainThread,
+        private shouldActivateMessagePort: boolean = !isMainThread,
         private readonly messagePort: MessagePort = parentPort) {
 
         // Get method names
@@ -43,7 +43,9 @@ export class LongRunner {
     }
 
     public async [Symbol.asyncDispose]() {
-        this.messagePort.removeAllListeners();
-        this.messagePort.close();
+        if (this.shouldActivateMessagePort === true) {
+            this.messagePort.removeAllListeners();
+            this.messagePort.close();
+        }
     }
 }
