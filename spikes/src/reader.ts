@@ -17,7 +17,7 @@ const config: TConfig = CommonConfig();
 const chunkRegistry = new RedisHashMap(config.redisConnection);
 await chunkRegistry.initialize();
 const chunkPlanner = new ChunkPlanner(chunkRegistry, StringToNumberAlgos[config.activeCalculatorIndex], config.tagBucketWidth, config.timeBucketWidth, config.logicalChunkPrefix, config.logicalChunkSeperator, config.timeBucketTolerance, config.activePath, config.setPaths);
-const workerFilePath = fileURLToPath(new URL("./background-worker.js", import.meta.url));
+const workerFilePath = fileURLToPath(new URL("./grid-thread-plugin.js", import.meta.url));
 const proxies = new StatefulProxyManager(threads, workerFilePath);
 await proxies.initialize();
 for (let idx = 0; idx < proxies.WorkerCount; idx++) {

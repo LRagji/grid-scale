@@ -91,3 +91,5 @@ export class GridThreadPlugin extends StatefulRecipient {
     }
 
 }
+
+export default new GridThreadPlugin(!isMainThread, parentPort, new InjectableConstructor());
