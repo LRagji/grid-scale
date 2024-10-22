@@ -1,4 +1,4 @@
-import { kWayMerge } from "./k-way-merge.js";
+import { kWayMerge } from "node-apparatus";
 
 function frameMerge<T>(elements: T[]): { yieldIndex: number, purgeIndexes: number[] } {
     let purgeIndexes = [];
