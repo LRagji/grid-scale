@@ -3,14 +3,14 @@ import { GridScale } from "./grid-scale.js";
 import { RedisHashMap } from "./non-volatile-hash-map/redis-hash-map.js";
 import { TConfig } from "./t-config.js";
 import { CommonConfig, generateTagNames } from "./utils.js";
-import { LongRunnerProxies } from "./multi-threads/long-runner-proxies.js";
+import { StatefulProxyManager } from "node-apparatus";
 import { fileURLToPath } from "node:url";
 import { StringToNumberAlgos } from "./string-to-number-algos.js";
 
 //Query Plan
 //Read
 //Merge
-const threads = 0;
+const threads = 10;
 console.log(`Started with ${threads} threads`);
 
 const config: TConfig = CommonConfig();
@@ -18,7 +18,7 @@ const chunkRegistry = new RedisHashMap(config.redisConnection);
 await chunkRegistry.initialize();
 const chunkPlanner = new ChunkPlanner(chunkRegistry, StringToNumberAlgos[config.activeCalculatorIndex], config.tagBucketWidth, config.timeBucketWidth, config.logicalChunkPrefix, config.logicalChunkSeperator, config.timeBucketTolerance, config.activePath, config.setPaths);
 const workerFilePath = fileURLToPath(new URL("./background-worker.js", import.meta.url));
-const proxies = new LongRunnerProxies(threads, workerFilePath);
+const proxies = new StatefulProxyManager(threads, workerFilePath);
 await proxies.initialize();
 for (let idx = 0; idx < proxies.WorkerCount; idx++) {
     await proxies.invokeMethod("initialize", [`${process.pid.toString()}-${idx}`, config.fileNamePre, config.fileNamePost, config.maxDBOpen, 4, 0], idx);

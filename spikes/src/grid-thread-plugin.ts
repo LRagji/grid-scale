@@ -1,12 +1,11 @@
-import { BootstrapConstructor } from "express-service-bootstrap";
+import { InjectableConstructor, StatefulRecipient } from "node-apparatus";
 import { ChunkCache } from "./chunk-cache.js";
 import { IChunk } from "./chunk/i-chunk.js";
 import { gridKWayMerge } from "./merge/grid-row-merge.js";
 import { ChunkSqlite } from "./chunk/chunk-sqlite.js";
-import { LongRunner } from "./multi-threads/long-runner.js";
 import { isMainThread, parentPort, MessagePort } from "node:worker_threads";
 
-export class GridThreadPlugin extends LongRunner {
+export class GridThreadPlugin extends StatefulRecipient {
 
     private mergeFunction: <T>(cursors: IterableIterator<T>[]) => IterableIterator<T>;
     private readonly iteratorCache = new Map<string, [IterableIterator<any>, number]>();
@@ -16,7 +15,7 @@ export class GridThreadPlugin extends LongRunner {
     public constructor(
         shouldActivateMessagePort: boolean = !isMainThread,
         messagePort: MessagePort = parentPort,
-        private readonly injectableConstructor: BootstrapConstructor = new BootstrapConstructor()) {
+        private readonly injectableConstructor: InjectableConstructor = new InjectableConstructor()) {
         super(shouldActivateMessagePort, messagePort);
     }
 
@@ -82,7 +81,7 @@ export class GridThreadPlugin extends LongRunner {
         }
     }
 
-    public override async [Symbol.asyncDispose]() {
+    public async [Symbol.asyncDispose]() {
         await super[Symbol.asyncDispose]();
         for (const [iterator, planIndex] of this.iteratorCache.values()) {
             iterator.return();

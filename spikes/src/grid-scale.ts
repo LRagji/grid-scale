@@ -1,5 +1,5 @@
 import { ChunkPlanner } from "./chunk-planner.js";
-import { LongRunnerProxies } from "./multi-threads/long-runner-proxies.js";
+import { StatefulProxyManager } from "node-apparatus";
 import { INonVolatileHashMap } from "./non-volatile-hash-map/i-non-volatile-hash-map.js";
 
 export class GridScale {
@@ -7,7 +7,7 @@ export class GridScale {
     constructor(
         private readonly chunkRegistry: INonVolatileHashMap,
         private readonly chunkPlanner: ChunkPlanner,
-        private readonly remoteProxies: LongRunnerProxies
+        private readonly remoteProxies: StatefulProxyManager
     ) { }
 
     public async store(records: Map<string, any[]>, recordLength: number, recordTimestampIndex: number, insertTime = Date.now(), diagnostics = new Map<string, any>()): Promise<void> {

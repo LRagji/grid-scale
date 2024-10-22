@@ -1,5 +1,5 @@
 import Database from "better-sqlite3";
-import { BootstrapConstructor } from "express-service-bootstrap";
+import { InjectableConstructor } from "node-apparatus";
 import { join } from "node:path";
 import { mkdirSync, readdirSync } from "node:fs";
 import { ShardAccessMode } from "../types/shard-access-mode.js";
@@ -26,7 +26,7 @@ export class ChunkSqlite implements IChunk {
         private readonly mergeFunction: <T>(cursors: IterableIterator<T>[]) => IterableIterator<T>,
         writeFileName: string,
         searchRegex: RegExp,
-        injectableConstructor: BootstrapConstructor = new BootstrapConstructor()) {
+        injectableConstructor: InjectableConstructor = new InjectableConstructor()) {
         if (this.mode === "write") {
             const fullPath = join(directoryPath, writeFileName)
             mkdirSync(directoryPath, { recursive: true });

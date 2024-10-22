@@ -1,4 +1,4 @@
-import { BootstrapConstructor } from "express-service-bootstrap";
+import { InjectableConstructor } from "node-apparatus";
 import { IChunk } from "./chunk/i-chunk.js";
 import { ShardAccessMode } from "./types/shard-access-mode.js";
 
@@ -11,7 +11,7 @@ export class ChunkCache<T extends IChunk> {
         private readonly bulkDropLimit: number,
         private readonly mergeFunction: <T>(cursors: IterableIterator<T>[]) => IterableIterator<T>,
         private readonly searchRegex: RegExp,
-        private readonly injectableConstructor: BootstrapConstructor = new BootstrapConstructor()) { }
+        private readonly injectableConstructor: InjectableConstructor = new InjectableConstructor()) { }
 
     public getChunk(connectionPath: string, mode: ShardAccessMode, callerSignature: string): T {
         const cacheKey = connectionPath + mode;
