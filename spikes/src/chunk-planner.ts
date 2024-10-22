@@ -3,13 +3,12 @@ import { ChunkId } from "./chunk-id.js";
 import { INonVolatileHashMap } from "./non-volatile-hash-map/i-non-volatile-hash-map.js";
 import { DistributedIterationPlan } from "./types/distributed-iteration-plan.js";
 import { DistributedUpsertPlan } from "./types/distributed-upsert-plan.js";
-import { StringToNumberAlgos } from "./string-to-number-algos.js";
 
 export class ChunkPlanner {
 
     constructor(
         private readonly chunkLinkRegistry: INonVolatileHashMap,
-        private readonly stringToNumberAlgosIndex: number,
+        private readonly stringToNumber: (string) => number[],
         private readonly tagBucketWidth: number,
         private readonly timeBucketWidth: number,
         private readonly logicalChunkPrefix: string,
@@ -22,7 +21,7 @@ export class ChunkPlanner {
         //Plan AIM:Intention of the plan is to touch one chunk at a time with all writes included so that we reduce data fragmentation and IOPS
         const computedPlan = { chunkAllocations: new Map<string, Map<string, any[]>>(), chunkDisplacements: new Map<string, [number, Set<string>]>() };
         for (const [tagName, records] of recordSet) {
-            const chunkIdByInsertTime = ChunkId.from(tagName, insertTime, this.stringToNumberAlgosIndex, this.tagBucketWidth, this.timeBucketWidth, this.logicalChunkPrefix, this.logicalChunkSeperator);
+            const chunkIdByInsertTime = ChunkId.from(tagName, insertTime, this.stringToNumber, this.tagBucketWidth, this.timeBucketWidth, this.logicalChunkPrefix, this.logicalChunkSeperator);
             const diskIndex = chunkIdByInsertTime.tagNameMod(this.disksLayout.get(this.writersDiskPath).length);
             const connectionPath = join(this.writersDiskPath, this.disksLayout.get(this.writersDiskPath)[diskIndex], chunkIdByInsertTime.logicalChunkId);
             const tagNameRecordSetMap = computedPlan.chunkAllocations.get(connectionPath) || new Map<string, any[]>();
@@ -33,7 +32,7 @@ export class ChunkPlanner {
                 existingRows.push(record);
                 tagNameRecordSetMap.set(tagName, existingRows);
                 //Chunk Misplacement's
-                const chunkIdByRecordTime = ChunkId.from(tagName, record[timeIndex], this.stringToNumberAlgosIndex, this.tagBucketWidth, this.timeBucketWidth, this.logicalChunkPrefix, this.logicalChunkSeperator);
+                const chunkIdByRecordTime = ChunkId.from(tagName, record[timeIndex], this.stringToNumber, this.tagBucketWidth, this.timeBucketWidth, this.logicalChunkPrefix, this.logicalChunkSeperator);
                 const toleranceWidth = this.timeBucketWidth * this.timeBucketTolerance;
                 const minimumTolerance = chunkIdByInsertTime.timeBucketed[0] - toleranceWidth;
                 const maximumTolerance = chunkIdByInsertTime.timeBucketed[0] + toleranceWidth;
@@ -48,7 +47,7 @@ export class ChunkPlanner {
         //Affinity
         const affinityDistribution = new Array<[string, Map<string, any[]>][]>(distributionCardinality);
         for (const [connectionPath, rows] of computedPlan.chunkAllocations) {
-            const index = StringToNumberAlgos[1](connectionPath)[0] % affinityDistribution.length;
+            const index = this.stringToNumber(connectionPath)[0] % affinityDistribution.length;
             const existingPlans = affinityDistribution[index] || [];
             existingPlans.push([connectionPath, rows]);
             affinityDistribution[index] = existingPlans;
@@ -67,11 +66,11 @@ export class ChunkPlanner {
         const logicalIdCache = new Map<string, Set<string>>();
 
         for (const tag of tags) {
-            const chunkIdByRecordTime = ChunkId.from(tag, startInclusiveBucketedTime, this.stringToNumberAlgosIndex, this.tagBucketWidth, this.timeBucketWidth, this.logicalChunkPrefix, this.logicalChunkSeperator);
+            const chunkIdByRecordTime = ChunkId.from(tag, startInclusiveBucketedTime, this.stringToNumber, this.tagBucketWidth, this.timeBucketWidth, this.logicalChunkPrefix, this.logicalChunkSeperator);
 
             if (logicalIdCache.has(chunkIdByRecordTime.logicalChunkId) === false) {
-                const LHSToleranceChunkId = ChunkId.from(tag, startInclusiveBucketedTime - (this.timeBucketWidth * this.timeBucketTolerance), this.stringToNumberAlgosIndex, this.tagBucketWidth, this.timeBucketWidth, this.logicalChunkPrefix, this.logicalChunkSeperator);
-                const RHSToleranceChunkId = ChunkId.from(tag, startInclusiveBucketedTime + (this.timeBucketWidth * this.timeBucketTolerance), this.stringToNumberAlgosIndex, this.tagBucketWidth, this.timeBucketWidth, this.logicalChunkPrefix, this.logicalChunkSeperator);
+                const LHSToleranceChunkId = ChunkId.from(tag, startInclusiveBucketedTime - (this.timeBucketWidth * this.timeBucketTolerance), this.stringToNumber, this.tagBucketWidth, this.timeBucketWidth, this.logicalChunkPrefix, this.logicalChunkSeperator);
+                const RHSToleranceChunkId = ChunkId.from(tag, startInclusiveBucketedTime + (this.timeBucketWidth * this.timeBucketTolerance), this.stringToNumber, this.tagBucketWidth, this.timeBucketWidth, this.logicalChunkPrefix, this.logicalChunkSeperator);
                 const displacedChunks = await this.chunkLinkRegistry.getFields(chunkIdByRecordTime.logicalChunkId);
                 logicalIdCache.set(chunkIdByRecordTime.logicalChunkId, new Set<string>([...displacedChunks, chunkIdByRecordTime.logicalChunkId, LHSToleranceChunkId.logicalChunkId, RHSToleranceChunkId.logicalChunkId]));
             }
@@ -90,7 +89,7 @@ export class ChunkPlanner {
         //Affinity
         const affinityDistribution = new Array<[Set<string>, Set<string>][]>(distributionCardinality);
         for (const [logicalId, connectionPathsAndTags] of tagsGroupedByLogicalChunkId) {
-            const index = StringToNumberAlgos[1](logicalId)[0] % affinityDistribution.length;
+            const index = this.stringToNumber(logicalId)[0] % affinityDistribution.length;
             const existingPlans = affinityDistribution[index] || [];
             existingPlans.push(connectionPathsAndTags);
             affinityDistribution[index] = existingPlans;

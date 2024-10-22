@@ -1,5 +1,3 @@
-import { StringToNumberAlgos } from './string-to-number-algos.js';
-
 export class ChunkId {
     public readonly logicalChunkId: string;
     public readonly tagNameBucketed: number[];
@@ -9,8 +7,8 @@ export class ChunkId {
         return input - (input % width);
     }
 
-    public static from(tagName: string, time: number, stringToNumberAlgosIndex: number, tagBucketWidth: number, timeBucketWidth: number, logicalChunkPrefix: string, logicalChunkSeperator: string): ChunkId {
-        const tagHash = StringToNumberAlgos[stringToNumberAlgosIndex](tagName);
+    public static from(tagName: string, time: number, stringToNumber: (string) => number[], tagBucketWidth: number, timeBucketWidth: number, logicalChunkPrefix: string, logicalChunkSeperator: string): ChunkId {
+        const tagHash = stringToNumber(tagName);
         return new ChunkId(tagHash, [time], tagBucketWidth, timeBucketWidth, logicalChunkPrefix, logicalChunkSeperator);
     }
 

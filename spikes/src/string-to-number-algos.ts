@@ -17,7 +17,12 @@ function DJB2(input: string): number[] {
 }
 
 function StringSplit(input: string): number[] {
-    return [parseInt(input.substring(3), 10)]; //Tag1 Tag[x]
+    if (input.substring(0, 3) === 'Tag') {
+        return [parseInt(input.substring(3), 10)]; //Tag1 Tag[x]
+    }
+    else {
+        return DJB2(input);
+    }
 }
 
 export const StringToNumberAlgos = [MD5, DJB2, StringSplit];

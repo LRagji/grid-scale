@@ -5,6 +5,7 @@ import { RedisHashMap } from "./non-volatile-hash-map/redis-hash-map.js";
 import { ChunkPlanner } from "./chunk-planner.js";
 import { LongRunnerProxies } from "./multi-threads/long-runner-proxies.js";
 import { fileURLToPath } from 'node:url';
+import { StringToNumberAlgos } from "./string-to-number-algos.js";
 
 
 // Invoke an Instance of chunk-container
@@ -23,7 +24,7 @@ const config: TConfig = CommonConfig()
 const insertTime = Date.now();
 const chunkRegistry = new RedisHashMap(config.redisConnection);
 await chunkRegistry.initialize();
-const chunkPlanner = new ChunkPlanner(chunkRegistry, config.activeCalculatorIndex, config.tagBucketWidth, config.timeBucketWidth, config.logicalChunkPrefix, config.logicalChunkSeperator, config.timeBucketTolerance, config.activePath, config.setPaths);
+const chunkPlanner = new ChunkPlanner(chunkRegistry, StringToNumberAlgos[config.activeCalculatorIndex], config.tagBucketWidth, config.timeBucketWidth, config.logicalChunkPrefix, config.logicalChunkSeperator, config.timeBucketTolerance, config.activePath, config.setPaths);
 const workerFilePath = fileURLToPath(new URL("./background-worker.js", import.meta.url));
 const proxies = new LongRunnerProxies(threads, workerFilePath);
 await proxies.initialize();
