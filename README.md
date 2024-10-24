@@ -37,10 +37,9 @@ Design Pro:
 2. When data come in with a lead of lag with respect to system time which grows the cache lookups on redis.(Can we have background-process to clear up mis-placements.)
 
 Work items
-1. Refactor K-Merge Algo with chunk merge class.This has a bug for tags
-2. Refactor Threading Sub-system.
+
 3. Let sqlite chunk take table schema as input.(Table Creation,Index,Upsert & Select Statements)
-4. Move to multi threading.
+
 5. Unit tests
 6. Cache for table names which exists in a DB, instead of querying them everytime.
 7. Perfect Hashing algo for converting strings to sequential int's Looks at Dynamo DB hashing also.

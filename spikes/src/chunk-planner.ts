@@ -22,7 +22,7 @@ export class ChunkPlanner {
         const computedPlan = { chunkAllocations: new Map<string, Map<string, any[]>>(), chunkDisplacements: new Map<string, [number, Set<string>]>() };
         for (const [tagName, records] of recordSet) {
             const chunkIdByInsertTime = ChunkId.from(tagName, insertTime, this.stringToNumber, this.tagBucketWidth, this.timeBucketWidth, this.logicalChunkPrefix, this.logicalChunkSeperator);
-            const diskIndex = chunkIdByInsertTime.tagNameMod(this.disksLayout.get(this.writersDiskPath).length);
+            const diskIndex = chunkIdByInsertTime.tagCompressWithinLimits(this.disksLayout.get(this.writersDiskPath).length);
             const connectionPath = join(this.writersDiskPath, this.disksLayout.get(this.writersDiskPath)[diskIndex], chunkIdByInsertTime.logicalChunkId);
             const tagNameRecordSetMap = computedPlan.chunkAllocations.get(connectionPath) || new Map<string, any[]>();
             for (let recordIndex = 0; recordIndex < records.length; recordIndex += recordSize) {
@@ -47,7 +47,7 @@ export class ChunkPlanner {
         //Affinity
         const affinityDistribution = new Array<[string, Map<string, any[]>][]>(distributionCardinality);
         for (const [connectionPath, rows] of computedPlan.chunkAllocations) {
-            const index = this.stringToNumber(connectionPath)[0] % affinityDistribution.length;
+            const index = ChunkId.compressWithinLimits(this.stringToNumber(connectionPath), affinityDistribution.length);
             const existingPlans = affinityDistribution[index] || [];
             existingPlans.push([connectionPath, rows]);
             affinityDistribution[index] = existingPlans;
@@ -77,7 +77,7 @@ export class ChunkPlanner {
 
             const existingTagsAndConnectionPaths = tagsGroupedByLogicalChunkId.get(chunkIdByRecordTime.logicalChunkId) || [new Set<string>(), new Set<string>()];
             for (const [setPath, diskPaths] of this.disksLayout) {
-                const diskIndex = chunkIdByRecordTime.tagNameMod(diskPaths.length);
+                const diskIndex = chunkIdByRecordTime.tagCompressWithinLimits(diskPaths.length);
                 for (const logicalId of logicalIdCache.get(chunkIdByRecordTime.logicalChunkId)) {
                     const connectionPath = join(setPath, diskPaths[diskIndex], logicalId);
                     existingTagsAndConnectionPaths[0].add(connectionPath);
@@ -89,7 +89,7 @@ export class ChunkPlanner {
         //Affinity
         const affinityDistribution = new Array<[Set<string>, Set<string>][]>(distributionCardinality);
         for (const [logicalId, connectionPathsAndTags] of tagsGroupedByLogicalChunkId) {
-            const index = this.stringToNumber(logicalId)[0] % affinityDistribution.length;
+            const index = ChunkId.compressWithinLimits(this.stringToNumber(logicalId), affinityDistribution.length);
             const existingPlans = affinityDistribution[index] || [];
             existingPlans.push(connectionPathsAndTags);
             affinityDistribution[index] = existingPlans;

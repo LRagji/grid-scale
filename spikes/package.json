@@ -30,7 +30,7 @@
   },
   "dependencies": {
     "better-sqlite3": "^11.3.0",
-    "node-apparatus": "^0.1.3",
+    "node-apparatus": "^0.1.8",
     "redis": "^4.7.0"
   }
 }

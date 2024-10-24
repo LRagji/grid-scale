@@ -1,10 +1,23 @@
 export class ChunkId {
     public readonly logicalChunkId: string;
-    public readonly tagNameBucketed: number[];
+    private readonly tagNameBucketed: number[];
     public readonly timeBucketed: number[];
 
     public static bucket(input: number, width: number): number {
         return input - (input % width);
+    }
+
+    public static unCompressWithinLimits(input: number[], limit: number): number[] {
+        return input.map(val => ChunkId.bucket(val, limit));
+    }
+
+    public static compressWithinLimits(input: number[], limit: number): number {
+        const sum = ChunkId.sumArray(input);
+        return Math.abs(sum) % limit;
+    }
+
+    private static sumArray(input: number[]): number {
+        return input.reduce((acc, val) => acc + val, 0);
     }
 
     public static from(tagName: string, time: number, stringToNumber: (string) => number[], tagBucketWidth: number, timeBucketWidth: number, logicalChunkPrefix: string, logicalChunkSeperator: string): ChunkId {
@@ -12,17 +25,17 @@ export class ChunkId {
         return new ChunkId(tagHash, [time], tagBucketWidth, timeBucketWidth, logicalChunkPrefix, logicalChunkSeperator);
     }
 
-    public tagNameMod(limit: number): number {
-        return Math.abs(this.tagHash.reduce((acc, val) => acc + val, 0)) % limit;
+    public tagCompressWithinLimits(limit: number): number {
+        return ChunkId.compressWithinLimits(this.tagHash, limit);
     }
 
-    public timeMod(limit: number): number {
-        return Math.abs(this.timeHash.reduce((acc, val) => acc + val, 0)) % limit;
+    public timeCompressWithinLimits(limit: number): number {
+        return ChunkId.compressWithinLimits(this.timeHash, limit);
     }
 
     constructor(private readonly tagHash: number[], private readonly timeHash: number[], tagBucketWidth: number, timeBucketWidth: number, logicalChunkPrefix: string, logicalChunkSeperator: string) {
-        this.tagNameBucketed = this.tagHash.map(val => ChunkId.bucket(val, tagBucketWidth));
-        this.timeBucketed = this.timeHash.map(val => ChunkId.bucket(val, timeBucketWidth));
+        this.tagNameBucketed = ChunkId.unCompressWithinLimits(this.tagHash, tagBucketWidth);
+        this.timeBucketed = ChunkId.unCompressWithinLimits(this.timeHash, timeBucketWidth);
         this.logicalChunkId = `${logicalChunkPrefix}${logicalChunkSeperator}${this.tagNameBucketed.join("")}${logicalChunkSeperator}${this.timeBucketed.join("")}`;
     }
 }
