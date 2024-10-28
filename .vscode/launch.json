@@ -11,11 +11,10 @@
             "skipFiles": [
                 "<node_internals>/**"
             ],
-            "preLaunchTask": "npm: build - spikes",
-            "cwd": "${workspaceFolder}/spikes",
-            "program": "${workspaceFolder}/spikes/src/reader.ts",
+            "preLaunchTask": "npm: build",
+            "program": "${workspaceFolder}/src/examples/reader.ts",
             "outFiles": [
-                "${workspaceFolder}/spikes/dist/src//**/*.js"
+                "${workspaceFolder}/dist/src//**/*.js"
             ]
         },
         {
@@ -25,11 +24,10 @@
             "skipFiles": [
                 "<node_internals>/**"
             ],
-            "preLaunchTask": "npm: build - spikes",
-            "cwd": "${workspaceFolder}/spikes",
-            "program": "${workspaceFolder}/spikes/src/writer.ts",
+            "preLaunchTask": "npm: build",
+            "program": "${workspaceFolder}/src/examples/writer.ts",
             "outFiles": [
-                "${workspaceFolder}/spikes/dist/src//**/*.js"
+                "${workspaceFolder}/dist/src//**/*.js"
             ]
         },
         {
@@ -42,10 +40,10 @@
             "skipFiles": [
                 "<node_internals>/**"
             ],
-            "program": "${workspaceFolder}/spikes/test/k-way-merge-tests.ts",
+            "program": "${workspaceFolder}/test/k-way-merge-tests.ts",
             // "preLaunchTask": "npm: build",
             "outFiles": [
-                "${workspaceFolder}/spikes/dist//**/*.js"
+                "${workspaceFolder}/dist//**/*.js"
             ]
         }
     ]
