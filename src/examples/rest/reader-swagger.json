@@ -1,0 +1,74 @@
+{
+    "swagger": "2.0",
+    "openapi": "3.0.0",
+    "info": {
+        "title": "Reader Rest API for Grid Scale",
+        "version": "1.0.0",
+        "description": "API documentation for Grid Scale"
+    },
+    "paths": {
+        "/data": {
+            "get": {
+                "summary": "Retrieve data",
+                "description": "Fetches data based on tags and time range",
+                "parameters": [
+                    {
+                        "name": "tags",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        },
+                        "description": "Tags to filter the data"
+                    },
+                    {
+                        "name": "startInclusiveTime",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "default": 0
+                        },
+                        "description": "Start time (inclusive) for the data range"
+                    },
+                    {
+                        "name": "endExclusiveTime",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "default": 0
+                        },
+                        "description": "End time (exclusive) for the data range"
+                    },
+                    {
+                        "name": "queryId",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "default": "Q[<current timestamp>]"
+                        },
+                        "description": "Query identifier"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": true
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

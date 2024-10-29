@@ -17,7 +17,7 @@ export class ChunkPlanner {
         private readonly writersDiskPath: string,
         private readonly disksLayout: Map<string, string[]>) { }
 
-    public planUpserts(recordSet: Map<string, any[]>, recordSize: number, timeIndex: number, insertTime: number, distributionCardinality: number): DistributedUpsertPlan {
+    public planUpserts(recordSet: Map<string, any[]>, recordSize: number, timeIndex: number, insertTimeIndex: number, insertTime: number, distributionCardinality: number): DistributedUpsertPlan {
         //Plan AIM:Intention of the plan is to touch one chunk at a time with all writes included so that we reduce data fragmentation and IOPS
         const computedPlan = { chunkAllocations: new Map<string, Map<string, any[]>>(), chunkDisplacements: new Map<string, [number, Set<string>]>() };
         for (const [tagName, records] of recordSet) {
@@ -28,6 +28,7 @@ export class ChunkPlanner {
             for (let recordIndex = 0; recordIndex < records.length; recordIndex += recordSize) {
                 //Chunk Allocations
                 const record = records.slice(recordIndex, recordIndex + recordSize);
+                record[insertTimeIndex] = insertTime;
                 const existingRows = tagNameRecordSetMap.get(tagName) || new Array<any>();
                 existingRows.push(record);
                 tagNameRecordSetMap.set(tagName, existingRows);

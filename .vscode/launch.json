@@ -7,12 +7,12 @@
         {
             "type": "node",
             "request": "launch",
-            "name": "Launch Reader",
+            "name": "ReaderREST",
             "skipFiles": [
                 "<node_internals>/**"
             ],
             "preLaunchTask": "npm: build",
-            "program": "${workspaceFolder}/src/examples/reader.ts",
+            "program": "${workspaceFolder}/src/examples/rest/reader-rest.ts",
             "outFiles": [
                 "${workspaceFolder}/dist/src//**/*.js"
             ]
@@ -20,12 +20,38 @@
         {
             "type": "node",
             "request": "launch",
-            "name": "Launch Writer",
+            "name": "WriterREST",
             "skipFiles": [
                 "<node_internals>/**"
             ],
             "preLaunchTask": "npm: build",
-            "program": "${workspaceFolder}/src/examples/writer.ts",
+            "program": "${workspaceFolder}/src/examples/rest/writer-rest.ts",
+            "outFiles": [
+                "${workspaceFolder}/dist/src//**/*.js"
+            ]
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "ReaderCLI",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "preLaunchTask": "npm: build",
+            "program": "${workspaceFolder}/src/examples/cli/reader-cli.ts",
+            "outFiles": [
+                "${workspaceFolder}/dist/src//**/*.js"
+            ]
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "WriterCLI",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "preLaunchTask": "npm: build",
+            "program": "${workspaceFolder}/src/examples/cli/writer-cli.ts",
             "outFiles": [
                 "${workspaceFolder}/dist/src//**/*.js"
             ]

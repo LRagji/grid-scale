@@ -10,15 +10,19 @@ export class GridScale {
         private readonly remoteProxies: StatefulProxyManager
     ) { }
 
-    public async store(records: Map<string, any[]>, recordLength: number, recordTimestampIndex: number, insertTime = Date.now(), diagnostics = new Map<string, any>()): Promise<void> {
+    public async store(records: Map<string, any[]>, recordLength: number, recordTimestampIndex: number, recordInsertTimeIndex: number, insertTime = Date.now(), diagnostics = new Map<string, any>()): Promise<void> {
         let timings = Date.now();
-        const upsertPlan = this.chunkPlanner.planUpserts(records, recordLength, recordTimestampIndex, insertTime, this.remoteProxies.WorkerCount);
+        const upsertPlan = this.chunkPlanner.planUpserts(records, recordLength, recordTimestampIndex, recordInsertTimeIndex, insertTime, this.remoteProxies.WorkerCount);
         diagnostics.set("planTime", Date.now() - timings);
 
         timings = Date.now();
         const promiseHandles = new Array<Promise<void>>();
         for (let workerIdx = 0; workerIdx < upsertPlan.chunkAllocations.length; workerIdx++) {
-            promiseHandles.push(this.remoteProxies.invokeMethod("bulkWrite", [upsertPlan.chunkAllocations[workerIdx]], workerIdx));
+            const workerPlan = upsertPlan.chunkAllocations[workerIdx];
+            if (workerPlan == undefined) {
+                continue;
+            }
+            promiseHandles.push(this.remoteProxies.invokeMethod("bulkWrite", [workerPlan], workerIdx));
         }
         await Promise.all(promiseHandles);
         diagnostics.set("writeTime", Date.now() - timings);
@@ -50,11 +54,13 @@ export class GridScale {
             do {
                 for (let workerIdx = startInclusiveWorkerIndex; workerIdx < endExclusiveWorkerIndex; workerIdx++) {
                     const plans = iterationPlan.affinityDistributedChunkReads[workerIdx];
-                    const resultPromise = async () => {
-                        const results = await this.remoteProxies.invokeMethod<any[]>("bulkIterate", [queryId, plans, startInclusive, endExclusive, pageSize], workerIdx);
-                        return [workerIdx, results];
+                    if (plans !== undefined) {
+                        const resultPromise = async () => {
+                            const results = await this.remoteProxies.invokeMethod<any[]>("bulkIterate", [queryId, plans, startInclusive, endExclusive, pageSize], workerIdx);
+                            return [workerIdx, results];
+                        }
+                        workerPromises.set(workerIdx, resultPromise());
                     }
-                    workerPromises.set(workerIdx, resultPromise());
                 }
                 const completedThreadResult = await Promise.race(workerPromises.values());
                 const workerIdx = completedThreadResult[0];

@@ -16,7 +16,7 @@ export class ChunkCache<T extends IChunk> {
     public getChunk(connectionPath: string, mode: ShardAccessMode, callerSignature: string): T {
         const cacheKey = connectionPath + mode;
         if (this.chunkCache.has(cacheKey)) {
-            return this.chunkCache.get(connectionPath);
+            return this.chunkCache.get(cacheKey);
         }
         else {
             if (this.chunkCache.size > this.cacheLimit) {
