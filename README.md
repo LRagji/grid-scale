@@ -51,17 +51,7 @@ Highly scalable time-series database in a library!!
 This project is contribution to public domain under license specified, view [LICENSE.md](/LICENSE) file for details.
 
 
-Writer:
-1. One start up create a unique id for itself use UUID.
-2. Have child processes that can write to different sqlite db.(assuming sqlite uses built in process memory or can be stateless with threads?)
-3. Open connection to redis as the indexer
-4. Read the bucket widths for time and tags.(Default 50K 1 year)
-5. Read tolerance for system time and sample time in number of widths. Minimum 1
-6. Start express server to accept connections.
-7. Table structure per day TagName(255),Sample Time,Numeric Value,Other Value Json ̀
-
-
-F.A.Q
+## F.A.Q
 
 ### What dimensions does this scale on?
 
