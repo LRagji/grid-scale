@@ -1,5 +1,54 @@
 # grid-scale
-Big data time series
+
+Highly scalable time-series database in a library!!
+
+## Features
+
+- **High Scalability**: Efficiently handles large volumes of time-series data with custom schema.
+- **Query Load Distribution**: Distributes query load to maintain high performance.
+- **High Speed Ingestion**: Supports rapid data ingestion with high concurrency.
+- **Cost-Effective**: Designed to be budget-friendly while maintaining performance.
+
+## Getting Started
+
+### Prerequisites
+
+- Node.js v20 and above.
+- Redis
+- SQLite
+
+### Installation
+
+1. Clone the repository:
+    ```sh
+    git clone https://github.com/yourusername/grid-scale.git
+    ```
+2. Navigate to the project directory:
+    ```sh
+    cd grid-scale
+    ```
+3. Install dependencies:
+    ```sh
+    npm install
+    ```
+
+### Usage
+
+1. Use examples/cli folder to examples in cli
+2. Use examples/rest folder for a microservice kind of approach.
+
+## Built with
+
+1. Authors :heart: for Open Source.
+
+## Contributions
+
+1. New ideas/techniques are welcomed.
+2. Raise a Pull Request.
+
+## License
+
+This project is contribution to public domain under license specified, view [LICENSE.md](/LICENSE) file for details.
 
 
 Writer:
@@ -10,43 +59,6 @@ Writer:
 5. Read tolerance for system time and sample time in number of widths. Minimum 1
 6. Start express server to accept connections.
 7. Table structure per day TagName(255),Sample Time,Numeric Value,Other Value Json ̀
-
-
-What needs to scale:
-1. Space to save data. (storage)
-2. Accommodate for multiple REST clients (compute)
-3. Reduce time required for single query.(latency)
-
-Approach:
-1. Solve Scale issue.
-2. Solve Latency issue.
-3. Solve Cost issue.
-
-Observations:
-1. High IOPS is needed
-2. Compute requirements are low
-3. IOPS with high storage is costly
-
-Assumption:
-1. It is easy to share volume mounts across multiple pods in k8s in readonly mode and single write/read mode.(Need to validate)
-2. Typically Data will come in with respect to wall clock time and occasionally be out of sync, There has to be a tolerance setting such that reads are not amplified.
-    The way to solve this would be to have linked list of index in redis and bigger time buckets like years to limit too many DB's to be opened.
-
-Design Pro:
-1. Fragmentation od Data cause of H scaling and Hashing.(Writers)
-2. When data come in with a lead of lag with respect to system time which grows the cache lookups on redis.(Can we have background-process to clear up mis-placements.)
-
-Work items
-
-3. Let sqlite chunk take table schema as input.(Table Creation,Index,Upsert & Select Statements)
-
-5. Unit tests
-6. Cache for table names which exists in a DB, instead of querying them everytime.
-7. Perfect Hashing algo for converting strings to sequential int's Looks at Dynamo DB hashing also.
-8. Test with 5 million tags on one day data :D
-9. Perf & Memory testing.
-10. Effect of lagging data with respect to wall clock(will this create lot of file io?)
-11. Summarization.(Either with Indexes or one table per tag.)
 
 
 F.A.Q

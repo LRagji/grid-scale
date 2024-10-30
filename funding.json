@@ -1,0 +1,84 @@
+{
+    "version": "v1.0.0",
+    "entity": {
+        "type": "individual",
+        "role": "maintainer",
+        "name": "Laukik",
+        "email": "wpredqueen@gmail.com",
+        "phone": "",
+        "description": "I'm a developer interested in building a scalable time-series database for cloud and on-premise deployments, with a focus on low-latency and low cost components. I have been working on this project for the past year. I have been looking for funding to support our ongoing development and maintenance costs as well as users to try this on production environments for feedback.",
+        "webpageUrl": {
+            "url": "https://github.com/LRagji/grid-scale/blob/main/README.md",
+            "wellKnown": ""
+        }
+    },
+    "projects": [
+        {
+            "guid": "grid-scale",
+            "name": "Grid Scale Time Series Database",
+            "description": "This project aims to build a scalable time-series database for cloud and on-premise deployments, with a focus on low-latency and low cost components. The database is designed to handle high-throughput data streams and provide real-time analytics for monitoring and alerting systems. The project is currently in the alpha stage and is looking for funding to support ongoing development and maintenance costs.",
+            "webpageUrl": {
+                "url": "https://github.com/LRagji/grid-scale"
+            },
+            "repositoryUrl": {
+                "url": "https://github.com/LRagji/grid-scale/blob/main/README.md",
+                "wellKnown": ""
+            },
+            "licenses": [
+                "spdx:Apache-2.0"
+            ],
+            "tags": [
+                "database",
+                "timeseries",
+                "SQLite",
+                "Time-series"
+            ]
+        }
+    ],
+    "funding": {
+        "channels": [
+            {
+                "guid": "anybank",
+                "type": "bank",
+                "address": "",
+                "description": "Will accept direct bank transfers. Please e-mail me for details."
+            }
+        ],
+        "plans": [
+            {
+                "guid": "cloud-monthly",
+                "status": "active",
+                "name": "Hosting support",
+                "description": "This will cover the monthly cloud costs for the project testing in K8S.",
+                "amount": 500,
+                "currency": "USD",
+                "frequency": "monthly",
+                "channels": [
+                    "anybank"
+                ]
+            },
+            {
+                "guid": "developer-time",
+                "status": "active",
+                "name": "Developer compensation",
+                "description": "This will cover the cost of one developer working part-time on the projects.",
+                "amount": 1000,
+                "currency": "USD",
+                "frequency": "monthly",
+                "channels": [
+                    "anybank"
+                ]
+            }
+        ],
+        "history": [
+            {
+                "year": 2024,
+                "income": 0,
+                "expenses": 0,
+                "taxes": 0,
+                "currency": "USD",
+                "description": "Started accepting donations for the first time."
+            }
+        ]
+    }
+}
