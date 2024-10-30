@@ -18,8 +18,8 @@ import { StringToNumberAlgos } from "../../string-to-number-algos.js";
 const threads = 0;
 console.log(`Started with ${threads} threads`);
 
-const totalTags = 50000;
-const totalSamplesPerTag = 100;
+const totalTags = 10;
+const totalSamplesPerTag = 86400;
 const config: TConfig = CommonConfig()
 const insertTime = Date.now();
 const chunkRegistry = new RedisHashMap(config.redisConnection);

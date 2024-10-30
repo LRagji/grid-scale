@@ -12,9 +12,9 @@ import * as OpenApiDefinition from "./reader-swagger.json" with { type: "json" }
 const applicationName = "Reader REST API";
 const app = new ApplicationBuilder(applicationName);
 const utilities = new Convenience();
+const threadCount = 10;
 
-async function initializeGridScale(DIContainer: DisposableSingletonContainer) {
-    const threads = 10;
+async function initializeGridScale(DIContainer: DisposableSingletonContainer, threads: number) {
     const config = DIContainer.createInstanceWithoutConstructor<TConfig>("TConfig", CommonConfig);
     const chunkRegistry = DIContainer.createInstance<RedisHashMap>("ChunkRegistry", RedisHashMap, [config.redisConnection]);
     await chunkRegistry.initialize();
@@ -36,19 +36,26 @@ function setupRoutes(rootRouter: IRouter) {
         const startInclusiveTime = parseInt((req.query.startInclusiveTime as string || '0'), 10);
         const endExclusiveTime = parseInt((req.query.endExclusiveTime as string || '0'), 10);
         const queryId = req.query.queryId as string || `Q[${Date.now()}]`;
-        const diagnostics = new Map<string, number>();
+        const diagnostics = new Map<string, number | String>();
+        diagnostics.set("queryId", queryId)
+        diagnostics.set("workers", threadCount)
         const cursor = gridScale.iteratorByTimePage(tags, startInclusiveTime, endExclusiveTime, queryId, diagnostics);
         res.setHeader('Content-Type', 'application/json');
+        res.write(`{ "data": [`);
+        let first = true;
         for await (const item of cursor) {
-            res.write(JSON.stringify(item));
+            res.write((first === true ? "" : ",") + JSON.stringify(item));
+            first = false;
         }
+        res.write(`], "diagnostics":`);
         res.write(JSON.stringify(Object.fromEntries(diagnostics.entries())));
+        res.write(` }`);
         res.end();
     });
 }
 
 async function AppStartUp(rootRouter: IRouter, DIContainer: DisposableSingletonContainer, applicationBuilder: ApplicationBuilder) {
-    await initializeGridScale(DIContainer);
+    await initializeGridScale(DIContainer, threadCount);
     setupRoutes(rootRouter);
 
     //Configure your application.
@@ -76,5 +83,5 @@ async function AppStartUp(rootRouter: IRouter, DIContainer: DisposableSingletonC
 
 app.overrideStartupHandler(AppStartUp)
     .start()
-    .then(() => console.log(`${applicationName} started successfully.`))
+    .then(() => console.log(`${applicationName} started successfully with ${threadCount} workers.`))
     .catch(console.error);
