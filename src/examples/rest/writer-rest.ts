@@ -12,15 +12,15 @@ import { StringToNumberAlgos } from "../../string-to-number-algos.js";
 const applicationName = "Writer REST API";
 const app = new ApplicationBuilder(applicationName);
 const utilities = new Convenience();
+const threadCount = 10;
 
 async function initializeGridScale(DIContainer: DisposableSingletonContainer) {
-    const threads = 10;
     const config = DIContainer.createInstanceWithoutConstructor<TConfig>("TConfig", CommonConfig);
     const chunkRegistry = DIContainer.createInstance<RedisHashMap>("ChunkRegistry", RedisHashMap, [config.redisConnection]);
     await chunkRegistry.initialize();
     const chunkPlanner = DIContainer.createInstance<ChunkPlanner>("ChunkPlanner", ChunkPlanner, [chunkRegistry, StringToNumberAlgos[config.activeCalculatorIndex], config.tagBucketWidth, config.timeBucketWidth, config.logicalChunkPrefix, config.logicalChunkSeparator, config.timeBucketTolerance, config.activePath, config.setPaths]);
     const workerFilePath = fileURLToPath(new URL("../../grid-thread-plugin.js", import.meta.url));
-    const proxies = DIContainer.createInstance<StatefulProxyManager>("ProxyManager", StatefulProxyManager, [threads, workerFilePath]);
+    const proxies = DIContainer.createInstance<StatefulProxyManager>("ProxyManager", StatefulProxyManager, [threadCount, workerFilePath]);
     await proxies.initialize();
     for (let idx = 0; idx < proxies.WorkerCount; idx++) {
         await proxies.invokeMethod("initialize", [`${process.pid.toString()}-${idx}`, config.fileNamePre, config.fileNamePost, config.maxDBOpen, 4, 0], idx);
@@ -70,5 +70,5 @@ async function AppStartUp(rootRouter: IRouter, DIContainer: DisposableSingletonC
 
 app.overrideStartupHandler(AppStartUp)
     .start()
-    .then(() => console.log(`${applicationName} started successfully.`))
+    .then(() => console.log(`${applicationName} started successfully with ${threadCount} workers.`))
     .catch(console.error);

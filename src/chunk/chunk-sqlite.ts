@@ -1,7 +1,7 @@
 import Database from "better-sqlite3";
 import { InjectableConstructor } from "node-apparatus";
 import { join } from "node:path";
-import { mkdirSync, readdirSync, watch, unwatchFile, WatchEventType } from "node:fs";
+import { mkdirSync, readdirSync, watch, WatchEventType, FSWatcher } from "node:fs";
 import { ShardAccessMode } from "../types/shard-access-mode.js";
 import { IChunk } from "./i-chunk.js";
 
@@ -12,6 +12,7 @@ export class ChunkSqlite implements IChunk {
     private readonly readonlyDBs = new Array<Database.Database>();
     private readCursorOpen = false;
     private reconcileDirectory = false;
+    private directoryWatcher: FSWatcher;
     private readonly reconcileHandler = this.reconcileDirectoryChanges.bind(this);
     private readonly readonlyDBActivePaths = new Set<string>();
     private readonly preConditionedSectors = new Set<string>();
@@ -56,9 +57,10 @@ export class ChunkSqlite implements IChunk {
             }
 
             this.reconcileDirectory = false;
-            watch(this.directoryPath, { recursive: false }, this.reconcileHandler);
+            this.directoryWatcher = watch(this.directoryPath, { recursive: false }, this.reconcileHandler);
         }
         catch (e) {
+            this.reconcileDirectory = true; ``
             if (e.code === 'ENOENT') {
                 return;//No Directory exists so no DB or Data
             }
@@ -71,7 +73,10 @@ export class ChunkSqlite implements IChunk {
     private reconcileDirectoryChanges(eventType: WatchEventType, filename: string) {
         if (filename !== undefined && this.searchRegex.test(filename) && this.readonlyDBActivePaths.has(filename) === false) {
             this.reconcileDirectory = true;
-            unwatchFile(this.directoryPath, this.reconcileHandler);
+            if (this.directoryWatcher !== undefined) {
+                this.directoryWatcher.close();
+                this.directoryWatcher = undefined;
+            }
         }
     }
 
@@ -173,7 +178,10 @@ export class ChunkSqlite implements IChunk {
         }
         else {
             if (this.canReaderBeDisposed()) {
-                unwatchFile(this.directoryPath, this.reconcileHandler);
+                if (this.directoryWatcher !== undefined) {
+                    this.directoryWatcher.close();
+                    this.directoryWatcher = undefined;
+                }
                 this.readonlyDBs.forEach(db => db.close());
                 this.readonlyDBs.length = 0;
                 this.readonlyDBActivePaths.clear();

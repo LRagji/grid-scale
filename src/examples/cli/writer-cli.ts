@@ -15,10 +15,10 @@ import { StringToNumberAlgos } from "../../string-to-number-algos.js";
 // For Write collect all chunks and set data parallel.
 // For Read generate a query plan and get data parallel.
 
-const threads = 0;
+const threads = 10;
 console.log(`Started with ${threads} threads`);
 
-const totalTags = 10;
+const totalTags = 500;
 const totalSamplesPerTag = 86400;
 const config: TConfig = CommonConfig()
 const insertTime = Date.now();
