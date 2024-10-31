@@ -1,7 +1,7 @@
 import Database from "better-sqlite3";
 import { InjectableConstructor } from "node-apparatus";
 import { join } from "node:path";
-import { mkdirSync, readdirSync } from "node:fs";
+import { mkdirSync, readdirSync, watch, unwatchFile, WatchEventType } from "node:fs";
 import { ShardAccessMode } from "../types/shard-access-mode.js";
 import { IChunk } from "./i-chunk.js";
 
@@ -11,6 +11,9 @@ export class ChunkSqlite implements IChunk {
     private readonly db: Database.Database;
     private readonly readonlyDBs = new Array<Database.Database>();
     private readCursorOpen = false;
+    private reconcileDirectory = false;
+    private readonly reconcileHandler = this.reconcileDirectoryChanges.bind(this);
+    private readonly readonlyDBActivePaths = new Set<string>();
     private readonly preConditionedSectors = new Set<string>();
     private readonly tableSqlStatement = (tableName: string) => `CREATE TABLE IF NOT EXISTS [${tableName}] (sampleTime INTEGER PRIMARY KEY NOT NULL, insertTime INTEGER NOT NULL, nValue INTEGER, oValue TEXT);`;
     private readonly indexSqlStatement = (tableName: string) => `CREATE INDEX IF NOT EXISTS [timeIndex_${tableName}] ON [${tableName}] (sampleTime,insertTime,nValue);`;
@@ -25,8 +28,8 @@ export class ChunkSqlite implements IChunk {
         private readonly mode: ShardAccessMode,
         private readonly mergeFunction: <T>(cursors: IterableIterator<T>[]) => IterableIterator<T>,
         writeFileName: string,
-        searchRegex: RegExp,
-        injectableConstructor: InjectableConstructor = new InjectableConstructor()) {
+        private readonly searchRegex: RegExp,
+        private readonly injectableConstructor: InjectableConstructor = new InjectableConstructor()) {
         if (this.mode === "write") {
             const fullPath = join(directoryPath, writeFileName)
             mkdirSync(directoryPath, { recursive: true });
@@ -34,23 +37,41 @@ export class ChunkSqlite implements IChunk {
             this.db.pragma('journal_mode = WAL');
         }
         else {
-            try {
-                this.readonlyDBs = readdirSync(directoryPath, { recursive: false, withFileTypes: true })
-                    .filter(dirent => searchRegex.test(dirent.name) && dirent.isFile())
-                    .map(dirent => {
-                        return injectableConstructor.createInstanceWithoutConstructor<Database.Database>((dbPath, dbOptions) => {
-                            return new Database(dbPath, dbOptions);
-                        }, [join(directoryPath, dirent.name), { readonly: true, fileMustExist: true }]);
-                    });
-            }
-            catch (e) {
-                if (e.code === 'ENOENT') {
-                    return;//No Directory exists so no DB or Data
+            this.searchAndOpenDatabases();
+        }
+    }
+
+    private searchAndOpenDatabases() {
+        try {
+            const fileEntries = readdirSync(this.directoryPath, { recursive: false, withFileTypes: true });
+            for (const fileEntry of fileEntries) {
+                const fullPath = join(this.directoryPath, fileEntry.name);
+                if (fileEntry.isFile() && this.searchRegex.test(fileEntry.name) && this.readonlyDBActivePaths.has(fullPath) === false) {
+                    this.readonlyDBActivePaths.add(fullPath);
+                    const openedDb = this.injectableConstructor.createInstanceWithoutConstructor<Database.Database>((dbPath, dbOptions) => {
+                        return new Database(dbPath, dbOptions);
+                    }, [fullPath, { readonly: true, fileMustExist: true }]);
+                    this.readonlyDBs.push(openedDb);
                 }
-                else {
-                    throw e;
-                }
             }
+
+            this.reconcileDirectory = false;
+            watch(this.directoryPath, { recursive: false }, this.reconcileHandler);
+        }
+        catch (e) {
+            if (e.code === 'ENOENT') {
+                return;//No Directory exists so no DB or Data
+            }
+            else {
+                throw e;
+            }
+        }
+    }
+
+    private reconcileDirectoryChanges(eventType: WatchEventType, filename: string) {
+        if (filename !== undefined && this.searchRegex.test(filename) && this.readonlyDBActivePaths.has(filename) === false) {
+            this.reconcileDirectory = true;
+            unwatchFile(this.directoryPath, this.reconcileHandler);
         }
     }
 
@@ -81,6 +102,9 @@ export class ChunkSqlite implements IChunk {
     public *bulkIterator(tags: string[], startTimeInclusive: number, endTimeExclusive: number): IterableIterator<any[]> {
         try {
             this.readCursorOpen = true;
+            if (this.reconcileDirectory === true) {
+                this.searchAndOpenDatabases();
+            }
             const tagsInHex = tags.map(tag => Buffer.from(tag, "utf-8").toString('hex'));
             const cursors = new Array<IterableIterator<any[]>>();
             while (tagsInHex.length > 0) {
@@ -149,8 +173,10 @@ export class ChunkSqlite implements IChunk {
         }
         else {
             if (this.canReaderBeDisposed()) {
+                unwatchFile(this.directoryPath, this.reconcileHandler);
                 this.readonlyDBs.forEach(db => db.close());
                 this.readonlyDBs.length = 0;
+                this.readonlyDBActivePaths.clear();
             }
             else {
                 throw new Error(`Chunk ${this.directoryPath} is in read use, was requested to close`);
