@@ -16,7 +16,7 @@ console.log(`Started with ${threads} threads`);
 const config: TConfig = CommonConfig();
 const chunkRegistry = new RedisHashMap(config.redisConnection);
 await chunkRegistry.initialize();
-const chunkPlanner = new ChunkPlanner(chunkRegistry, StringToNumberAlgos[config.activeCalculatorIndex], config.tagBucketWidth, config.timeBucketWidth, config.logicalChunkPrefix, config.logicalChunkSeperator, config.timeBucketTolerance, config.activePath, config.setPaths);
+const chunkPlanner = new ChunkPlanner(chunkRegistry, StringToNumberAlgos[config.activeCalculatorIndex], config.tagBucketWidth, config.timeBucketWidth, config.logicalChunkPrefix, config.logicalChunkSeparator, config.timeBucketTolerance, config.activePath, config.setPaths);
 const workerFilePath = fileURLToPath(new URL("../../grid-thread-plugin.js", import.meta.url));
 const proxies = new StatefulProxyManager(threads, workerFilePath);
 await proxies.initialize();

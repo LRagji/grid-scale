@@ -18,7 +18,7 @@ async function initializeGridScale(DIContainer: DisposableSingletonContainer, th
     const config = DIContainer.createInstanceWithoutConstructor<TConfig>("TConfig", CommonConfig);
     const chunkRegistry = DIContainer.createInstance<RedisHashMap>("ChunkRegistry", RedisHashMap, [config.redisConnection]);
     await chunkRegistry.initialize();
-    const chunkPlanner = DIContainer.createInstance<ChunkPlanner>("ChunkPlanner", ChunkPlanner, [chunkRegistry, StringToNumberAlgos[config.activeCalculatorIndex], config.tagBucketWidth, config.timeBucketWidth, config.logicalChunkPrefix, config.logicalChunkSeperator, config.timeBucketTolerance, config.activePath, config.setPaths]);
+    const chunkPlanner = DIContainer.createInstance<ChunkPlanner>("ChunkPlanner", ChunkPlanner, [chunkRegistry, StringToNumberAlgos[config.activeCalculatorIndex], config.tagBucketWidth, config.timeBucketWidth, config.logicalChunkPrefix, config.logicalChunkSeparator, config.timeBucketTolerance, config.activePath, config.setPaths]);
     const workerFilePath = fileURLToPath(new URL("../../grid-thread-plugin.js", import.meta.url));
     const proxies = DIContainer.createInstance<StatefulProxyManager>("ProxyManager", StatefulProxyManager, [threads, workerFilePath]);
     await proxies.initialize();
@@ -32,7 +32,8 @@ function setupRoutes(rootRouter: IRouter) {
     rootRouter.get("/data", async (req: Request, res: Response) => {
         const DIContainer = req["DIProp"] as DisposableSingletonContainer;
         const gridScale = DIContainer.fetchInstance<GridScale>("GS");
-        const tags = req.query.tags as string[] || [];
+        let tags = typeof req.query.tags === "string" ? [req.query.tags] : req.query.tags;
+        tags = tags || [];
         const startInclusiveTime = parseInt((req.query.startInclusiveTime as string || '0'), 10);
         const endExclusiveTime = parseInt((req.query.endExclusiveTime as string || '0'), 10);
         const queryId = req.query.queryId as string || `Q[${Date.now()}]`;

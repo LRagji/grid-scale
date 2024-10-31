@@ -18,7 +18,7 @@ async function initializeGridScale(DIContainer: DisposableSingletonContainer) {
     const config = DIContainer.createInstanceWithoutConstructor<TConfig>("TConfig", CommonConfig);
     const chunkRegistry = DIContainer.createInstance<RedisHashMap>("ChunkRegistry", RedisHashMap, [config.redisConnection]);
     await chunkRegistry.initialize();
-    const chunkPlanner = DIContainer.createInstance<ChunkPlanner>("ChunkPlanner", ChunkPlanner, [chunkRegistry, StringToNumberAlgos[config.activeCalculatorIndex], config.tagBucketWidth, config.timeBucketWidth, config.logicalChunkPrefix, config.logicalChunkSeperator, config.timeBucketTolerance, config.activePath, config.setPaths]);
+    const chunkPlanner = DIContainer.createInstance<ChunkPlanner>("ChunkPlanner", ChunkPlanner, [chunkRegistry, StringToNumberAlgos[config.activeCalculatorIndex], config.tagBucketWidth, config.timeBucketWidth, config.logicalChunkPrefix, config.logicalChunkSeparator, config.timeBucketTolerance, config.activePath, config.setPaths]);
     const workerFilePath = fileURLToPath(new URL("../../grid-thread-plugin.js", import.meta.url));
     const proxies = DIContainer.createInstance<StatefulProxyManager>("ProxyManager", StatefulProxyManager, [threads, workerFilePath]);
     await proxies.initialize();

@@ -9,6 +9,6 @@ export type TConfig = {
     activeCalculatorIndex: number;
     maxDBOpen: number;
     logicalChunkPrefix: string;
-    logicalChunkSeperator: string;
+    logicalChunkSeparator: string;
     redisConnection: string;
 }

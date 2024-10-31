@@ -10,7 +10,8 @@
     "clean-prod": "rimraf ./dist/test",
     "build": "npm run build-test && npm run clean-prod",
     "build-test": "npm run clean-build && npx tsc && npm run copy-files",
-    "start": "npm run build && node -r dotenv/config dist/src/server.js ./.env",
+    "start-rr": "node ./dist/src/examples/rest/reader-rest.js",
+    "start-wr": "node ./dist/src/examples/rest/writer-rest.js",
     "test": "npm run build-test && node --test ./dist/test ",
     "docker-local": "docker build -f ./Dockerfile -t notification-hub-svc:local .",
     "coverage": "c8 --config ./coverage-config.json npm run test"

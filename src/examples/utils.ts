@@ -43,8 +43,8 @@ export function generateRandomSamples(totalTags: number, totalSamplesPerTag: num
 
 export function CommonConfig(): TConfig {
     return {
-        setPaths: new Map<string, string[]>([["../data/high-speed-1", ["disk1", "disk2", "disk3", "disk4", "disk5"]]]),
-        activePath: "../data/high-speed-1",
+        setPaths: new Map<string, string[]>([["./data/high-speed-1", ["disk1", "disk2", "disk3", "disk4", "disk5"]]]),
+        activePath: "./data/high-speed-1",
         tagBucketWidth: 500,
         timeBucketWidth: 86400000,
         fileNamePre: "ts",
@@ -53,7 +53,7 @@ export function CommonConfig(): TConfig {
         activeCalculatorIndex: 2,
         maxDBOpen: 100,
         logicalChunkPrefix: "D",
-        logicalChunkSeperator: "|",
+        logicalChunkSeparator: "-",
         redisConnection: 'redis://localhost:6379'
     } as TConfig;
 }

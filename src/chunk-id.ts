@@ -20,9 +20,9 @@ export class ChunkId {
         return input.reduce((acc, val) => acc + val, 0);
     }
 
-    public static from(tagName: string, time: number, stringToNumber: (string) => number[], tagBucketWidth: number, timeBucketWidth: number, logicalChunkPrefix: string, logicalChunkSeperator: string): ChunkId {
+    public static from(tagName: string, time: number, stringToNumber: (string) => number[], tagBucketWidth: number, timeBucketWidth: number, logicalChunkPrefix: string, logicalChunkSeparator: string): ChunkId {
         const tagHash = stringToNumber(tagName);
-        return new ChunkId(tagHash, [time], tagBucketWidth, timeBucketWidth, logicalChunkPrefix, logicalChunkSeperator);
+        return new ChunkId(tagHash, [time], tagBucketWidth, timeBucketWidth, logicalChunkPrefix, logicalChunkSeparator);
     }
 
     public tagCompressWithinLimits(limit: number): number {
@@ -33,9 +33,9 @@ export class ChunkId {
         return ChunkId.compressWithinLimits(this.timeHash, limit);
     }
 
-    constructor(private readonly tagHash: number[], private readonly timeHash: number[], tagBucketWidth: number, timeBucketWidth: number, logicalChunkPrefix: string, logicalChunkSeperator: string) {
+    constructor(private readonly tagHash: number[], private readonly timeHash: number[], tagBucketWidth: number, timeBucketWidth: number, logicalChunkPrefix: string, logicalChunkSeparator: string) {
         this.tagNameBucketed = ChunkId.unCompressWithinLimits(this.tagHash, tagBucketWidth);
         this.timeBucketed = ChunkId.unCompressWithinLimits(this.timeHash, timeBucketWidth);
-        this.logicalChunkId = `${logicalChunkPrefix}${logicalChunkSeperator}${this.tagNameBucketed.join("")}${logicalChunkSeperator}${this.timeBucketed.join("")}`;
+        this.logicalChunkId = `${logicalChunkPrefix}${logicalChunkSeparator}${this.tagNameBucketed.join("")}${logicalChunkSeparator}${this.timeBucketed.join("")}`;
     }
 }
