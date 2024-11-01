@@ -115,16 +115,19 @@ export class ChunkSqlite implements IChunk {
             while (tagsInHex.length > 0) {
                 //This limit is to prevent SQLITE_MAX_VARIABLE_NUMBER comes from https://www.sqlite.org/limits.html
                 const chunkedTags = tagsInHex.splice(0, 3000);
-                const chunkCursors = this.readonlyDBs.map(db => {
+                for (const db of this.readonlyDBs) {
                     const existingTables = db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name IN (${chunkedTags.map(_ => "?").join(",")});`)
                         .raw()
                         .all(chunkedTags) as string[][];
+                    if (existingTables.length === 0) {
+                        continue;
+                    }
                     const sqlStatement = this.selectSqlStatement(existingTables.flat(), startTimeInclusive, endTimeExclusive);
-                    return db.prepare<unknown[], any[]>(sqlStatement)
+                    const iterator = db.prepare<unknown[], any[]>(sqlStatement)
                         .raw()
                         .iterate()
-                });
-                cursors.push(...chunkCursors);
+                    cursors.push(iterator);
+                }
             }
             if (cursors.length === 1) {
                 yield* cursors[0];
