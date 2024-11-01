@@ -40,16 +40,23 @@ export class GridScale {
         diagnostics.set("linkTime", Date.now() - timings);
     }
 
-    public async *iteratorByTimePage(tags: string[], startInclusive: number, endExclusive: number, queryId = "queryId_" + Math.random().toString(), diagnostics = new Map<string, any>()): AsyncIterableIterator<any[]> {
+    public async *iteratorByTimePage(tags: string[], startInclusive: number, endExclusive: number, queryId = "queryId_" + Math.random().toString(), pageSize = 10000, diagnostics = new Map<string, any>()): AsyncIterableIterator<any[]> {
         let timings = Date.now();
         const iterationPlan = await this.chunkPlanner.planRangeIterationByTime(tags, startInclusive, endExclusive, this.remoteProxies.WorkerCount);
+        for (const [workerIdx, plans] of iterationPlan.affinityDistributedChunkReads.entries()) {
+            if (plans === undefined) { continue; }
+            for (const [planIdx, plan] of plans.entries()) {
+                diagnostics.set(`Worker:${workerIdx} Plan:${planIdx}`, `Sections:${plan[0].size} Tags:${plan[1].size}`);
+            }
+        }
         diagnostics.set("planTime", Date.now() - timings);
 
         timings = Date.now();
         const workerPromises = new Map<number, Promise<unknown>>();
         let startInclusiveWorkerIndex = 0;
         let endExclusiveWorkerIndex = iterationPlan.affinityDistributedChunkReads.length;
-        const pageSize = 10000;
+        let pageCounter = 0;
+        let rowsCounter = 0;
         try {
             do {
                 for (let workerIdx = startInclusiveWorkerIndex; workerIdx < endExclusiveWorkerIndex; workerIdx++) {
@@ -65,6 +72,8 @@ export class GridScale {
                 const completedThreadResult = await Promise.race(workerPromises.values());
                 const workerIdx = completedThreadResult[0];
                 const pageData = completedThreadResult[1];
+                pageCounter++;
+                rowsCounter += pageData.length;
                 if (pageData.length === 0) {
                     workerPromises.delete(workerIdx);
                     startInclusiveWorkerIndex = 0;
@@ -85,6 +94,8 @@ export class GridScale {
                 await this.remoteProxies.invokeMethod<any[]>("clearIteration", [queryId], workerIdx);
             }
         }
+        diagnostics.set("pageCounter", pageCounter);
+        diagnostics.set("rowCounter", rowsCounter);
         diagnostics.set("yieldTime", Date.now() - timings);
     }
 

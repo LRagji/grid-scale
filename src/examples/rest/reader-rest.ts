@@ -40,7 +40,7 @@ function setupRoutes(rootRouter: IRouter) {
         const diagnostics = new Map<string, number | String>();
         diagnostics.set("queryId", queryId)
         diagnostics.set("workers", threadCount)
-        const cursor = gridScale.iteratorByTimePage(tags, startInclusiveTime, endExclusiveTime, queryId, diagnostics);
+        const cursor = gridScale.iteratorByTimePage(tags, startInclusiveTime, endExclusiveTime, queryId, undefined, diagnostics);
         res.setHeader('Content-Type', 'application/json');
         res.write(`{ "data": [`);
         let first = true;

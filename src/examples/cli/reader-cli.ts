@@ -37,7 +37,7 @@ for (let i = 0; i < 1; i++) {
     const time = Date.now();
     const resultTagNames = new Set<string>();
     const diagnostics = new Map<string, number>();
-    const rowCursor = gridScale.iteratorByTimePage(tagNames, startInclusiveTime, i + endExclusiveTime, `Q[${i}]`, diagnostics);
+    const rowCursor = gridScale.iteratorByTimePage(tagNames, startInclusiveTime, i + endExclusiveTime, `Q[${i}]`, undefined, diagnostics);
     for await (const row of rowCursor) {
         //console.log(row);
         resultTagNames.add(row[4]);
@@ -59,19 +59,17 @@ console.timeEnd("Close Operation");
 
 
 // Started with 10 threads 500 tags & 86400000 time range
-// Total: 9:11.799 (m:ss.mmm)
+// Total: 2:41.787 (m:ss.mmm)
 // ┌─────────┬────────┬─────┬───────────────────┬─────────────────────────┐
 // │ (index) │ 0      │ 1   │ 2                 │ 3                       │
 // ├─────────┼────────┼─────┼───────────────────┼─────────────────────────┤
-// │ 0       │ 182646 │ 500 │ [ 'planTime', 6 ] │ [ 'yieldTime', 182640 ] │
-// │ 1       │ 185041 │ 500 │ [ 'planTime', 4 ] │ [ 'yieldTime', 185037 ] │
-// │ 2       │ 184101 │ 500 │ [ 'planTime', 4 ] │ [ 'yieldTime', 184097 ] │
+// │ 0       │ 161789 │ 500 │ [ 'planTime', 6 ] │ [ 'yieldTime', 161783 ] │
 // └─────────┴────────┴─────┴───────────────────┴─────────────────────────┘
 
 // Started with 0 threads 500 tags & 86400000 time range
-// Total: 21:53.841 (m:ss.mmm)
-// ┌─────────┬─────────┬─────┬───────────────────┬──────────────────────────┐
-// │ (index) │ 0       │ 1   │ 2                 │ 3                        │
-// ├─────────┼─────────┼─────┼───────────────────┼──────────────────────────┤
-// │ 0       │ 1313848 │ 500 │ [ 'planTime', 9 ] │ [ 'yieldTime', 1313839 ] │
-// └─────────┴─────────┴─────┴───────────────────┴──────────────────────────┘
+// Total: 1:53.256 (m:ss.mmm)
+// ┌─────────┬────────┬─────┬───────────────────┬─────────────────────────┐
+// │ (index) │ 0      │ 1   │ 2                 │ 3                       │
+// ├─────────┼────────┼─────┼───────────────────┼─────────────────────────┤
+// │ 0       │ 113262 │ 500 │ [ 'planTime', 6 ] │ [ 'yieldTime', 113255 ] │
+// └─────────┴────────┴─────┴───────────────────┴─────────────────────────┘
