@@ -10,7 +10,7 @@ import { StringToNumberAlgos } from "../../string-to-number-algos.js";
 //Query Plan
 //Read
 //Merge
-const threads = 10;
+const threads = 0;
 console.log(`Started with ${threads} threads`);
 
 const config: TConfig = CommonConfig();
@@ -24,9 +24,9 @@ for (let idx = 0; idx < proxies.WorkerCount; idx++) {
     await proxies.invokeMethod("initialize", [`${process.pid.toString()}-${idx}`, config.fileNamePre, config.fileNamePost, config.maxDBOpen, 4, 0], idx);
 }
 const gridScale = new GridScale(chunkRegistry, chunkPlanner, proxies);
-const totalTags = 50000;
+const totalTags = 500;
 const startInclusiveTime = 0;//Date.now();
-const endExclusiveTime = 100//startInclusiveTime + config.timeBucketWidth;
+const endExclusiveTime = 86400000//startInclusiveTime + config.timeBucketWidth;
 
 const tagNames = generateTagNames(totalTags, 1);
 
@@ -45,12 +45,10 @@ for (let i = 0; i < 1; i++) {
     }
     results.push([Date.now() - time, resultTagNames.size, ...diagnostics.entries()]);
 }
-// console.log(`Total Tags: ${resultTagNames.size}`);
+
 console.timeEnd("Total")
 console.table(results);
-// for (const [key, value] of diagnostics) {
-//     console.log(`${key} ${value}`);
-// }
+
 
 console.time("Close Operation");
 await (chunkRegistry[Symbol.asyncDispose] && chunkRegistry[Symbol.asyncDispose]() || Promise.resolve(chunkRegistry[Symbol.dispose] && chunkRegistry[Symbol.dispose]()));
@@ -58,3 +56,22 @@ await (chunkPlanner[Symbol.asyncDispose] && chunkPlanner[Symbol.asyncDispose]() 
 await (gridScale[Symbol.asyncDispose] && gridScale[Symbol.asyncDispose]() || Promise.resolve(gridScale[Symbol.dispose] && gridScale[Symbol.dispose]()));
 await proxies[Symbol.asyncDispose]();
 console.timeEnd("Close Operation");
+
+
+// Started with 10 threads 500 tags & 86400000 time range
+// Total: 9:11.799 (m:ss.mmm)
+// ┌─────────┬────────┬─────┬───────────────────┬─────────────────────────┐
+// │ (index) │ 0      │ 1   │ 2                 │ 3                       │
+// ├─────────┼────────┼─────┼───────────────────┼─────────────────────────┤
+// │ 0       │ 182646 │ 500 │ [ 'planTime', 6 ] │ [ 'yieldTime', 182640 ] │
+// │ 1       │ 185041 │ 500 │ [ 'planTime', 4 ] │ [ 'yieldTime', 185037 ] │
+// │ 2       │ 184101 │ 500 │ [ 'planTime', 4 ] │ [ 'yieldTime', 184097 ] │
+// └─────────┴────────┴─────┴───────────────────┴─────────────────────────┘
+
+// Started with 0 threads 500 tags & 86400000 time range
+// Total: 21:53.841 (m:ss.mmm)
+// ┌─────────┬─────────┬─────┬───────────────────┬──────────────────────────┐
+// │ (index) │ 0       │ 1   │ 2                 │ 3                        │
+// ├─────────┼─────────┼─────┼───────────────────┼──────────────────────────┤
+// │ 0       │ 1313848 │ 500 │ [ 'planTime', 9 ] │ [ 'yieldTime', 1313839 ] │
+// └─────────┴─────────┴─────┴───────────────────┴──────────────────────────┘

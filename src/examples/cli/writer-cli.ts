@@ -18,7 +18,7 @@ import { StringToNumberAlgos } from "../../string-to-number-algos.js";
 const threads = 10;
 console.log(`Started with ${threads} threads`);
 
-const totalTags = 500;
+const totalTags = 100;
 const totalSamplesPerTag = 86400;
 const config: TConfig = CommonConfig()
 const insertTime = Date.now();

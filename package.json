@@ -10,8 +10,10 @@
     "clean-prod": "rimraf ./dist/test",
     "build": "npm run build-test && npm run clean-prod",
     "build-test": "npm run clean-build && npx tsc && npm run copy-files",
-    "start-rr": "node ./dist/src/examples/rest/reader-rest.js",
+    "start-rr": "node --max-old-space-size=4096 ./dist/src/examples/rest/reader-rest.js",
     "start-wr": "node ./dist/src/examples/rest/writer-rest.js",
+    "start-rc": "node --max-old-space-size=4096 --inspect-brk ./dist/src/examples/cli/reader-cli.js",
+    "start-wc": "node ./dist/src/examples/cli/writer-cli.js",
     "test": "npm run build-test && node --test ./dist/test ",
     "docker-local": "docker build -f ./Dockerfile -t notification-hub-svc:local .",
     "coverage": "c8 --config ./coverage-config.json npm run test"
@@ -32,7 +34,7 @@
   "dependencies": {
     "better-sqlite3": "^11.3.0",
     "express-service-bootstrap": "^0.15.0",
-    "node-apparatus": "^0.1.8",
+    "node-apparatus": "^0.1.10",
     "redis": "^4.7.0"
   }
 }
