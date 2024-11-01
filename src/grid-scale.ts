@@ -49,7 +49,7 @@ export class GridScale {
         const workerPromises = new Map<number, Promise<unknown>>();
         let startInclusiveWorkerIndex = 0;
         let endExclusiveWorkerIndex = iterationPlan.affinityDistributedChunkReads.length;
-        const pageSize = 1000;
+        const pageSize = 10000;
         try {
             do {
                 for (let workerIdx = startInclusiveWorkerIndex; workerIdx < endExclusiveWorkerIndex; workerIdx++) {

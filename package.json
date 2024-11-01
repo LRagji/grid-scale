@@ -12,7 +12,7 @@
     "build-test": "npm run clean-build && npx tsc && npm run copy-files",
     "start-rr": "node --max-old-space-size=4096 ./dist/src/examples/rest/reader-rest.js",
     "start-wr": "node ./dist/src/examples/rest/writer-rest.js",
-    "start-rc": "node --max-old-space-size=4096 --inspect-brk ./dist/src/examples/cli/reader-cli.js",
+    "start-rc": "node --max-old-space-size=4096 ./dist/src/examples/cli/reader-cli.js",
     "start-wc": "node ./dist/src/examples/cli/writer-cli.js",
     "test": "npm run build-test && node --test ./dist/test ",
     "docker-local": "docker build -f ./Dockerfile -t notification-hub-svc:local .",
