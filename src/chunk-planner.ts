@@ -12,18 +12,18 @@ export class ChunkPlanner {
         private readonly tagBucketWidth: number,
         private readonly timeBucketWidth: number,
         private readonly logicalChunkPrefix: string,
-        private readonly logicalChunkSeperator: string,
+        private readonly logicalChunkSeparator: string,
         private readonly timeBucketTolerance,
-        private readonly writersDiskPath: string,
-        private readonly disksLayout: Map<string, string[]>) { }
+        private readonly writersShardPath: string,
+        private readonly shardSets: Map<string, string[]>) { }
 
     public planUpserts(recordSet: Map<string, any[]>, recordSize: number, timeIndex: number, insertTimeIndex: number, insertTime: number, distributionCardinality: number): DistributedUpsertPlan {
         //Plan AIM:Intention of the plan is to touch one chunk at a time with all writes included so that we reduce data fragmentation and IOPS
         const computedPlan = { chunkAllocations: new Map<string, Map<string, any[]>>(), chunkDisplacements: new Map<string, [number, Set<string>]>() };
         for (const [tagName, records] of recordSet) {
-            const chunkIdByInsertTime = ChunkId.from(tagName, insertTime, this.stringToNumber, this.tagBucketWidth, this.timeBucketWidth, this.logicalChunkPrefix, this.logicalChunkSeperator);
-            const diskIndex = chunkIdByInsertTime.tagCompressWithinLimits(this.disksLayout.get(this.writersDiskPath).length);
-            const connectionPath = join(this.writersDiskPath, this.disksLayout.get(this.writersDiskPath)[diskIndex], chunkIdByInsertTime.logicalChunkId);
+            const chunkIdByInsertTime = ChunkId.from(tagName, insertTime, this.stringToNumber, this.tagBucketWidth, this.timeBucketWidth, this.logicalChunkPrefix, this.logicalChunkSeparator);
+            const diskIndex = chunkIdByInsertTime.tagCompressWithinLimits(this.shardSets.get(this.writersShardPath).length);
+            const connectionPath = join(this.writersShardPath, this.shardSets.get(this.writersShardPath)[diskIndex], chunkIdByInsertTime.logicalChunkId);
             const tagNameRecordSetMap = computedPlan.chunkAllocations.get(connectionPath) || new Map<string, any[]>();
             for (let recordIndex = 0; recordIndex < records.length; recordIndex += recordSize) {
                 //Chunk Allocations
@@ -33,7 +33,7 @@ export class ChunkPlanner {
                 existingRows.push(record);
                 tagNameRecordSetMap.set(tagName, existingRows);
                 //Chunk Misplacement's
-                const chunkIdByRecordTime = ChunkId.from(tagName, record[timeIndex], this.stringToNumber, this.tagBucketWidth, this.timeBucketWidth, this.logicalChunkPrefix, this.logicalChunkSeperator);
+                const chunkIdByRecordTime = ChunkId.from(tagName, record[timeIndex], this.stringToNumber, this.tagBucketWidth, this.timeBucketWidth, this.logicalChunkPrefix, this.logicalChunkSeparator);
                 const toleranceWidth = this.timeBucketWidth * this.timeBucketTolerance;
                 const minimumTolerance = chunkIdByInsertTime.timeBucketed[0] - toleranceWidth;
                 const maximumTolerance = chunkIdByInsertTime.timeBucketed[0] + toleranceWidth;
@@ -67,17 +67,17 @@ export class ChunkPlanner {
         const logicalIdCache = new Map<string, Set<string>>();
 
         for (const tag of tags) {
-            const chunkIdByRecordTime = ChunkId.from(tag, startInclusiveBucketedTime, this.stringToNumber, this.tagBucketWidth, this.timeBucketWidth, this.logicalChunkPrefix, this.logicalChunkSeperator);
+            const chunkIdByRecordTime = ChunkId.from(tag, startInclusiveBucketedTime, this.stringToNumber, this.tagBucketWidth, this.timeBucketWidth, this.logicalChunkPrefix, this.logicalChunkSeparator);
 
             if (logicalIdCache.has(chunkIdByRecordTime.logicalChunkId) === false) {
-                const LHSToleranceChunkId = ChunkId.from(tag, startInclusiveBucketedTime - (this.timeBucketWidth * this.timeBucketTolerance), this.stringToNumber, this.tagBucketWidth, this.timeBucketWidth, this.logicalChunkPrefix, this.logicalChunkSeperator);
-                const RHSToleranceChunkId = ChunkId.from(tag, startInclusiveBucketedTime + (this.timeBucketWidth * this.timeBucketTolerance), this.stringToNumber, this.tagBucketWidth, this.timeBucketWidth, this.logicalChunkPrefix, this.logicalChunkSeperator);
+                const LHSToleranceChunkId = ChunkId.from(tag, startInclusiveBucketedTime - (this.timeBucketWidth * this.timeBucketTolerance), this.stringToNumber, this.tagBucketWidth, this.timeBucketWidth, this.logicalChunkPrefix, this.logicalChunkSeparator);
+                const RHSToleranceChunkId = ChunkId.from(tag, startInclusiveBucketedTime + (this.timeBucketWidth * this.timeBucketTolerance), this.stringToNumber, this.tagBucketWidth, this.timeBucketWidth, this.logicalChunkPrefix, this.logicalChunkSeparator);
                 const displacedChunks = await this.chunkLinkRegistry.getFields(chunkIdByRecordTime.logicalChunkId);
                 logicalIdCache.set(chunkIdByRecordTime.logicalChunkId, new Set<string>([...displacedChunks, chunkIdByRecordTime.logicalChunkId, LHSToleranceChunkId.logicalChunkId, RHSToleranceChunkId.logicalChunkId]));
             }
 
             const existingTagsAndConnectionPaths = tagsGroupedByLogicalChunkId.get(chunkIdByRecordTime.logicalChunkId) || [new Set<string>(), new Set<string>()];
-            for (const [setPath, diskPaths] of this.disksLayout) {
+            for (const [setPath, diskPaths] of this.shardSets) {
                 const diskIndex = chunkIdByRecordTime.tagCompressWithinLimits(diskPaths.length);
                 for (const logicalId of logicalIdCache.get(chunkIdByRecordTime.logicalChunkId)) {
                     const connectionPath = join(setPath, diskPaths[diskIndex], logicalId);

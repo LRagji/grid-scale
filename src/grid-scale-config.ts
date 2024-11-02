@@ -10,6 +10,6 @@ export class GridScaleConfig {
     public logicalChunkPrefix = "l";
     public logicalChunkSeparator = "-";
     public timeBucketTolerance = 1;
-    public diskSets = new Map<string, string[]>([["./data/high-speed-1", ["disk1", "disk2", "disk3", "disk4", "disk5"]]]);
-    public writerActivePath = this.diskSets.keys().next().value;
+    public shardSets = new Map<string, string[]>([["./data/high-speed-1", ["disk1", "disk2", "disk3", "disk4", "disk5"]]]);
+    public writerActiveShard = this.shardSets.keys().next().value;
 }
