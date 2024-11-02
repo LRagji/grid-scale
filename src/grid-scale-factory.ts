@@ -13,7 +13,7 @@ export class GridScaleFactory {
         const proxies = new StatefulProxyManager(config.workerCount, workerFilePath);
         await proxies.initialize();
         for (let idx = 0; idx < proxies.WorkerCount; idx++) {
-            await proxies.invokeMethod("initialize", [`${config.identity}-${idx}`, config.fileNamePre, config.fileNamePost, config.maxCachedDB, chunkPluginPath.toString()], idx);
+            await proxies.invokeMethod("initialize", [`${config.identity}-${idx}`, config.maxCachedDB, chunkPluginPath.toString()], idx);
         }
         const gs = new GridScale(chunkRegistry, chunkPlanner, proxies, chunkPluginPath);
         await gs.initialize();

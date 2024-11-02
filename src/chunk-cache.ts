@@ -10,7 +10,6 @@ export class ChunkCache<T extends ChunkBase> {
         private readonly cacheLimit: number,
         private readonly bulkDropLimit: number,
         private readonly mergeFunction: <T>(cursors: IterableIterator<T>[]) => IterableIterator<T>,
-        private readonly searchRegex: RegExp,
         private readonly injectableConstructor: InjectableConstructor = new InjectableConstructor()) { }
 
     public getChunk(connectionPath: string, mode: ShardAccessMode, callerSignature: string): T {
@@ -37,7 +36,7 @@ export class ChunkCache<T extends ChunkBase> {
                     throw new Error(`Chunk cache is full & no chunks can be evicted this time, please retry later.`);
                 }
             }
-            const chunk = this.injectableConstructor.createInstance<T>(this.chunkType, [connectionPath, mode, this.mergeFunction, callerSignature, this.searchRegex, this.injectableConstructor]);
+            const chunk = this.injectableConstructor.createInstance<T>(this.chunkType, [connectionPath, mode, this.mergeFunction, callerSignature, this.injectableConstructor]);
             this.chunkCache.set(cacheKey, chunk);
             return chunk;
         }

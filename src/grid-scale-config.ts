@@ -4,8 +4,6 @@ export class GridScaleConfig {
 
     public identity: string = randomUUID();
     public maxCachedDB = 100;
-    public fileNamePre = "ts";
-    public fileNamePost = ".gs";
     public workerCount = 10;
     public tagBucketWidth = 500;
     public timeBucketWidth = 86400 * 1000;

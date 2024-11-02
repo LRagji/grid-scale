@@ -9,7 +9,7 @@ export class GridThreadPlugin extends StatefulRecipient {
     private mergeFunction: <T>(cursors: IterableIterator<T>[]) => IterableIterator<T>;
     private readonly iteratorCache = new Map<string, [IterableIterator<any>, number]>();
     private chunkCache: ChunkCache<ChunkBase>;
-    private writeFileName: string;
+    private callerSignature: string;
 
     public constructor(
         shouldActivateMessagePort: boolean = !isMainThread,
@@ -18,18 +18,17 @@ export class GridThreadPlugin extends StatefulRecipient {
         super(shouldActivateMessagePort, messagePort);
     }
 
-    public async initialize(selfIdentity: string, preName: string, postName: string, cacheSize: number, chunkPluginURL: string): Promise<void> {
-        this.writeFileName = preName + selfIdentity + postName;
+    public async initialize(callerSignature: string, cacheSize: number, chunkPluginURL: string): Promise<void> {
+        this.callerSignature = callerSignature;
         const chunkPluginClass = (await import(chunkPluginURL)).default
         const chunkPluginType: typeof ChunkBase = chunkPluginClass;
         this.mergeFunction = gridKWayMerge(chunkPluginType.tagColumnIndex, chunkPluginType.timeColumnIndex);
-        const searchRegExp = new RegExp("^" + preName + "[a-z0-9-]+\\" + postName + "$");//`^ts[a-z0-9]+\\.db$`;
-        this.chunkCache = new ChunkCache<ChunkBase>(chunkPluginClass, cacheSize, Math.ceil(cacheSize / 4), this.mergeFunction, searchRegExp, this.injectableConstructor);
+        this.chunkCache = new ChunkCache<ChunkBase>(chunkPluginClass, cacheSize, Math.ceil(cacheSize / 4), this.mergeFunction, this.injectableConstructor);
     }
 
     public bulkWrite(plan: [string, Map<string, any[]>][]): void {
         for (const [connectionPath, tagRecords] of plan) {
-            const chunk = this.chunkCache.getChunk(connectionPath, "write", this.writeFileName);
+            const chunk = this.chunkCache.getChunk(connectionPath, "write", this.callerSignature);
             chunk.bulkSet(tagRecords);
         }
     }
@@ -43,7 +42,7 @@ export class GridThreadPlugin extends StatefulRecipient {
                 const connectionPaths = plans[currentPlanIndex][0];
                 const tagSet = plans[currentPlanIndex][1];
                 for (const connectionPath of connectionPaths) {
-                    const chunk = this.chunkCache.getChunk(connectionPath, "read", this.writeFileName);
+                    const chunk = this.chunkCache.getChunk(connectionPath, "read", this.callerSignature);
                     chunkIterators.push(chunk.bulkIterator(Array.from(tagSet.values()), startInclusive, endExclusive));
                 }
                 this.iteratorCache.set(queryId, [this.mergeFunction(chunkIterators), currentPlanIndex]);

@@ -13,6 +13,10 @@ export default class ChunkSqlite extends ChunkBase {
     public static override readonly insertTimeColumnIndex: number = 1;
     public static override readonly tagColumnIndex: number = 4;
 
+    private readonly filePrefix = "ts";
+    private readonly filePostfix = ".gs";
+    private readonly searchRegex = new RegExp("^" + this.filePrefix + "[a-z0-9-]+\\" + this.filePostfix + "$");//`^ts[a-z0-9]+\\.gs$`;
+
     private readonly db: Database.Database;
     private readonly readonlyDBs = new Array<Database.Database>();
     private readCursorOpen = false;
@@ -33,12 +37,11 @@ export default class ChunkSqlite extends ChunkBase {
         private readonly directoryPath: string,
         private readonly mode: ShardAccessMode,
         private readonly mergeFunction: <T>(cursors: IterableIterator<T>[]) => IterableIterator<T>,
-        writeFileName: string,
-        private readonly searchRegex: RegExp,
+        callerSignature: string,
         private readonly injectableConstructor: InjectableConstructor = new InjectableConstructor()) {
-        super();
+        super(directoryPath, mode, mergeFunction, callerSignature, injectableConstructor);
         if (this.mode === "write") {
-            const fullPath = join(directoryPath, writeFileName)
+            const fullPath = join(directoryPath, (this.filePrefix + callerSignature + this.filePostfix));
             mkdirSync(directoryPath, { recursive: true });
             this.db = injectableConstructor.createInstance<Database.Database>(Database, [fullPath]);
             this.db.pragma('journal_mode = WAL');
