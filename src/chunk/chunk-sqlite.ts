@@ -3,10 +3,15 @@ import { InjectableConstructor } from "node-apparatus";
 import { join } from "node:path";
 import { mkdirSync, readdirSync, watch, WatchEventType, FSWatcher } from "node:fs";
 import { ShardAccessMode } from "../types/shard-access-mode.js";
-import { IChunk } from "./i-chunk.js";
+import { ChunkBase } from "./chunk-base.js";
 
 
-export class ChunkSqlite implements IChunk {
+export default class ChunkSqlite extends ChunkBase {
+
+    public static override readonly columnCount: number = 5;
+    public static override readonly timeColumnIndex: number = 0;
+    public static override readonly insertTimeColumnIndex: number = 1;
+    public static override readonly tagColumnIndex: number = 4;
 
     private readonly db: Database.Database;
     private readonly readonlyDBs = new Array<Database.Database>();
@@ -31,6 +36,7 @@ export class ChunkSqlite implements IChunk {
         writeFileName: string,
         private readonly searchRegex: RegExp,
         private readonly injectableConstructor: InjectableConstructor = new InjectableConstructor()) {
+        super();
         if (this.mode === "write") {
             const fullPath = join(directoryPath, writeFileName)
             mkdirSync(directoryPath, { recursive: true });
@@ -40,6 +46,7 @@ export class ChunkSqlite implements IChunk {
         else {
             this.searchAndOpenDatabases();
         }
+
     }
 
     private searchAndOpenDatabases() {

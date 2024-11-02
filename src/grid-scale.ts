@@ -1,17 +1,27 @@
 import { ChunkPlanner } from "./chunk-planner.js";
 import { StatefulProxyManager } from "node-apparatus";
 import { INonVolatileHashMap } from "./non-volatile-hash-map/i-non-volatile-hash-map.js";
+import { ChunkBase } from "./chunk/chunk-base.js";
 
 export class GridScale {
 
+    private chunkPluginType: typeof ChunkBase;
     constructor(
         private readonly chunkRegistry: INonVolatileHashMap,
         private readonly chunkPlanner: ChunkPlanner,
-        private readonly remoteProxies: StatefulProxyManager
+        private readonly remoteProxies: StatefulProxyManager,
+        private readonly chunkPluginPath: URL
     ) { }
 
-    public async store(records: Map<string, any[]>, recordLength: number, recordTimestampIndex: number, recordInsertTimeIndex: number, insertTime = Date.now(), diagnostics = new Map<string, any>()): Promise<void> {
+    public async initialize(): Promise<void> {
+        this.chunkPluginType = (await import(this.chunkPluginPath.toString())).default;
+    }
+
+    public async store(records: Map<string, any[]>, insertTime = Date.now(), diagnostics = new Map<string, any>()): Promise<void> {
         let timings = Date.now();
+        const recordLength: number = this.chunkPluginType.columnCount - 1;//-1 cause records are without the tag column
+        const recordTimestampIndex: number = this.chunkPluginType.timeColumnIndex;
+        const recordInsertTimeIndex: number = this.chunkPluginType.insertTimeColumnIndex;
         const upsertPlan = this.chunkPlanner.planUpserts(records, recordLength, recordTimestampIndex, recordInsertTimeIndex, insertTime, this.remoteProxies.WorkerCount);
         diagnostics.set("planTime", Date.now() - timings);
 

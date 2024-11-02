@@ -91,6 +91,10 @@ This project is contribution to public domain under license specified, view [LIC
 3. **Concurrency**: This again is possible via H-scaling and data immutability
 Point 2 & 3 would need a auto scale system like k8s to leverage best out of the system
 
+### Is there a Hard dependency on SQLite?
+
+No, Grid scale is a partitioning algorithm thats the core concept, SQLite was chosen cause it has some good qualities which makes h-scaling easy. most and every part of this library can be customized according to one's need eg if you want to change it to postgres you will need plugin extends `ChunkBase` abstract class.
+
 ### Why do we have one table per tag design?
 
 Data is normally read in ranges for given tags eg Tag1 from 2010 -> 2024, if a table has mixed tags then a page read from disk will have filter out lot of records ie: efficiency per disk IO drops, to improve this and gain more efficiency of sequential page reads this model is adopted.(its similar to how we will try to place data in cpu Lx cache to increase compute).

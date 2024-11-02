@@ -1,15 +1,14 @@
 import { InjectableConstructor, StatefulRecipient } from "node-apparatus";
 import { ChunkCache } from "./chunk-cache.js";
-import { IChunk } from "./chunk/i-chunk.js";
+import { ChunkBase } from "./chunk/chunk-base.js";
 import { gridKWayMerge } from "./merge/grid-row-merge.js";
-import { ChunkSqlite } from "./chunk/chunk-sqlite.js";
 import { isMainThread, parentPort, MessagePort } from "node:worker_threads";
 
 export class GridThreadPlugin extends StatefulRecipient {
 
     private mergeFunction: <T>(cursors: IterableIterator<T>[]) => IterableIterator<T>;
     private readonly iteratorCache = new Map<string, [IterableIterator<any>, number]>();
-    private chunkCache: ChunkCache<IChunk>;
+    private chunkCache: ChunkCache<ChunkBase>;
     private writeFileName: string;
 
     public constructor(
@@ -19,11 +18,13 @@ export class GridThreadPlugin extends StatefulRecipient {
         super(shouldActivateMessagePort, messagePort);
     }
 
-    public initialize(selfIdentity: string, preName: string, postName: string, cacheSize: number, mergeRowTagIndex: number, mergeRowTimeIndex: number): void {
+    public async initialize(selfIdentity: string, preName: string, postName: string, cacheSize: number, chunkPluginURL: string): Promise<void> {
         this.writeFileName = preName + selfIdentity + postName;
-        this.mergeFunction = gridKWayMerge(mergeRowTagIndex, mergeRowTimeIndex);
+        const chunkPluginClass = (await import(chunkPluginURL)).default
+        const chunkPluginType: typeof ChunkBase = chunkPluginClass;
+        this.mergeFunction = gridKWayMerge(chunkPluginType.tagColumnIndex, chunkPluginType.timeColumnIndex);
         const searchRegExp = new RegExp("^" + preName + "[a-z0-9-]+\\" + postName + "$");//`^ts[a-z0-9]+\\.db$`;
-        this.chunkCache = new ChunkCache<ChunkSqlite>(ChunkSqlite, cacheSize, Math.ceil(cacheSize / 4), this.mergeFunction, searchRegExp, this.injectableConstructor);
+        this.chunkCache = new ChunkCache<ChunkBase>(chunkPluginClass, cacheSize, Math.ceil(cacheSize / 4), this.mergeFunction, searchRegExp, this.injectableConstructor);
     }
 
     public bulkWrite(plan: [string, Map<string, any[]>][]): void {
@@ -81,7 +82,7 @@ export class GridThreadPlugin extends StatefulRecipient {
         }
     }
 
-    public async [Symbol.asyncDispose]() {
+    public async[Symbol.asyncDispose]() {
         await super[Symbol.asyncDispose]();
         for (const [iterator, planIndex] of this.iteratorCache.values()) {
             iterator.return();

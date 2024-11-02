@@ -24,7 +24,7 @@ const totalSamplesPerTag = 86400;
 const insertTime = Date.now();
 const chunkRegistry = new RedisHashMap(redisConnectionString);
 await chunkRegistry.initialize();
-const gridScale = await GridScaleFactory.create(chunkRegistry, stringToNumberAlgo, gsConfig);
+const gridScale = await GridScaleFactory.create(chunkRegistry, new URL("../../chunk/chunk-sqlite.js", import.meta.url), stringToNumberAlgo, gsConfig);
 
 const insertTimeCol = (time: number, tag: string) => insertTime;
 const numericCol = (time: number, tag: string) => Math.floor(Math.random() * 1000);
@@ -34,7 +34,7 @@ const generatedData = generateRandomSamples(totalTags, totalSamplesPerTag, [inse
 
 console.time("Total")
 const diagnostics = new Map<string, number>();
-await gridScale.store(generatedData, 4, 0, 1, insertTime, diagnostics);
+await gridScale.store(generatedData, insertTime, diagnostics);
 console.timeEnd("Total")
 
 for (const [key, value] of diagnostics) {

@@ -7,16 +7,16 @@ import { GridScaleConfig } from "./grid-scale-config.js";
 
 export class GridScaleFactory {
 
-    public static async create(chunkRegistry: INonVolatileHashMap, stringToNumber: (string) => number[], config: GridScaleConfig = new GridScaleConfig()): Promise<GridScale> {
+    public static async create(chunkRegistry: INonVolatileHashMap, chunkPluginPath: URL, stringToNumber: (string) => number[], config: GridScaleConfig = new GridScaleConfig()): Promise<GridScale> {
         const chunkPlanner = new ChunkPlanner(chunkRegistry, stringToNumber, config.tagBucketWidth, config.timeBucketWidth, config.logicalChunkPrefix, config.logicalChunkSeparator, config.timeBucketTolerance, config.writerActivePath, config.diskSets);
         const workerFilePath = fileURLToPath(new URL("./grid-thread-plugin.js", import.meta.url));
         const proxies = new StatefulProxyManager(config.workerCount, workerFilePath);
         await proxies.initialize();
         for (let idx = 0; idx < proxies.WorkerCount; idx++) {
-            await proxies.invokeMethod("initialize", [`${config.identity}-${idx}`, config.fileNamePre, config.fileNamePost, config.maxCachedDB, 4, 0], idx);
+            await proxies.invokeMethod("initialize", [`${config.identity}-${idx}`, config.fileNamePre, config.fileNamePost, config.maxCachedDB, chunkPluginPath.toString()], idx);
         }
-        const gs = new GridScale(chunkRegistry, chunkPlanner, proxies);
-
+        const gs = new GridScale(chunkRegistry, chunkPlanner, proxies, chunkPluginPath);
+        await gs.initialize();
         gs[Symbol.asyncDispose] = async () => {
             await proxies[Symbol.asyncDispose]();
         }

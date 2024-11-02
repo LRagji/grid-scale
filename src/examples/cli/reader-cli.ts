@@ -16,7 +16,7 @@ console.log(`Started with ${threads} threads`);
 
 const chunkRegistry = new RedisHashMap(redisConnectionString);
 await chunkRegistry.initialize();
-const gridScale = await GridScaleFactory.create(chunkRegistry, stringToNumberAlgo, gsConfig);
+const gridScale = await GridScaleFactory.create(chunkRegistry, new URL("../../chunk/chunk-sqlite.js", import.meta.url), stringToNumberAlgo, gsConfig);
 
 const totalTags = 1000;
 const startInclusiveTime = 0;//Date.now();

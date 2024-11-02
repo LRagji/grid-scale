@@ -1,8 +1,8 @@
 import { InjectableConstructor } from "node-apparatus";
-import { IChunk } from "./chunk/i-chunk.js";
+import { ChunkBase } from "./chunk/chunk-base.js";
 import { ShardAccessMode } from "./types/shard-access-mode.js";
 
-export class ChunkCache<T extends IChunk> {
+export class ChunkCache<T extends ChunkBase> {
     private readonly chunkCache = new Map<string, T>();
 
     constructor(

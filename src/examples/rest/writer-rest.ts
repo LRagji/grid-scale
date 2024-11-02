@@ -18,7 +18,7 @@ async function initializeGridScale(DIContainer: DisposableSingletonContainer) {
     config.workerCount = threadCount;
     const chunkRegistry = DIContainer.createInstance<RedisHashMap>("ChunkRegistry", RedisHashMap, [redisConnectionString]);
     await chunkRegistry.initialize();
-    const gs = await GridScaleFactory.create(chunkRegistry, stringToNumberAlgo, config);
+    const gs = await GridScaleFactory.create(chunkRegistry, new URL("../../chunk/chunk-sqlite.js", import.meta.url), stringToNumberAlgo, config);
     DIContainer.registerInstance<GridScale>("GS", gs);
 }
 
@@ -28,7 +28,7 @@ function setupRoutes(rootRouter: IRouter) {
         const gridScale = DIContainer.fetchInstance<GridScale>("GS");
         const data = new Map<string, any[]>(Object.entries(req.body));
         const diagnostics = new Map<string, number>();
-        await gridScale.store(data, 4, 0, 1, undefined, diagnostics);
+        await gridScale.store(data, undefined, diagnostics);
         res.json(Object.fromEntries(diagnostics.entries()));
     });
 }
