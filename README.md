@@ -89,6 +89,7 @@ This project is contribution to public domain under license specified, view [LIC
 1. **Space**: High resolution time-series data is every growing and needs cheap scale-able space, The idea is to save data on files and move them to a cheap storage when not used.
 2. **Latency**: Idea is to be H-scalable design when more and more clients connects in cost effective way, this happens by having N read replica's of the data.
 3. **Concurrency**: This again is possible via H-scaling and data immutability
+Point 2 & 3 would need a auto scale system like k8s to leverage best out of the system
 
 ### Why do we have one table per tag design?
 

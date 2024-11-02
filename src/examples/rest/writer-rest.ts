@@ -1,31 +1,25 @@
 import { ApplicationBuilder, ApplicationStartupStatus, ApplicationTypes, Convenience, DisposableSingletonContainer, IRouter, Request, Response } from "express-service-bootstrap";
-import { ChunkPlanner } from "../../chunk-planner.js";
 import { GridScale } from "../../grid-scale.js";
 import { RedisHashMap } from "../../non-volatile-hash-map/redis-hash-map.js";
-import { TConfig } from "../t-config.js";
-import { CommonConfig } from "../utils.js";
-import { StatefulProxyManager } from "node-apparatus";
-import { fileURLToPath } from "node:url";
 import { StringToNumberAlgos } from "../../string-to-number-algos.js";
+import { GridScaleConfig } from "../../grid-scale-config.js";
+import { GridScaleFactory } from "../../grid-scale-factory.js";
 //import * as OpenApiDefinition from "./reader-swagger.json" with { type: "json" };
 
 const applicationName = "Writer REST API";
 const app = new ApplicationBuilder(applicationName);
 const utilities = new Convenience();
 const threadCount = 10;
+const redisConnectionString = "redis://localhost:6379";
+const stringToNumberAlgo = StringToNumberAlgos[2];
 
 async function initializeGridScale(DIContainer: DisposableSingletonContainer) {
-    const config = DIContainer.createInstanceWithoutConstructor<TConfig>("TConfig", CommonConfig);
-    const chunkRegistry = DIContainer.createInstance<RedisHashMap>("ChunkRegistry", RedisHashMap, [config.redisConnection]);
+    const config = DIContainer.createInstance<GridScaleConfig>("GSConfig", GridScaleConfig);
+    config.workerCount = threadCount;
+    const chunkRegistry = DIContainer.createInstance<RedisHashMap>("ChunkRegistry", RedisHashMap, [redisConnectionString]);
     await chunkRegistry.initialize();
-    const chunkPlanner = DIContainer.createInstance<ChunkPlanner>("ChunkPlanner", ChunkPlanner, [chunkRegistry, StringToNumberAlgos[config.activeCalculatorIndex], config.tagBucketWidth, config.timeBucketWidth, config.logicalChunkPrefix, config.logicalChunkSeparator, config.timeBucketTolerance, config.activePath, config.setPaths]);
-    const workerFilePath = fileURLToPath(new URL("../../grid-thread-plugin.js", import.meta.url));
-    const proxies = DIContainer.createInstance<StatefulProxyManager>("ProxyManager", StatefulProxyManager, [threadCount, workerFilePath]);
-    await proxies.initialize();
-    for (let idx = 0; idx < proxies.WorkerCount; idx++) {
-        await proxies.invokeMethod("initialize", [`${process.pid.toString()}-${idx}`, config.fileNamePre, config.fileNamePost, config.maxDBOpen, 4, 0], idx);
-    }
-    DIContainer.createInstance<GridScale>("GS", GridScale, [chunkRegistry, chunkPlanner, proxies]);
+    const gs = await GridScaleFactory.create(chunkRegistry, stringToNumberAlgo, config);
+    DIContainer.registerInstance<GridScale>("GS", gs);
 }
 
 function setupRoutes(rootRouter: IRouter) {

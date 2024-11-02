@@ -1,7 +1,5 @@
 //This file should only be used for testing.
 
-import { TConfig } from "./t-config";
-
 function generateRandomString(length: number): string {
     const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()_+[]{}|;:,.<>?';
     let result = '';
@@ -39,21 +37,4 @@ export function generateRandomSamples(totalTags: number, totalSamplesPerTag: num
         generatedData.set(tagName, samples);
     });
     return generatedData;
-}
-
-export function CommonConfig(): TConfig {
-    return {
-        setPaths: new Map<string, string[]>([["./data/high-speed-1", ["disk1", "disk2", "disk3", "disk4", "disk5"]]]),
-        activePath: "./data/high-speed-1",
-        tagBucketWidth: 500,
-        timeBucketWidth: 86400000,
-        fileNamePre: "ts",
-        fileNamePost: ".db",
-        timeBucketTolerance: 1,
-        activeCalculatorIndex: 2,
-        maxDBOpen: 100,
-        logicalChunkPrefix: "D",
-        logicalChunkSeparator: "-",
-        redisConnection: 'redis://localhost:6379'
-    } as TConfig;
 }

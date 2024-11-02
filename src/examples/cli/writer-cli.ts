@@ -1,11 +1,8 @@
-import { TConfig } from "../t-config.js";
-import { GridScale } from "../../grid-scale.js";
-import { CommonConfig, generateRandomSamples } from "../utils.js";
+import { generateRandomSamples } from "../utils.js";
 import { RedisHashMap } from "../../non-volatile-hash-map/redis-hash-map.js";
-import { ChunkPlanner } from "../../chunk-planner.js";
-import { StatefulProxyManager } from "node-apparatus";
-import { fileURLToPath } from 'node:url';
 import { StringToNumberAlgos } from "../../string-to-number-algos.js";
+import { GridScaleFactory } from "../../grid-scale-factory.js";
+import { GridScaleConfig } from "../../grid-scale-config.js";
 
 
 // Invoke an Instance of chunk-container
@@ -16,22 +13,18 @@ import { StringToNumberAlgos } from "../../string-to-number-algos.js";
 // For Read generate a query plan and get data parallel.
 
 const threads = 10;
+const redisConnectionString = "redis://localhost:6379";
+const stringToNumberAlgo = StringToNumberAlgos[2];
+const gsConfig = new GridScaleConfig();
+gsConfig.workerCount = threads;
 console.log(`Started with ${threads} threads`);
 
 const totalTags = 100;
 const totalSamplesPerTag = 86400;
-const config: TConfig = CommonConfig()
 const insertTime = Date.now();
-const chunkRegistry = new RedisHashMap(config.redisConnection);
+const chunkRegistry = new RedisHashMap(redisConnectionString);
 await chunkRegistry.initialize();
-const chunkPlanner = new ChunkPlanner(chunkRegistry, StringToNumberAlgos[config.activeCalculatorIndex], config.tagBucketWidth, config.timeBucketWidth, config.logicalChunkPrefix, config.logicalChunkSeparator, config.timeBucketTolerance, config.activePath, config.setPaths);
-const workerFilePath = fileURLToPath(new URL("../../grid-thread-plugin.js", import.meta.url));
-const proxies = new StatefulProxyManager(threads, workerFilePath);
-await proxies.initialize();
-for (let idx = 0; idx < proxies.WorkerCount; idx++) {
-    await proxies.invokeMethod("initialize", [`${process.pid.toString()}-${idx}`, config.fileNamePre, config.fileNamePost, config.maxDBOpen, 4, 0], idx);
-}
-const gridScale = new GridScale(chunkRegistry, chunkPlanner, proxies);
+const gridScale = await GridScaleFactory.create(chunkRegistry, stringToNumberAlgo, gsConfig);
 
 const insertTimeCol = (time: number, tag: string) => insertTime;
 const numericCol = (time: number, tag: string) => Math.floor(Math.random() * 1000);
@@ -50,9 +43,7 @@ for (const [key, value] of diagnostics) {
 
 console.time("Close Operation");
 await (chunkRegistry[Symbol.asyncDispose] && chunkRegistry[Symbol.asyncDispose]() || Promise.resolve(chunkRegistry[Symbol.dispose] && chunkRegistry[Symbol.dispose]()));
-await (chunkPlanner[Symbol.asyncDispose] && chunkPlanner[Symbol.asyncDispose]() || Promise.resolve(chunkPlanner[Symbol.dispose] && chunkPlanner[Symbol.dispose]()));
-await (gridScale[Symbol.asyncDispose] && gridScale[Symbol.asyncDispose]() || Promise.resolve(gridScale[Symbol.dispose] && gridScale[Symbol.dispose]()));
-await proxies[Symbol.asyncDispose]();
+await gridScale[Symbol.asyncDispose]();
 console.timeEnd("Close Operation");
 
 
