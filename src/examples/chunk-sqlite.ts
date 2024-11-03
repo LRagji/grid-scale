@@ -2,8 +2,8 @@ import Database from "better-sqlite3";
 import { InjectableConstructor } from "node-apparatus";
 import { join } from "node:path";
 import { mkdirSync, readdirSync, watch, WatchEventType, FSWatcher } from "node:fs";
-import { ShardAccessMode } from "../types/shard-access-mode.js";
-import { ChunkBase } from "./chunk-base.js";
+import { ShardAccessMode } from "../../src/types/shard-access-mode.js";
+import { ChunkBase } from "../../src/chunk/chunk-base.js";
 
 
 export default class ChunkSqlite extends ChunkBase {
