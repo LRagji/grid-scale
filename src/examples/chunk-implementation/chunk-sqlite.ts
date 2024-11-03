@@ -2,10 +2,19 @@ import Database from "better-sqlite3";
 import { InjectableConstructor } from "node-apparatus";
 import { join } from "node:path";
 import { mkdirSync, readdirSync, watch, WatchEventType, FSWatcher } from "node:fs";
-import { ShardAccessMode } from "../../src/types/shard-access-mode.js";
-import { ChunkBase } from "../../src/chunk/chunk-base.js";
+import { ShardAccessMode } from "../../types/shard-access-mode.js";
+import { ChunkBase } from "../../chunk/chunk-base.js";
 
-
+/**
+ * This is an example ChunkBase implementation using SQLite
+ * This class uses better-sqlite3 to interact with SQLite database
+ * It has a fixed schema with 5 columns,(you can write your own schema)
+ * 1. sampleTime: The time of the sample
+ * 2. insertTime: The time of the insertion
+ * 3. nValue: The numeric value
+ * 4. oValue: The other value
+ * 5. tag: The tag name(Virtual column)
+ */
 export default class ChunkSqlite extends ChunkBase {
 
     public static override readonly columnCount: number = 5;

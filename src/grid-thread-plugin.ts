@@ -22,7 +22,7 @@ export class GridThreadPlugin extends StatefulRecipient {
         this.callerSignature = callerSignature;
         const chunkPluginClass = (await import(chunkPluginURL)).default
         const chunkPluginType: typeof ChunkBase = chunkPluginClass;
-        this.mergeFunction = gridKWayMerge(chunkPluginType.tagColumnIndex, chunkPluginType.timeColumnIndex);
+        this.mergeFunction = gridKWayMerge(chunkPluginType.tagColumnIndex, chunkPluginType.timeColumnIndex, chunkPluginType.insertTimeColumnIndex);
         this.chunkCache = new ChunkCache<ChunkBase>(chunkPluginClass, cacheSize, Math.ceil(cacheSize / 4), this.mergeFunction, this.injectableConstructor);
     }
 

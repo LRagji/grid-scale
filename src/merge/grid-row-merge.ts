@@ -20,7 +20,7 @@ function frameMerge<T>(elements: T[]): { yieldIndex: number, purgeIndexes: numbe
             }
             else if (element[this.tagIndex] === elements[yieldIndex][this.tagIndex] && element[this.timeIndex] === elements[yieldIndex][this.timeIndex]) {
                 //Compare Insert time in descending order MVCC
-                if (elements[1] > elements[yieldIndex][1]) {
+                if (elements[this.insertTimeIndex] > elements[yieldIndex][this.insertTimeIndex]) {
                     purgeIndexes.push(yieldIndex);
                     yieldIndex = elementIndex;
                 }
@@ -34,8 +34,8 @@ function frameMerge<T>(elements: T[]): { yieldIndex: number, purgeIndexes: numbe
 };
 
 
-export function gridKWayMerge(tagIndex: number, timeIndex: number) {
-    const mergeFunction = frameMerge.bind({ tagIndex, timeIndex });
+export function gridKWayMerge(tagIndex: number, timeIndex: number, insertTimeIndex: number) {
+    const mergeFunction = frameMerge.bind({ tagIndex, timeIndex, insertTimeIndex });
     return <T>(iterators: IterableIterator<T>[]): IterableIterator<T> => {
         return kWayMerge<T>(iterators, mergeFunction);
     }
