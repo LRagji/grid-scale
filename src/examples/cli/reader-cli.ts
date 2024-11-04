@@ -12,7 +12,7 @@ const trackMemoryFunc = trackMemory.bind(stats);
 trackMemoryFunc.stats = stats;
 const interval = setInterval(trackMemoryFunc, 1000); // Check memory usage every 1 second
 
-const threads = 10;
+const threads = 0;
 const redisConnectionString = "redis://localhost:6379";
 const stringToNumberAlgo = StringToNumberAlgos[2];
 const gsConfig = new GridScaleConfig();
@@ -36,15 +36,12 @@ for (let i = 0; i < 1; i++) {
     const time = Date.now();
     const resultTagNames = new Set<string>();
     const diagnostics = new Map<string, number>();
-    const rowCursor = gridScale.iteratorByTimePage(tagNames, startInclusiveTime, i + endExclusiveTime, `Q[${i}]`, 10000, diagnostics);
-    let counter = 0;
-    for await (const row of rowCursor) {
-        //console.log(row);
-        if (counter % 1000 === 0) {
-            trackMemoryFunc();
+    const pageCursor = gridScale.iteratorByTimePage(tagNames, startInclusiveTime, i + endExclusiveTime, `Q[${i}]`, 10000, diagnostics);
+    for await (const page of pageCursor) {
+        trackMemoryFunc();
+        for (const row of page) {
+            resultTagNames.add(row[4]);
         }
-        resultTagNames.add(row[4]);
-        counter++;
         //break;
     }
     results.push([Date.now() - time, resultTagNames.size, ...diagnostics.entries()]);

@@ -6,3 +6,4 @@ dist
 data
 *.cpuprofile
 *.heapsnapshot
+*.heapprofile

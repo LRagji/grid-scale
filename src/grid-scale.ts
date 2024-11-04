@@ -50,7 +50,7 @@ export class GridScale {
         diagnostics.set("linkTime", Date.now() - timings);
     }
 
-    public async *iteratorByTimePage(tags: string[], startInclusive: number, endExclusive: number, queryId = "queryId_" + Math.random().toString(), pageSize = 10000, diagnostics = new Map<string, any>()): AsyncIterableIterator<any[]> {
+    public async *iteratorByTimePage(tags: string[], startInclusive: number, endExclusive: number, queryId = "queryId_" + Math.random().toString(), pageSize = 10000, diagnostics = new Map<string, any>()): AsyncIterableIterator<any[][]> {
         let timings = Date.now();
         const iterationPlan = await this.chunkPlanner.planRangeIterationByTime(tags, startInclusive, endExclusive, this.remoteProxies.WorkerCount);
         for (const [workerIdx, plans] of iterationPlan.affinityDistributedChunkReads.entries()) {
@@ -94,7 +94,7 @@ export class GridScale {
                     endExclusiveWorkerIndex = startInclusiveWorkerIndex + 1;
                 }
 
-                yield* pageData;
+                yield pageData;
             }
             while (workerPromises.size > 0)
         }

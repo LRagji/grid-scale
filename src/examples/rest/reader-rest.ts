@@ -34,13 +34,15 @@ function setupRoutes(rootRouter: IRouter) {
         const diagnostics = new Map<string, number | String>();
         diagnostics.set("queryId", queryId)
         diagnostics.set("workers", threadCount)
-        const cursor = gridScale.iteratorByTimePage(tags, startInclusiveTime, endExclusiveTime, queryId, undefined, diagnostics);
+        const pageCursor = gridScale.iteratorByTimePage(tags, startInclusiveTime, endExclusiveTime, queryId, undefined, diagnostics);
         res.setHeader('Content-Type', 'application/json');
         res.write(`{ "data": [`);
         let first = true;
-        for await (const item of cursor) {
-            res.write((first === true ? "" : ",") + JSON.stringify(item));
-            first = false;
+        for await (const page of pageCursor) {
+            for (const item of page) {
+                res.write((first === true ? "" : ",") + JSON.stringify(item));
+                first = false;
+            }
         }
         res.write(`], "diagnostics":`);
         res.write(JSON.stringify(Object.fromEntries(diagnostics.entries())));
