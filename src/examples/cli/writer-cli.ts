@@ -1,4 +1,4 @@
-import { generateRandomSamples } from "../utils.js";
+import { formatKB, formatMB, generateRandomSamples, trackMemory } from "../utils.js";
 import { RedisHashMap } from "../../non-volatile-hash-map/redis-hash-map.js";
 import { StringToNumberAlgos } from "../../string-to-number-algos.js";
 import { GridScaleFactory } from "../../grid-scale-factory.js";
@@ -11,13 +11,16 @@ import { GridScaleConfig } from "../../grid-scale-config.js";
 // Accept WebSocket calls
 // For Write collect all chunks and set data parallel.
 // For Read generate a query plan and get data parallel.
+const stats = { heapPeakMemory: 0, rssPeakMemory: 0 };
+const trackMemoryFunc = trackMemory.bind(stats);
+trackMemoryFunc.stats = stats;
+const interval = setInterval(trackMemoryFunc, 1000); // Check memory usage every 1 second
 
 const threads = 10;
 const redisConnectionString = "redis://localhost:6379";
 const stringToNumberAlgo = StringToNumberAlgos[2];
 const gsConfig = new GridScaleConfig();
 gsConfig.workerCount = threads;
-console.log(`Started with ${threads} threads`);
 
 const totalTags = 100;
 const totalSamplesPerTag = 86400;
@@ -25,6 +28,9 @@ const insertTime = Date.now();
 const chunkRegistry = new RedisHashMap(redisConnectionString);
 await chunkRegistry.initialize();
 const gridScale = await GridScaleFactory.create(chunkRegistry, new URL("../chunk-implementation/chunk-sqlite.js", import.meta.url), stringToNumberAlgo, gsConfig);
+
+trackMemoryFunc();
+console.log(`Started with ${threads} threads @ ${formatMB(formatKB(trackMemoryFunc.stats.heapPeakMemory)).toFixed(1)} heap used & ${formatMB(formatKB(trackMemoryFunc.stats.rssPeakMemory)).toFixed(1)} rss`);
 
 const insertTimeCol = (time: number, tag: string) => insertTime;
 const numericCol = (time: number, tag: string) => Math.floor(Math.random() * 1000);
@@ -46,6 +52,9 @@ await (chunkRegistry[Symbol.asyncDispose] && chunkRegistry[Symbol.asyncDispose](
 await gridScale[Symbol.asyncDispose]();
 console.timeEnd("Close Operation");
 
+clearInterval(interval);
+console.log(`Heap Peak Memory: ${formatMB(formatKB(trackMemoryFunc.stats.heapPeakMemory)).toFixed(1)}MB`);
+console.log(`RSS Peak Memory: ${formatMB(formatKB(trackMemoryFunc.stats.rssPeakMemory)).toFixed(1)}MB`);
 
 
 

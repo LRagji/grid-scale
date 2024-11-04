@@ -38,3 +38,19 @@ export function generateRandomSamples(totalTags: number, totalSamplesPerTag: num
     });
     return generatedData;
 }
+
+export function formatKB(B: number): number {
+    return (B / 1024);
+}
+export function formatMB(KB: number): number {
+    return (KB / 1024);
+}
+export function formatGB(MB: number): number {
+    return (MB / 1024);
+}
+
+export function trackMemory() {
+    const memoryUsage = process.memoryUsage();
+    this.heapPeakMemory = Math.max(this.heapPeakMemory, memoryUsage.heapUsed);
+    this.rssPeakMemory = Math.max(this.rssPeakMemory, memoryUsage.rss);
+}
