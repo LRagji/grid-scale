@@ -53,12 +53,14 @@ export class GridScale {
     public async *iteratorByTimePage(tags: string[], startInclusive: number, endExclusive: number, queryId = "queryId_" + Math.random().toString(), pageSize = 10000, diagnostics = new Map<string, any>()): AsyncIterableIterator<any[][]> {
         let timings = Date.now();
         const iterationPlan = await this.chunkPlanner.planRangeIterationByTime(tags, startInclusive, endExclusive, this.remoteProxies.WorkerCount);
+        const diagnosticsWorkerPlan = new Array<string>();
         for (const [workerIdx, plans] of iterationPlan.affinityDistributedChunkReads.entries()) {
             if (plans === undefined) { continue; }
             for (const [planIdx, plan] of plans.entries()) {
-                diagnostics.set(`Worker:${workerIdx} Plan:${planIdx}`, `Sections:${plan[0].size} Tags:${plan[1].size}`);
+                diagnosticsWorkerPlan.push(`worker:${workerIdx} plan:${planIdx} shards:${plan[0].size} tags:${plan[1].size}`);
             }
         }
+        diagnostics.set("workersPlan", diagnosticsWorkerPlan);
         diagnostics.set("planTime", Date.now() - timings);
 
         timings = Date.now();
