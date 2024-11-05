@@ -8,7 +8,11 @@ export class ChunkId {
     }
 
     public static unCompressWithinLimits(input: number[], limit: number): number[] {
-        return input.map(val => ChunkId.bucket(val, limit));
+        const returnValue = new Array<number>();
+        for (const val of input) {
+            returnValue.push(ChunkId.bucket(val, limit));
+        }
+        return returnValue;
     }
 
     public static compressWithinLimits(input: number[], limit: number): number {
