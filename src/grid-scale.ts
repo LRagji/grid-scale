@@ -23,6 +23,20 @@ export class GridScale {
         const recordTimestampIndex: number = this.chunkPluginType.timeColumnIndex;
         const recordInsertTimeIndex: number = this.chunkPluginType.insertTimeColumnIndex;
         const upsertPlan = this.chunkPlanner.planUpserts(records, recordLength, recordTimestampIndex, recordInsertTimeIndex, insertTime, this.remoteProxies.WorkerCount);
+        //Diagnostics
+        const diagnosticsWorkerPlan = new Array<string>();
+        for (const [workerIdx, plans] of upsertPlan.chunkAllocations.entries()) {
+            if (plans === undefined) { continue; }
+            for (const [planIdx, plan] of plans.entries()) {
+                const recs = plan[1];
+                let samples = 0;
+                for (const [tagName, rows] of recs) {
+                    samples += rows.length;
+                }
+                diagnosticsWorkerPlan.push(`worker:${workerIdx} plan:${planIdx} shards:1 tags:${recs.size} records:${samples}`);
+            }
+        }
+        diagnostics.set("workersPlan", diagnosticsWorkerPlan);
         diagnostics.set("planTime", Date.now() - timings);
 
         timings = Date.now();
