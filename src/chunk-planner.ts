@@ -20,11 +20,16 @@ export class ChunkPlanner {
     public planUpserts(recordSet: Map<string, any[]>, recordSize: number, timeIndex: number, insertTimeIndex: number, insertTime: number, distributionCardinality: number): DistributedUpsertPlan {
         //Plan AIM:Intention of the plan is to touch one chunk at a time with all writes included so that we reduce data fragmentation and IOPS
         const computedPlan = { chunkAllocations: new Map<string, Map<string, any[]>>(), chunkDisplacements: new Map<string, [number, Set<string>]>() };
+        const toleranceWidth = this.timeBucketWidth * this.timeBucketTolerance;
         for (const [tagName, records] of recordSet) {
             const chunkIdByInsertTime = ChunkId.from(tagName, insertTime, this.stringToNumber, this.tagBucketWidth, this.timeBucketWidth, this.logicalChunkPrefix, this.logicalChunkSeparator);
             const diskIndex = chunkIdByInsertTime.tagCompressWithinLimits(this.shardSets.get(this.writersShardPath).length);
             const connectionPath = join(this.writersShardPath, this.shardSets.get(this.writersShardPath)[diskIndex], chunkIdByInsertTime.logicalChunkId);
             const tagNameRecordSetMap = computedPlan.chunkAllocations.get(connectionPath) || new Map<string, any[]>();
+            const minimumToleranceByInsertTime = chunkIdByInsertTime.timeBucketed[0] - toleranceWidth;
+            const maximumToleranceByInsertTime = chunkIdByInsertTime.timeBucketed[0] + toleranceWidth;
+            let minimumByRecordTime = Number.MAX_SAFE_INTEGER;
+            let maximumByRecordTime = Number.MIN_SAFE_INTEGER;
             for (let recordIndex = 0; recordIndex < records.length; recordIndex += recordSize) {
                 //Chunk Allocations
                 const record = records.slice(recordIndex, recordIndex + recordSize);
@@ -33,14 +38,16 @@ export class ChunkPlanner {
                 existingRows.push(record);
                 tagNameRecordSetMap.set(tagName, existingRows);
                 //Chunk Misplacement's
-                const chunkIdByRecordTime = ChunkId.from(tagName, record[timeIndex], this.stringToNumber, this.tagBucketWidth, this.timeBucketWidth, this.logicalChunkPrefix, this.logicalChunkSeparator);
-                const toleranceWidth = this.timeBucketWidth * this.timeBucketTolerance;
-                const minimumTolerance = chunkIdByInsertTime.timeBucketed[0] - toleranceWidth;
-                const maximumTolerance = chunkIdByInsertTime.timeBucketed[0] + toleranceWidth;
-                if (chunkIdByRecordTime.timeBucketed[0] < minimumTolerance || chunkIdByRecordTime.timeBucketed[0] > maximumTolerance) {
-                    const displacements = computedPlan.chunkDisplacements.get(chunkIdByRecordTime.logicalChunkId) || [chunkIdByInsertTime.timeBucketed[0], new Set<string>()];
-                    displacements[1].add(chunkIdByInsertTime.logicalChunkId);
-                    computedPlan.chunkDisplacements.set(chunkIdByRecordTime.logicalChunkId, displacements);
+                const recordTime = record[timeIndex];
+                if (recordTime < minimumByRecordTime || recordTime > maximumByRecordTime) {
+                    const chunkIdByRecordTime = ChunkId.from(tagName, recordTime, this.stringToNumber, this.tagBucketWidth, this.timeBucketWidth, this.logicalChunkPrefix, this.logicalChunkSeparator);
+                    if (chunkIdByRecordTime.timeBucketed[0] < minimumToleranceByInsertTime || chunkIdByRecordTime.timeBucketed[0] > maximumToleranceByInsertTime) {
+                        const displacements = computedPlan.chunkDisplacements.get(chunkIdByRecordTime.logicalChunkId) || [chunkIdByInsertTime.timeBucketed[0], new Set<string>()];
+                        displacements[1].add(chunkIdByInsertTime.logicalChunkId);
+                        computedPlan.chunkDisplacements.set(chunkIdByRecordTime.logicalChunkId, displacements);
+                        minimumByRecordTime = Math.min(minimumByRecordTime, chunkIdByRecordTime.timeBucketed[0]);
+                        maximumByRecordTime = Math.max(maximumByRecordTime, chunkIdByRecordTime.timeBucketed[0] + this.timeBucketWidth);
+                    }
                 }
             }
             computedPlan.chunkAllocations.set(connectionPath, tagNameRecordSetMap);
