@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "clean-build": "rimraf ./dist && tsc",
-    "copy-files": "npx copyfiles ./package.json ./license.md ./dist/",
+    "copy-files": "copyfiles ./package.json ./license.md ./dist/",
     "clean-prod": "rimraf ./dist/test",
     "build": "npm run build-test && npm run clean-prod",
     "build-test": "npm run clean-build && npx tsc && npm run copy-files",
@@ -26,6 +26,7 @@
     "@types/node": "^22.7.4",
     "@types/sinon": "^17.0.3",
     "c8": "^10.1.2",
+    "copyfiles": "^2.4.1",
     "dotenv": "^16.4.5",
     "rimraf": "^6.0.1",
     "sinon": "^19.0.2",
