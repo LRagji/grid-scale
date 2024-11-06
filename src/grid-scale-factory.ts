@@ -7,7 +7,7 @@ import { GridScaleConfig } from "./grid-scale-config.js";
 
 export class GridScaleFactory {
 
-    public static async create(chunkRegistry: INonVolatileHashMap, chunkPluginPath: URL, stringToNumber: (string) => number[], config: GridScaleConfig = new GridScaleConfig()): Promise<GridScale> {
+    public static async create(chunkRegistry: INonVolatileHashMap, chunkPluginPath: URL, stringToNumber: (string) => bigint, config: GridScaleConfig = new GridScaleConfig()): Promise<GridScale> {
         const chunkPlanner = new ChunkPlanner(chunkRegistry, stringToNumber, config.tagBucketWidth, config.timeBucketWidth, config.logicalChunkPrefix, config.logicalChunkSeparator, config.timeBucketTolerance, config.writerActiveShard, config.shardSets);
         const workerFilePath = fileURLToPath(new URL("./grid-thread-plugin.js", import.meta.url));
         const proxies = new StatefulProxyManager(config.workerCount, workerFilePath);

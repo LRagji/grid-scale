@@ -1,7 +1,7 @@
 import { ApplicationBuilder, ApplicationStartupStatus, ApplicationTypes, Convenience, DisposableSingletonContainer, IRouter, Request, Response } from "express-service-bootstrap";
 import { GridScale } from "../../grid-scale.js";
 import { RedisHashMap } from "../../non-volatile-hash-map/redis-hash-map.js";
-import { StringToNumberAlgos } from "../../string-to-number-algos.js";
+import { StringToBigIntAlgos } from "../../string-to-number-algos.js";
 import { GridScaleConfig } from "../../grid-scale-config.js";
 import { GridScaleFactory } from "../../grid-scale-factory.js";
 //import * as OpenApiDefinition from "./reader-swagger.json" with { type: "json" };
@@ -11,7 +11,7 @@ const app = new ApplicationBuilder(applicationName);
 const utilities = new Convenience();
 const threadCount = 10;
 const redisConnectionString = "redis://localhost:6379";
-const stringToNumberAlgo = StringToNumberAlgos[2];
+const stringToNumberAlgo = StringToBigIntAlgos[0];
 
 async function initializeGridScale(DIContainer: DisposableSingletonContainer) {
     const config = DIContainer.createInstance<GridScaleConfig>("GSConfig", GridScaleConfig);

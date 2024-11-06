@@ -25,4 +25,28 @@ function StringSplit(input: string): number[] {
     }
 }
 
-export const StringToNumberAlgos = [MD5, DJB2, StringSplit];
+function encodeUnicodeToUint32Array(input: string): number[] {
+    //Note: Do not change this to classic for loop, as it will break for code points > 0xFFFF
+    //https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String/codePointAt
+    return Array.from(input)
+        .map(char => char.codePointAt(0))
+        .filter(codePoint => codePoint !== undefined) as number[];
+}
+
+function encodeStringToBigint(input: string): bigint {
+    //The maximum possible Bigint for v8 implementation is 1 million bits or 125,000 bytes which should easy cover 256 characters of input string, even if each character is 4 bytes(UTF32) ie:1024bytes.
+    //https://v8.dev/blog/bigint
+    if (input.length > 256) { throw new Error('Input string is too long to be converted to a valid numeric sequence'); }
+    let result = BigInt(0);
+    //Note: Do not change this to classic for loop, as it will break for code points > 0xFFFF
+    //https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String/codePointAt
+    const maximumCodePoint = BigInt(0x110000);//Highest possible Unicode code: 1,114,112 in Dec or 0x10FFFF in Hex
+    for (const char of input) {
+        const codePoint = char.codePointAt(0);
+        result = result * maximumCodePoint + BigInt(codePoint);
+    }
+    return result;
+}
+
+export const StringToNumberAlgos = [MD5, DJB2, StringSplit, encodeUnicodeToUint32Array];
+export const StringToBigIntAlgos = [encodeStringToBigint];

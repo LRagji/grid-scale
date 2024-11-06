@@ -1,6 +1,7 @@
 import { formatKB, formatMB, generateRandomSamples, trackMemory } from "../utils.js";
+import * as v8 from 'v8';
 import { RedisHashMap } from "../../non-volatile-hash-map/redis-hash-map.js";
-import { StringToNumberAlgos } from "../../string-to-number-algos.js";
+import { StringToBigIntAlgos } from "../../string-to-number-algos.js";
 import { GridScaleFactory } from "../../grid-scale-factory.js";
 import { GridScaleConfig } from "../../grid-scale-config.js";
 
@@ -16,9 +17,9 @@ const trackMemoryFunc = trackMemory.bind(stats);
 trackMemoryFunc.stats = stats;
 const interval = setInterval(trackMemoryFunc, 1000); // Check memory usage every 1 second
 
-const threads = 10;
+const threads = 0;
 const redisConnectionString = "redis://localhost:6379";
-const stringToNumberAlgo = StringToNumberAlgos[2];
+const stringToNumberAlgo = StringToBigIntAlgos[0];
 const gsConfig = new GridScaleConfig();
 gsConfig.workerCount = threads;
 
@@ -30,6 +31,7 @@ await chunkRegistry.initialize();
 const gridScale = await GridScaleFactory.create(chunkRegistry, new URL("../chunk-implementation/chunk-sqlite.js", import.meta.url), stringToNumberAlgo, gsConfig);
 
 trackMemoryFunc();
+//v8.writeHeapSnapshot();
 console.log(`Started with ${threads} threads @ ${formatMB(formatKB(trackMemoryFunc.stats.heapPeakMemory)).toFixed(1)} heap used & ${formatMB(formatKB(trackMemoryFunc.stats.rssPeakMemory)).toFixed(1)} rss`);
 
 const insertTimeCol = (time: number, tag: string) => insertTime;
@@ -39,13 +41,28 @@ const otherCol = (time: number, tag: string) => null;
 const generatedData = generateRandomSamples(totalTags, totalSamplesPerTag, [insertTimeCol, numericCol, otherCol]);
 
 console.time("Total")
-const diagnostics = new Map<string, number>();
-await gridScale.store(generatedData, insertTime, diagnostics);
-console.timeEnd("Total")
+//v8.writeHeapSnapshot();
+const results = {};
 
-for (const [key, value] of diagnostics) {
-    console.log(`${key} ${value}`);
+for (let i = 0; i < 1; i++) {
+    const time = Date.now();
+    const diagnostics = new Map<string, any>();
+    await gridScale.store(generatedData, insertTime, diagnostics);
+    diagnostics.set("totalTime", Date.now() - time);
+    diagnostics.set("totalRecords", `${totalTags} X ${totalSamplesPerTag}`);
+    diagnostics.set("maxRSS", formatMB(formatKB(trackMemoryFunc.stats.rssPeakMemory)).toFixed(1) + "MB");
+    diagnostics.set("maxHeap", formatMB(formatKB(trackMemoryFunc.stats.heapPeakMemory)).toFixed(1) + "MB");
+    const workerDiagnostics = diagnostics.get("workersPlan") as string[] ?? [];
+    diagnostics.set("workersPlan", `Total:${threads}`);
+    results[`Run ${i}`] = Object.fromEntries(diagnostics.entries());
+    for (const [idx, workerDiagnostic] of workerDiagnostics.entries()) {
+        results[`Run ${i}-${idx}`] = { "workersPlan": workerDiagnostic };
+    }
 }
+
+console.timeEnd("Total");
+//v8.writeHeapSnapshot();
+console.table(results);
 
 console.time("Close Operation");
 await (chunkRegistry[Symbol.asyncDispose] && chunkRegistry[Symbol.asyncDispose]() || Promise.resolve(chunkRegistry[Symbol.dispose] && chunkRegistry[Symbol.dispose]()));
@@ -53,6 +70,7 @@ await gridScale[Symbol.asyncDispose]();
 console.timeEnd("Close Operation");
 
 clearInterval(interval);
+//v8.writeHeapSnapshot();
 console.log(`Heap Peak Memory: ${formatMB(formatKB(trackMemoryFunc.stats.heapPeakMemory)).toFixed(1)}MB`);
 console.log(`RSS Peak Memory: ${formatMB(formatKB(trackMemoryFunc.stats.rssPeakMemory)).toFixed(1)}MB`);
 
