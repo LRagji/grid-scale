@@ -1,7 +1,6 @@
 import { ApplicationBuilder, ApplicationStartupStatus, ApplicationTypes, Convenience, DisposableSingletonContainer, IRouter, Request, Response } from "express-service-bootstrap";
 import { GridScale } from "../../grid-scale.js";
 import { RedisHashMap } from "../../non-volatile-hash-map/redis-hash-map.js";
-import { StringToBigIntAlgos } from "../../string-to-number-algos.js";
 import { GridScaleConfig } from "../../grid-scale-config.js";
 import { GridScaleFactory } from "../../grid-scale-factory.js";
 //import * as OpenApiDefinition from "./reader-swagger.json" with { type: "json" };
@@ -11,14 +10,13 @@ const app = new ApplicationBuilder(applicationName);
 const utilities = new Convenience();
 const threadCount = 10;
 const redisConnectionString = "redis://localhost:6379";
-const stringToNumberAlgo = StringToBigIntAlgos[0];
 
 async function initializeGridScale(DIContainer: DisposableSingletonContainer) {
     const config = DIContainer.createInstance<GridScaleConfig>("GSConfig", GridScaleConfig);
     config.workerCount = threadCount;
     const chunkRegistry = DIContainer.createInstance<RedisHashMap>("ChunkRegistry", RedisHashMap, [redisConnectionString]);
     await chunkRegistry.initialize();
-    const gs = await GridScaleFactory.create(chunkRegistry, new URL("../chunk-implementation/chunk-sqlite.js", import.meta.url), stringToNumberAlgo, config);
+    const gs = await GridScaleFactory.create(chunkRegistry, new URL("../chunk-implementation/chunk-sqlite.js", import.meta.url), config);
     DIContainer.registerInstance<GridScale>("GS", gs);
 }
 
@@ -27,8 +25,12 @@ function setupRoutes(rootRouter: IRouter) {
         const DIContainer = req["DIProp"] as DisposableSingletonContainer;
         const gridScale = DIContainer.fetchInstance<GridScale>("GS");
         const data = new Map<string, any[]>(Object.entries(req.body));
+        const tagIdsData = new Map<bigint, any[]>();
+        for (const [tagId, tagData] of data) {
+            tagIdsData.set(BigInt(tagId), tagData);
+        }
         const diagnostics = new Map<string, number>();
-        await gridScale.store(data, undefined, diagnostics);
+        await gridScale.store(tagIdsData, undefined, diagnostics);
         res.json(Object.fromEntries(diagnostics.entries()));
     });
 }

@@ -36,7 +36,10 @@ function encodeUnicodeToUint32Array(input: string): number[] {
 function encodeStringToBigint(input: string): bigint {
     //The maximum possible Bigint for v8 implementation is 1 million bits or 125,000 bytes which should easy cover 256 characters of input string, even if each character is 4 bytes(UTF32) ie:1024bytes.
     //https://v8.dev/blog/bigint
-    if (input.length > 256) { throw new Error('Input string is too long to be converted to a valid numeric sequence'); }
+    const limit = 2000;
+    if (input.length > limit) {
+        throw new Error(`Input string is too long(${input.length}) to be converted to a valid numeric sequence, length should be less than ${limit}.`);
+    }
     let result = BigInt(0);
     //Note: Do not change this to classic for loop, as it will break for code points > 0xFFFF
     //https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String/codePointAt

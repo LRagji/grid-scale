@@ -1,7 +1,6 @@
 import { formatKB, formatMB, generateRandomSamples, trackMemory } from "../utils.js";
 import * as v8 from 'v8';
 import { RedisHashMap } from "../../non-volatile-hash-map/redis-hash-map.js";
-import { StringToBigIntAlgos } from "../../string-to-number-algos.js";
 import { GridScaleFactory } from "../../grid-scale-factory.js";
 import { GridScaleConfig } from "../../grid-scale-config.js";
 
@@ -19,7 +18,6 @@ const interval = setInterval(trackMemoryFunc, 1000); // Check memory usage every
 
 const threads = 0;
 const redisConnectionString = "redis://localhost:6379";
-const stringToNumberAlgo = StringToBigIntAlgos[0];
 const gsConfig = new GridScaleConfig();
 gsConfig.workerCount = threads;
 
@@ -28,15 +26,15 @@ const totalSamplesPerTag = 86400;
 const insertTime = Date.now();
 const chunkRegistry = new RedisHashMap(redisConnectionString);
 await chunkRegistry.initialize();
-const gridScale = await GridScaleFactory.create(chunkRegistry, new URL("../chunk-implementation/chunk-sqlite.js", import.meta.url), stringToNumberAlgo, gsConfig);
+const gridScale = await GridScaleFactory.create(chunkRegistry, new URL("../chunk-implementation/chunk-sqlite.js", import.meta.url), gsConfig);
 
 trackMemoryFunc();
 //v8.writeHeapSnapshot();
 console.log(`Started with ${threads} threads @ ${formatMB(formatKB(trackMemoryFunc.stats.heapPeakMemory)).toFixed(1)} heap used & ${formatMB(formatKB(trackMemoryFunc.stats.rssPeakMemory)).toFixed(1)} rss`);
 
-const insertTimeCol = (time: number, tag: string) => insertTime;
-const numericCol = (time: number, tag: string) => Math.floor(Math.random() * 1000);
-const otherCol = (time: number, tag: string) => null;
+const insertTimeCol = (time: number, tag: bigint) => insertTime;
+const numericCol = (time: number, tag: bigint) => Math.floor(Math.random() * 1000);
+const otherCol = (time: number, tag: bigint) => null;
 
 const generatedData = generateRandomSamples(totalTags, totalSamplesPerTag, [insertTimeCol, numericCol, otherCol]);
 
@@ -77,25 +75,14 @@ console.log(`RSS Peak Memory: ${formatMB(formatKB(trackMemoryFunc.stats.rssPeakM
 
 
 
-// Generate Operation: 1.017s
-// Split Operation: 1.041s
-// Write Operation: 6:22.962 (m:ss.mmm)
-// Link Operation: 13.373s
-// Close Operation: 1.801s
-// Fragmentation: 100%,Total Chunks: 50000
-
-// Single Thread
-// Generate Operation: 12.966ms
-// Split Operation: 117.912ms
-// Write Operation: 25.318s
-// Link Operation: 65.455ms
-// Fragmentation: 100% ,Total Chunks: 100
-// Total: 25.503s
-
-// 10 Threads
-// Generate Operation: 18.07ms
-// Split Operation: 127.049ms
-// Write Operation: 5.455s
-// Link Operation: 60.543ms
-// Fragmentation: 100 % , Total Chunks: 100
-// Total: 5.644s
+// Started with 0 threads @ 21.4 heap used & 74.0 rss
+// Total: 16.306s
+// ┌─────────┬─────────────────────────────────────────────────────┬──────────┬───────────┬──────────┬───────────┬───────────────┬───────────┬───────────┐
+// │ (index) │                     workersPlan                     │ planTime │ writeTime │ linkTime │ totalTime │ totalRecords  │  maxRSS   │  maxHeap  │
+// ├─────────┼─────────────────────────────────────────────────────┼──────────┼───────────┼──────────┼───────────┼───────────────┼───────────┼───────────┤
+// │  Run 0  │                      'Total:0'                      │   1798   │   14506   │    2     │   16306   │ '100 X 86400' │ '891.6MB' │ '790.7MB' │
+// │ Run 0-0 │ 'worker:0 plan:0 shards:1 tags:100 records:8640000' │          │           │          │           │               │           │           │
+// └─────────┴─────────────────────────────────────────────────────┴──────────┴───────────┴──────────┴───────────┴───────────────┴───────────┴───────────┘
+// Close Operation: 6.285ms
+// Heap Peak Memory: 790.7MB
+// RSS Peak Memory: 891.6MB

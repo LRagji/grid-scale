@@ -17,7 +17,7 @@ export class GridScale {
         this.chunkPluginType = (await import(this.chunkPluginPath.toString())).default;
     }
 
-    public async store(records: Map<string, any[]>, insertTime = Date.now(), diagnostics = new Map<string, any>()): Promise<void> {
+    public async store(records: Map<bigint, any[]>, insertTime = Date.now(), diagnostics = new Map<string, any>()): Promise<void> {
         let timings = Date.now();
         const recordLength: number = this.chunkPluginType.columnCount - 1;//-1 cause records are without the tag column
         const recordTimestampIndex: number = this.chunkPluginType.timeColumnIndex;
@@ -64,9 +64,9 @@ export class GridScale {
         diagnostics.set("linkTime", Date.now() - timings);
     }
 
-    public async *iteratorByTimePage(tags: string[], startInclusive: number, endExclusive: number, queryId = "queryId_" + Math.random().toString(), pageSize = 10000, diagnostics = new Map<string, any>()): AsyncIterableIterator<any[][]> {
+    public async *iteratorByTimePage(tagIds: bigint[], startInclusive: number, endExclusive: number, queryId = "queryId_" + Math.random().toString(), pageSize = 10000, diagnostics = new Map<string, any>()): AsyncIterableIterator<any[][]> {
         let timings = Date.now();
-        const iterationPlan = await this.chunkPlanner.planRangeIterationByTime(tags, startInclusive, endExclusive, this.remoteProxies.WorkerCount);
+        const iterationPlan = await this.chunkPlanner.planRangeIterationByTime(tagIds, startInclusive, endExclusive, this.remoteProxies.WorkerCount);
         const diagnosticsWorkerPlan = new Array<string>();
         for (const [workerIdx, plans] of iterationPlan.affinityDistributedChunkReads.entries()) {
             if (plans === undefined) { continue; }
