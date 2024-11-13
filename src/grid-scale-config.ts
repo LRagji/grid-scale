@@ -3,7 +3,6 @@ import { randomUUID } from "node:crypto";
 export class GridScaleConfig {
 
     public identity: string = randomUUID();
-    public maxCachedDB = 100;
     public workerCount = 10;
     public tagBucketWidth = 500;
     public timeBucketWidth = 86400 * 1000;

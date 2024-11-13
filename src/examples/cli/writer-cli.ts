@@ -16,7 +16,7 @@ const trackMemoryFunc = trackMemory.bind(stats);
 trackMemoryFunc.stats = stats;
 const interval = setInterval(trackMemoryFunc, 1000); // Check memory usage every 1 second
 
-const threads = 0;
+const threads = 10;
 const redisConnectionString = "redis://localhost:6379";
 const gsConfig = new GridScaleConfig();
 gsConfig.workerCount = threads;
@@ -24,9 +24,9 @@ gsConfig.workerCount = threads;
 const totalTags = 100;
 const totalSamplesPerTag = 86400;
 const insertTime = Date.now();
-const chunkRegistry = new RedisHashMap(redisConnectionString);
-await chunkRegistry.initialize();
-const gridScale = await GridScaleFactory.create(chunkRegistry, new URL("../chunk-implementation/chunk-sqlite.js", import.meta.url), gsConfig);
+const chunkRelations = new RedisHashMap(redisConnectionString);
+await chunkRelations.initialize();
+const gridScale = await GridScaleFactory.create(chunkRelations, new URL("../chunk-factory-implementation/sqlite-chunk-factory.js", import.meta.url), gsConfig);
 
 trackMemoryFunc();
 //v8.writeHeapSnapshot();
@@ -63,7 +63,7 @@ console.timeEnd("Total");
 console.table(results);
 
 console.time("Close Operation");
-await (chunkRegistry[Symbol.asyncDispose] && chunkRegistry[Symbol.asyncDispose]() || Promise.resolve(chunkRegistry[Symbol.dispose] && chunkRegistry[Symbol.dispose]()));
+await (chunkRelations[Symbol.asyncDispose] && chunkRelations[Symbol.asyncDispose]() || Promise.resolve(chunkRelations[Symbol.dispose] && chunkRelations[Symbol.dispose]()));
 await gridScale[Symbol.asyncDispose]();
 console.timeEnd("Close Operation");
 

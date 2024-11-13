@@ -1,27 +1,28 @@
 import { ChunkPlanner } from "./chunk-planner.js";
 import { StatefulProxyManager } from "node-apparatus";
 import { INonVolatileHashMap } from "./non-volatile-hash-map/i-non-volatile-hash-map.js";
-import { ChunkBase } from "./chunk/chunk-base.js";
+import { IChunk } from "./chunk/i-chunk.js";
+import { ChunkFactoryBase } from "./chunk/chunk-factory-base.js";
 
 export class GridScale {
 
-    private chunkPluginType: typeof ChunkBase;
+    private chunkPluginFactoryType: typeof ChunkFactoryBase<IChunk>;
     constructor(
         private readonly chunkRegistry: INonVolatileHashMap,
         private readonly chunkPlanner: ChunkPlanner,
         private readonly remoteProxies: StatefulProxyManager,
-        private readonly chunkPluginPath: URL
+        private readonly chunkPluginFactoryPath: URL
     ) { }
 
     public async initialize(): Promise<void> {
-        this.chunkPluginType = (await import(this.chunkPluginPath.toString())).default;
+        this.chunkPluginFactoryType = (await import(this.chunkPluginFactoryPath.toString())).default.constructor;
     }
 
     public async store(records: Map<bigint, any[]>, insertTime = Date.now(), diagnostics = new Map<string, any>()): Promise<void> {
         let timings = Date.now();
-        const recordLength: number = this.chunkPluginType.columnCount - 1;//-1 cause records are without the tag column
-        const recordTimestampIndex: number = this.chunkPluginType.timeColumnIndex;
-        const recordInsertTimeIndex: number = this.chunkPluginType.insertTimeColumnIndex;
+        const recordLength: number = this.chunkPluginFactoryType.columnCount - 1;//-1 cause records are without the tag column
+        const recordTimestampIndex: number = this.chunkPluginFactoryType.timeColumnIndex;
+        const recordInsertTimeIndex: number = this.chunkPluginFactoryType.insertTimeColumnIndex;
         const upsertPlan = this.chunkPlanner.planUpserts(records, recordLength, recordTimestampIndex, recordInsertTimeIndex, insertTime, this.remoteProxies.WorkerCount);
         //Diagnostics
         const diagnosticsWorkerPlan = new Array<string>();

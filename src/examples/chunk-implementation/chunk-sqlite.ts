@@ -3,7 +3,7 @@ import { InjectableConstructor } from "node-apparatus";
 import { join } from "node:path";
 import { mkdirSync, readdirSync, watch, WatchEventType, FSWatcher } from "node:fs";
 import { ShardAccessMode } from "../../types/shard-access-mode.js";
-import { ChunkBase } from "../../chunk/chunk-base.js";
+import { IChunk } from "../../chunk/i-chunk.js";
 
 /**
  * This is an example ChunkBase implementation using SQLite
@@ -15,12 +15,7 @@ import { ChunkBase } from "../../chunk/chunk-base.js";
  * 4. oValue: The other value
  * 5. tag: The tag name(Virtual column)
  */
-export default class ChunkSqlite extends ChunkBase {
-
-    public static override readonly columnCount: number = 5;
-    public static override readonly timeColumnIndex: number = 0;
-    public static override readonly insertTimeColumnIndex: number = 1;
-    public static override readonly tagColumnIndex: number = 4;
+export default class ChunkSqlite implements IChunk {
 
     private readonly filePrefix = "ts";
     private readonly filePostfix = ".gs";
@@ -48,7 +43,7 @@ export default class ChunkSqlite extends ChunkBase {
         private readonly mergeFunction: <T>(cursors: IterableIterator<T>[]) => IterableIterator<T>,
         callerSignature: string,
         private readonly injectableConstructor: InjectableConstructor = new InjectableConstructor()) {
-        super(directoryPath, mode, mergeFunction, callerSignature, injectableConstructor);
+
         if (this.mode === "write") {
             const fullPath = join(directoryPath, (this.filePrefix + callerSignature + this.filePostfix));
             mkdirSync(directoryPath, { recursive: true });

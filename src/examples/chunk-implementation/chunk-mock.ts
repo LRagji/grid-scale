@@ -1,14 +1,8 @@
 import { InjectableConstructor } from "node-apparatus";
-import { ChunkBase } from "../../chunk/chunk-base.js";
+import { IChunk } from "../../chunk/i-chunk.js";
 import { ShardAccessMode } from "../../types/shard-access-mode.js";
 
-export default class ChunkGenerator extends ChunkBase {
-
-    public static override readonly columnCount: number = 5;
-    public static override readonly timeColumnIndex: number = 0;
-    public static override readonly insertTimeColumnIndex: number = 1;
-    public static override readonly tagColumnIndex: number = 4;
-
+export class ChunkGenerator implements IChunk {
 
     constructor(
         private readonly connectionPath: string,
@@ -16,8 +10,6 @@ export default class ChunkGenerator extends ChunkBase {
         private readonly mergeFunction: <T>(cursors: IterableIterator<T>[]) => IterableIterator<T>,
         private readonly callerSignature: string,
         private readonly injectableConstructor: InjectableConstructor = new InjectableConstructor()) {
-        super(connectionPath, mode, mergeFunction, callerSignature, injectableConstructor);
-        //console.log(`ChunkGenerator.constructor(${connectionPath}, ${mode},  ${callerSignature})`);
     }
 
     bulkSet(records: Map<string, any[][]>): void {
