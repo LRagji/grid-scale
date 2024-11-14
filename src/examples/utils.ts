@@ -23,15 +23,16 @@ export function generateTagNames(totalTags: number, increment: number = 1): Arra
     return tagIds;
 }
 
-export function generateRandomSamples(totalTags: number, totalSamplesPerTag: number, columns: ((time: number, tagId: bigint) => number | string | null)[]): Map<bigint, number[]> {
+export function generateRandomSamples(totalTags: number, totalSamplesPerTag: number, startTime: number, columns: ((time: number, tagId: bigint) => number | string | null)[]): Map<bigint, number[]> {
     const generatedData = new Map<bigint, any[]>();
     const samples = new Array<number | string | null>();
     const tagIds = generateTagNames(totalTags);
     tagIds.forEach(tagId => {
         if (samples.length === 0) {
             for (let time = 0; time < totalSamplesPerTag; time++) {
-                samples.push(time * 1000);
-                columns.forEach(column => samples.push(column(time, tagId)));
+                const fictionalTime = startTime + (time * 1000);
+                samples.push(fictionalTime);
+                columns.forEach(column => samples.push(column(fictionalTime, tagId)));
             }
         }
         generatedData.set(tagId, samples);

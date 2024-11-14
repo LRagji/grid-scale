@@ -8,7 +8,7 @@ export abstract class ChunkFactoryBase<T extends IChunk> {
     public static readonly insertTimeColumnIndex: number = -1;
     public static readonly columnCount: number = -1;
 
-    public abstract getChunk(connectionPath: string, mode: ShardAccessMode, callerSignature: string): T
+    public abstract getChunk(connectionPath: string, mode: ShardAccessMode, callerSignature: string): T | null
 
     public abstract [Symbol.asyncDispose](): Promise<void>
 }

@@ -29,7 +29,9 @@ export class GridThreadPlugin extends StatefulRecipient {
     public bulkWrite(plan: [string, Map<string, any[]>][]): void {
         for (const [connectionPath, tagRecords] of plan) {
             const chunk = this.chunkFactory.getChunk(connectionPath, "write", this.callerSignature);
-            chunk.bulkSet(tagRecords);
+            if (chunk !== null) {
+                chunk.bulkSet(tagRecords);
+            }
         }
     }
 
@@ -43,7 +45,9 @@ export class GridThreadPlugin extends StatefulRecipient {
                 const tagSet = plans[currentPlanIndex][1];
                 for (const connectionPath of connectionPaths) {
                     const chunk = this.chunkFactory.getChunk(connectionPath, "read", this.callerSignature);
-                    chunkIterators.push(chunk.bulkIterator(Array.from(tagSet.values()), startInclusive, endExclusive));
+                    if (chunk !== null) {
+                        chunkIterators.push(chunk.bulkIterator(Array.from(tagSet.values()), startInclusive, endExclusive));
+                    }
                 }
                 this.iteratorCache.set(queryId, [this.mergeFunction(chunkIterators), currentPlanIndex]);
             }

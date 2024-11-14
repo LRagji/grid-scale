@@ -19,7 +19,7 @@ export class CachedChunkFactory<T extends IChunk> extends SqliteChunkFactory<T> 
         super(chunkType, mergeFunction, injectableConstructor);
     }
 
-    public override getChunk(connectionPath: string, mode: ShardAccessMode, callerSignature: string): T {
+    public override getChunk(connectionPath: string, mode: ShardAccessMode, callerSignature: string): T | null {
         const cacheKey = connectionPath + mode;
         if (this.chunkCache.has(cacheKey)) {
             return this.chunkCache.get(cacheKey);
@@ -49,11 +49,22 @@ export class CachedChunkFactory<T extends IChunk> extends SqliteChunkFactory<T> 
         }
     }
 
+    public pruneChunk(connectionPath: string, mode: ShardAccessMode, callerSignature: string): void {
+        const cacheKey = connectionPath + mode;
+        if (this.chunkCache.has(cacheKey)) {
+            if (this.chunkCache.get(cacheKey).canBeDisposed() === true) {
+                this.chunkCache.get(cacheKey)[Symbol.asyncDispose]();
+                this.chunkCache.delete(cacheKey);
+            }
+        }
+    }
+
     public override async [Symbol.asyncDispose]() {
         const handles = Array.from(this.chunkCache.values())
             .map(chunk => chunk[Symbol.asyncDispose]());
         await Promise.allSettled(handles);
         this.chunkCache.clear();
+        super[Symbol.asyncDispose]();
     }
 }
 

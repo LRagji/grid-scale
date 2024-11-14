@@ -18,7 +18,7 @@ export class SqliteChunkFactory<T extends IChunk> extends ChunkFactoryBase<T> {
         super();
     }
 
-    public override getChunk(connectionPath: string, mode: ShardAccessMode, callerSignature: string): T {
+    public override getChunk(connectionPath: string, mode: ShardAccessMode, callerSignature: string): T | null {
         return this.injectableConstructor.createInstance<T>(this.chunkType, [connectionPath, mode, this.mergeFunction, callerSignature, this.injectableConstructor]);
     }
 

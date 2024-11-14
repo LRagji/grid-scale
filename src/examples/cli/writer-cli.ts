@@ -28,7 +28,7 @@ let insertTime = Date.now();
 // insertTime = insertTime + 86400000;
 const chunkRelations = new RedisHashMap(redisConnectionString);
 await chunkRelations.initialize();
-const gridScale = await GridScaleFactory.create(chunkRelations, new URL("../chunk-factory-implementation/cached-chunk-factory.js", import.meta.url), gsConfig);
+const gridScale = await GridScaleFactory.create(chunkRelations, new URL("../chunk-factory-implementation/ttl-chunk-factory.js", import.meta.url), gsConfig);
 
 trackMemoryFunc();
 //v8.writeHeapSnapshot();
@@ -38,7 +38,7 @@ const insertTimeCol = (time: number, tag: bigint) => insertTime;
 const numericCol = (time: number, tag: bigint) => Math.floor(Math.random() * 1000);
 const otherCol = (time: number, tag: bigint) => null;
 
-const generatedData = generateRandomSamples(totalTags, totalSamplesPerTag, [insertTimeCol, numericCol, otherCol]);
+const generatedData = generateRandomSamples(totalTags, totalSamplesPerTag, 0, [insertTimeCol, numericCol, otherCol]);
 
 console.time("Total")
 //v8.writeHeapSnapshot();

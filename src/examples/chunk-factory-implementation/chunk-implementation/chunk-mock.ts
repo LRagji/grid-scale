@@ -12,11 +12,18 @@ export class ChunkGenerator implements IChunk {
         private readonly injectableConstructor: InjectableConstructor = new InjectableConstructor()) {
     }
 
+    metadataSet(key: string, value: string): void {
+
+    }
+    metadataGet(key: string): string[] {
+        return null;
+    }
+
     bulkSet(records: Map<string, any[][]>): void {
 
     }
 
-    *bulkIterator(tags: string[], startTimeInclusive: number, endTimeExclusive: number): IterableIterator<any[]> {
+    * bulkIterator(tags: string[], startTimeInclusive: number, endTimeExclusive: number): IterableIterator<any[]> {
         for (let i = 0; i < (86400 * 5); i++) {
             yield [i, i, i, null, `Tag${i - (i % 86400)}-${this.connectionPath}`];
         }
