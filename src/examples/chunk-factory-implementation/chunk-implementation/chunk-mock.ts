@@ -1,6 +1,6 @@
 import { InjectableConstructor } from "node-apparatus";
-import { IChunk } from "../../chunk/i-chunk.js";
-import { ShardAccessMode } from "../../types/shard-access-mode.js";
+import { IChunk } from "../../../chunk/i-chunk.js";
+import { ShardAccessMode } from "../../../types/shard-access-mode.js";
 
 export class ChunkGenerator implements IChunk {
 

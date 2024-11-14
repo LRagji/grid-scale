@@ -16,17 +16,19 @@ const trackMemoryFunc = trackMemory.bind(stats);
 trackMemoryFunc.stats = stats;
 const interval = setInterval(trackMemoryFunc, 1000); // Check memory usage every 1 second
 
-const threads = 10;
+const threads = 0;
 const redisConnectionString = "redis://localhost:6379";
 const gsConfig = new GridScaleConfig();
 gsConfig.workerCount = threads;
 
 const totalTags = 100;
 const totalSamplesPerTag = 86400;
-const insertTime = Date.now();
+let insertTime = Date.now();
+// insertTime = insertTime - (insertTime % 86400000);
+// insertTime = insertTime + 86400000;
 const chunkRelations = new RedisHashMap(redisConnectionString);
 await chunkRelations.initialize();
-const gridScale = await GridScaleFactory.create(chunkRelations, new URL("../chunk-factory-implementation/sqlite-chunk-factory.js", import.meta.url), gsConfig);
+const gridScale = await GridScaleFactory.create(chunkRelations, new URL("../chunk-factory-implementation/cached-chunk-factory.js", import.meta.url), gsConfig);
 
 trackMemoryFunc();
 //v8.writeHeapSnapshot();

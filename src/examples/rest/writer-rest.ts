@@ -16,7 +16,7 @@ async function initializeGridScale(DIContainer: DisposableSingletonContainer) {
     config.workerCount = threadCount;
     const chunkRegistry = DIContainer.createInstance<RedisHashMap>("ChunkRegistry", RedisHashMap, [redisConnectionString]);
     await chunkRegistry.initialize();
-    const gs = await GridScaleFactory.create(chunkRegistry, new URL("../chunk-factory-implementation/sqlite-chunk-factory.js", import.meta.url), config);
+    const gs = await GridScaleFactory.create(chunkRegistry, new URL("../chunk-factory-implementation/cached-chunk-factory.js", import.meta.url), config);
     DIContainer.registerInstance<GridScale>("GS", gs);
 }
 

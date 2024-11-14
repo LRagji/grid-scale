@@ -17,7 +17,7 @@ const gsConfig = new GridScaleConfig();
 gsConfig.workerCount = threads;
 const chunkRelations = new RedisHashMap(redisConnectionString);
 await chunkRelations.initialize();
-const gridScale = await GridScaleFactory.create(chunkRelations, new URL("../chunk-factory-implementation/sqlite-chunk-factory.js", import.meta.url), gsConfig);
+const gridScale = await GridScaleFactory.create(chunkRelations, new URL("../chunk-factory-implementation/cached-chunk-factory.js", import.meta.url), gsConfig);
 
 trackMemoryFunc();
 console.log(`Started with ${threads} threads @ ${formatMB(formatKB(trackMemoryFunc.stats.heapPeakMemory)).toFixed(1)} heap used & ${formatMB(formatKB(trackMemoryFunc.stats.rssPeakMemory)).toFixed(1)} rss`);
