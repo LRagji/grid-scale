@@ -5,7 +5,7 @@ export class GridScaleConfig {
     public identity: string = randomUUID();
     public workerCount = 10;
     private tagBucketWidth = 2 ** 9;//512;
-    private timeBucketWidth = (2 ** 26) * 1000;//Close to 1 Day in milliseconds
+    private timeBucketWidth = (2 ** 26);//Close to 1 Day in milliseconds //67108864;
     public logicalChunkPrefix = "l";
     public logicalChunkSeparator = "-";
     public timeBucketTolerance = 1;

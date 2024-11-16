@@ -65,7 +65,7 @@ export class GridScale {
         diagnostics.set("linkTime", Date.now() - timings);
     }
 
-    public async *iteratorByTimePage(tagIds: bigint[], startInclusive: number, endExclusive: number, queryId = "queryId_" + Math.random().toString(), pageSize = 10000, diagnostics = new Map<string, any>()): AsyncIterableIterator<any[][]> {
+    public async *iteratorByTimePage(tagIds: bigint[], startInclusive: number, endExclusive: number, queryId = "queryId_" + Math.random().toString(), resultPageSize = 10000, diagnostics = new Map<string, any>()): AsyncIterableIterator<any[][]> {
         let timings = Date.now();
         const iterationPlan = await this.chunkPlanner.planRangeIterationByTime(tagIds, startInclusive, endExclusive, this.remoteProxies.WorkerCount);
         const diagnosticsWorkerPlan = new Array<string>();
@@ -90,7 +90,7 @@ export class GridScale {
                     const plans = iterationPlan.affinityDistributedChunkReads[workerIdx];
                     if (plans !== undefined) {
                         const resultPromise = async () => {
-                            const results = await this.remoteProxies.invokeMethod<any[]>("bulkIterate", [queryId, plans, startInclusive, endExclusive, pageSize], workerIdx);
+                            const results = await this.remoteProxies.invokeMethod<any[]>("bulkIterate", [queryId, plans, startInclusive, endExclusive, resultPageSize], workerIdx);
                             return [workerIdx, results];
                         }
                         workerPromises.set(workerIdx, resultPromise());
@@ -121,10 +121,12 @@ export class GridScale {
                 await this.remoteProxies.invokeMethod<any[]>("clearIteration", [queryId], workerIdx);
             }
         }
-        diagnostics.set("pageCounter", pageCounter);
+        diagnostics.set("dataPageCounter", pageCounter);
         diagnostics.set("rowCounter", rowsCounter);
         diagnostics.set("yieldTime", Date.now() - timings);
     }
 
-
+    public fetchTimePages(startInclusive: number, endExclusive: number): [number, number][] {
+        return this.chunkPlanner.decomposeTimeRangeByPages(startInclusive, endExclusive);
+    }
 }

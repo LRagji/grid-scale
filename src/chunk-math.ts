@@ -2,6 +2,10 @@ export function logicalChunkId(dimensions: bigint[], logicalChunkPrefix: string,
     return `${logicalChunkPrefix}${logicalChunkSeparator}${dimensions.join(logicalChunkSeparator)}`;
 }
 
+export function bucketInt(input: number, width: number): number {
+    return input - (input % width);
+}
+
 export function bucket(input: bigint, width: bigint): bigint {
     return input - (input % width);
 }

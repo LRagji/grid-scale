@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { bigIntMax, bigIntMin, bucket, logicalChunkId, DJB2StringToNumber } from "./chunk-math.js";
+import { bigIntMax, bigIntMin, bucket, logicalChunkId, DJB2StringToNumber, bucketInt } from "./chunk-math.js";
 import { INonVolatileHashMap } from "./non-volatile-hash-map/i-non-volatile-hash-map.js";
 import { DistributedIterationPlan } from "./types/distributed-iteration-plan.js";
 import { DistributedUpsertPlan } from "./types/distributed-upsert-plan.js";
@@ -43,7 +43,7 @@ export class ChunkPlanner {
                 const recordTime = BigInt(record[timeIndex]);
                 if (recordTime < minimumByRecordTime || recordTime > maximumByRecordTime) {
                     const recordTimeBucketed = bucket(BigInt(recordTime), timeBucketWidthBigInt);
-                    const logicalChunkIdByRecordTime = logicalChunkId([tagBucketed, recordTime], this.logicalChunkPrefix, this.logicalChunkSeparator);
+                    const logicalChunkIdByRecordTime = logicalChunkId([tagBucketed, recordTimeBucketed], this.logicalChunkPrefix, this.logicalChunkSeparator);
                     if (recordTimeBucketed < minimumToleranceByInsertTime || recordTimeBucketed > maximumToleranceByInsertTime) {
                         const displacements = computedPlan.chunkDisplacements.get(logicalChunkIdByRecordTime) || [insertTimeBucketed.toString(), new Set<string>()];
                         displacements[1].add(logicalChunkIdByInsertTime);
@@ -73,6 +73,9 @@ export class ChunkPlanner {
 
     public async planRangeIterationByTime(tags: bigint[], startInclusiveTime: number, endExclusiveTime: number, distributionCardinality: number): Promise<DistributedIterationPlan> {
         //Aim: Give a complete horizontal for chunk to be read by one thread for MVCC & Fragmentation reduction via K-Way merge also to reduce IOPS
+        if (bucketInt(startInclusiveTime, this.timeBucketWidth) !== bucketInt(endExclusiveTime - 1, this.timeBucketWidth)) {
+            throw new Error(`Range iteration must be within the same time bucket[${startInclusiveTime},${endExclusiveTime}]`);
+        }
         const startInclusiveBucketedTime = bucket(BigInt(startInclusiveTime), BigInt(this.timeBucketWidth));
         const tagsGroupedByLogicalChunkId = new Map<string, [Set<string>, Set<string>]>();
         const logicalIdCache = new Map<string, Set<string>>();
@@ -119,4 +122,27 @@ export class ChunkPlanner {
             requestedEndTime: endExclusiveTime
         };
     }
+
+    public decomposeTimeRangeByPages(startInclusiveTime: number, endExclusiveTime: number): [number, number][] {
+
+        if (startInclusiveTime >= endExclusiveTime) {
+            throw new Error("Invalid time range, end cannot be less than or equal to start");
+        }
+
+        if (startInclusiveTime < 0 || endExclusiveTime < 1) {
+            throw new Error("Invalid time range, start and end must be positive and greater than 0 & 1 respectively.");
+        }
+
+        const result: [number, number][] = [];
+        let currentStart = startInclusiveTime;
+
+        while (currentStart < endExclusiveTime) {
+            const currentEnd = Math.min(currentStart + this.timeBucketWidth, endExclusiveTime);
+            result.push([currentStart, currentEnd]);
+            currentStart = currentEnd;
+        }
+
+        return result;
+    }
+
 }

@@ -33,26 +33,31 @@ const results = {};
 for (let i = 0; i < 1; i++) {
     const time = Date.now();
     const resultTagIds = new Set<string>();
-    const diagnostics = new Map<string, any>();
-    const pageCursor = gridScale.iteratorByTimePage(tagIds, startInclusiveTime, i + endExclusiveTime, `Q[${i}]`, 10000, diagnostics);
-    for await (const page of pageCursor) {
-        trackMemoryFunc();
-        for (const row of page) {
-            resultTagIds.add(row[4]);
-        }
-        //break;
-    }
-    diagnostics.set("totalTime", Date.now() - time);
-    diagnostics.set("totalTags", resultTagIds.size);
-    diagnostics.set("maxRSS", formatMB(formatKB(trackMemoryFunc.stats.rssPeakMemory)).toFixed(1) + "MB");
-    diagnostics.set("maxHeap", formatMB(formatKB(trackMemoryFunc.stats.heapPeakMemory)).toFixed(1) + "MB");
-    const workerDiagnostics = diagnostics.get("workersPlan") as string[] ?? [];
-    diagnostics.set("workersPlan", `Total:${threads}`);
-    results[`Run ${i}`] = Object.fromEntries(diagnostics.entries());
-    for (const [idx, workerDiagnostic] of workerDiagnostics.entries()) {
-        results[`Run ${i}-${idx}`] = { "workersPlan": workerDiagnostic };
-    }
+    const timePages = gridScale.fetchTimePages(startInclusiveTime, i + endExclusiveTime);
 
+    while (timePages.length > 0) {
+        const diagnostics = new Map<string, any>();
+        const timePage = timePages.shift();
+        const pageCursor = gridScale.iteratorByTimePage(tagIds, timePage[0], timePage[1], `Q[${i}]`, 10000, diagnostics);
+        for await (const page of pageCursor) {
+            trackMemoryFunc();
+            for (const row of page) {
+                resultTagIds.add(row[4]);
+            }
+            //break;
+        }
+        diagnostics.set("timePage", timePage.join("->"));
+        diagnostics.set("totalTime", Date.now() - time);
+        diagnostics.set("totalTags", resultTagIds.size);
+        diagnostics.set("maxRSS", formatMB(formatKB(trackMemoryFunc.stats.rssPeakMemory)).toFixed(1) + "MB");
+        diagnostics.set("maxHeap", formatMB(formatKB(trackMemoryFunc.stats.heapPeakMemory)).toFixed(1) + "MB");
+        const workerDiagnostics = diagnostics.get("workersPlan") as string[] ?? [];
+        diagnostics.set("workersPlan", `Total:${threads}`);
+        results[`Run ${i} TimePage:${timePage.join("->")}`] = Object.fromEntries(diagnostics.entries());
+        for (const [idx, workerDiagnostic] of workerDiagnostics.entries()) {
+            results[`Run ${i} TimePage:${timePage.join("->")} Worker:${idx}`] = { "workersPlan": workerDiagnostic };
+        }
+    }
 }
 
 console.timeEnd("Total");
