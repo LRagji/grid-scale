@@ -123,7 +123,7 @@ export class ChunkPlanner {
         };
     }
 
-    public decomposeTimeRangeByPages(startInclusiveTime: number, endExclusiveTime: number): [number, number][] {
+    public decomposeTimeByPages(startInclusiveTime: number, endExclusiveTime: number): [number, number][] {
 
         if (startInclusiveTime >= endExclusiveTime) {
             throw new Error("Invalid time range, end cannot be less than or equal to start");
@@ -143,6 +143,18 @@ export class ChunkPlanner {
         }
 
         return result;
+    }
+
+    public decomposeTagsByPages(tagList: bigint[]): bigint[][] {
+        const tagBucketWidth = BigInt(this.tagBucketWidth);
+        const tagBuckets = new Map<bigint, bigint[]>();
+        for (const tag of tagList) {
+            const tagBucketed = bucket(tag, tagBucketWidth);
+            const existingBucket = tagBuckets.get(tagBucketed) ?? new Array<bigint>();
+            existingBucket.push(tag);
+            tagBuckets.set(tagBucketed, existingBucket);
+        }
+        return Array.from(tagBuckets.values());
     }
 
 }

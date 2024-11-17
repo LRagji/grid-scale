@@ -2,6 +2,7 @@ import { RedisHashMap } from "../../non-volatile-hash-map/redis-hash-map.js";
 import { formatKB, formatMB, generateTagNames, trackMemory } from "../utils.js";
 import { GridScaleFactory } from "../../grid-scale-factory.js";
 import { GridScaleConfig } from "../../grid-scale-config.js";
+import { time } from "node:console";
 
 //Query Plan
 //Read
@@ -21,42 +22,115 @@ const gridScale = await GridScaleFactory.create(chunkRelations, new URL("../chun
 
 trackMemoryFunc();
 console.log(`Started with ${threads} threads @ ${formatMB(formatKB(trackMemoryFunc.stats.heapPeakMemory)).toFixed(1)} heap used & ${formatMB(formatKB(trackMemoryFunc.stats.rssPeakMemory)).toFixed(1)} rss`);
-const totalTags = 100;
+const totalTags = 1000;
 const startInclusiveTime = 0;//Date.now();
 const endExclusiveTime = 86400000//startInclusiveTime + config.timeBucketWidth;
 
-const tagIds = generateTagNames(totalTags, 1);
+const tagIds = generateTagNames(0, totalTags, 1);
 
 console.time("Total")
 const results = {};
+const countPerTagFunction = (first: boolean, last: boolean, page: any[][], acc: Map<string, number>) => {
+    const returnObject = {
+        yield: false,
+        yieldValue: null,
+        accumulator: acc
+    };
+    if (first === true) {
+        return returnObject;
+    }
+    if (last === true) {
+        for (const [tagId, count] of acc.entries()) {
+            if (count === 86400) {
+                acc.delete(tagId);
+            }
+        }
+        returnObject.yield = true;
+        returnObject.yieldValue = Array.from(acc.entries());
+        returnObject.accumulator.clear();
+        return returnObject;
+    }
+    for (const row of page) {
+        const tagId = row[4];
+        const count = acc.get(tagId) ?? 0;
+        acc.set(tagId, count + 1);
+    }
+    return returnObject;
+};
+
+const stepDirector = (timePages: [number, number][], tagPages: bigint[][], previousTimeStep: [number, number] | undefined, previousTagStep: bigint[] | undefined) => {
+    let timeStepIndex = timePages.indexOf(previousTimeStep);
+    let tagStepIndex = tagPages.indexOf(previousTagStep);
+    if (timeStepIndex === -1 || tagStepIndex === -1) {
+        return { nextTimeStep: timePages[0], nextTagStep: tagPages[0] };
+    }
+    timeStepIndex++;
+    if (timeStepIndex >= timePages.length) {
+        timeStepIndex = 0;
+        tagStepIndex++;
+        if (tagStepIndex >= tagPages.length) {
+            return { nextTimeStep: undefined, nextTagStep: undefined };
+        }
+    }
+    return { nextTimeStep: timePages[timeStepIndex], nextTagStep: tagPages[tagStepIndex] };
+};
+
+const multiThreadDirector = (timePages: [number, number][], tagPages: bigint[][], previousTimeStep: [number, number] | undefined, previousTagStep: bigint[] | undefined) => {
+    let timeStepIndex = timePages.indexOf(previousTimeStep);
+    if (timeStepIndex === -1) {
+        return { nextTimeStep: timePages[0], nextTagStep: tagPages.flat() };
+    }
+    timeStepIndex++;
+    if (timeStepIndex >= timePages.length) {
+        return { nextTimeStep: undefined, nextTagStep: undefined };
+    }
+    return { nextTimeStep: timePages[timeStepIndex], nextTagStep: tagPages.flat() };
+};
 
 for (let i = 0; i < 1; i++) {
     const time = Date.now();
     const resultTagIds = new Set<string>();
-    const timePages = gridScale.fetchTimePages(startInclusiveTime, i + endExclusiveTime);
+    //const timePages = gridScale.fetchTimePages(startInclusiveTime, i + endExclusiveTime);
 
-    while (timePages.length > 0) {
-        const diagnostics = new Map<string, any>();
-        const timePage = timePages.shift();
-        const pageCursor = gridScale.iteratorByTimePage(tagIds, timePage[0], timePage[1], `Q[${i}]`, 10000, diagnostics);
-        for await (const page of pageCursor) {
-            trackMemoryFunc();
-            for (const row of page) {
-                resultTagIds.add(row[4]);
-            }
-            //break;
-        }
-        diagnostics.set("timePage", timePage.join("->"));
-        diagnostics.set("totalTime", Date.now() - time);
-        diagnostics.set("totalTags", resultTagIds.size);
-        diagnostics.set("maxRSS", formatMB(formatKB(trackMemoryFunc.stats.rssPeakMemory)).toFixed(1) + "MB");
-        diagnostics.set("maxHeap", formatMB(formatKB(trackMemoryFunc.stats.heapPeakMemory)).toFixed(1) + "MB");
-        const workerDiagnostics = diagnostics.get("workersPlan") as string[] ?? [];
-        diagnostics.set("workersPlan", `Total:${threads}`);
-        results[`Run ${i} TimePage:${timePage.join("->")}`] = Object.fromEntries(diagnostics.entries());
-        for (const [idx, workerDiagnostic] of workerDiagnostics.entries()) {
-            results[`Run ${i} TimePage:${timePage.join("->")} Worker:${idx}`] = { "workersPlan": workerDiagnostic };
-        }
+    let tagCounts = new Map<string, number>();
+    //while (timePages.length > 0) {
+    const diagnostics = new Map<string, any>();
+    //const timePage = timePages.shift();
+    //const result = gridScale.iteratorByTimePageWithAggregate(tagIds, timePage[0], timePage[1], countPerTagFunction, tagCounts, `Q[${i}]`, 10000, diagnostics);
+    //for await (const processedRow of result) {
+    //  tagCounts = new Map<string, any>(processedRow as [string, number][]);
+    //}
+    const pageCursor = gridScale.iterator(tagIds, startInclusiveTime, endExclusiveTime, `Q[${i}]`, multiThreadDirector, 10000, countPerTagFunction, tagCounts, diagnostics);
+    for await (const page of pageCursor) {
+        trackMemoryFunc();
+        tagCounts = new Map<string, any>(page as [string, number][]);
+        // for (const row of page) {
+        //     resultTagIds.add(row[4]);
+        // }
+        //break;
+    }
+
+    //diagnostics.set("timePage", timePage.join("->"));
+    diagnostics.set("totalTime", Date.now() - time);
+    diagnostics.set("totalTags", resultTagIds.size);
+    diagnostics.set("maxRSS", formatMB(formatKB(trackMemoryFunc.stats.rssPeakMemory)).toFixed(1) + "MB");
+    diagnostics.set("maxHeap", formatMB(formatKB(trackMemoryFunc.stats.heapPeakMemory)).toFixed(1) + "MB");
+    const workerDiagnostics = diagnostics.get("workersPlan") as string[] ?? [];
+    diagnostics.set("workersPlan", `Total:${threads}`);
+    //results[`Run ${i} TimePage:${timePage.join("->")}`] = Object.fromEntries(diagnostics.entries());
+    results[`Run ${i}`] = Object.fromEntries(diagnostics.entries());
+    for (const [idx, workerDiagnostic] of workerDiagnostics.entries()) {
+        //results[`Run ${i} TimePage:${timePage.join("->")} Worker:${idx}`] = { "workersPlan": workerDiagnostic };
+        results[`Run ${i} Worker:${idx}`] = { "workersPlan": workerDiagnostic };
+    }
+    //}
+
+
+    if (tagCounts.size > 0) {
+        console.log(`${tagCounts.size} Tags without 86400 samples.`);
+    }
+    else {
+        console.log(`All tags have 86400 samples.`);
     }
 }
 

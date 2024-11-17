@@ -65,7 +65,7 @@ export class GridScale {
         diagnostics.set("linkTime", Date.now() - timings);
     }
 
-    public async *iteratorByTimePage(tagIds: bigint[], startInclusive: number, endExclusive: number, queryId = "queryId_" + Math.random().toString(), resultPageSize = 10000, diagnostics = new Map<string, any>()): AsyncIterableIterator<any[][]> {
+    private async *iteratorByTimePage(tagIds: bigint[], startInclusive: number, endExclusive: number, queryId = "queryId_" + Math.random().toString(), resultPageSize = 10000, diagnostics = new Map<string, any>()): AsyncIterableIterator<any[][]> {
         let timings = Date.now();
         const iterationPlan = await this.chunkPlanner.planRangeIterationByTime(tagIds, startInclusive, endExclusive, this.remoteProxies.WorkerCount);
         const diagnosticsWorkerPlan = new Array<string>();
@@ -126,7 +126,65 @@ export class GridScale {
         diagnostics.set("yieldTime", Date.now() - timings);
     }
 
-    public fetchTimePages(startInclusive: number, endExclusive: number): [number, number][] {
-        return this.chunkPlanner.decomposeTimeRangeByPages(startInclusive, endExclusive);
+    public async *iterator(tagIds: bigint[], startInclusive: number, endExclusive: number,
+        queryId = "queryId_" + Math.random().toString(),
+        nextStepCallback: (timeSteps: [number, number][], tagsSteps: bigint[][], previousTimeStep: [number, number] | undefined, previousTagStep: bigint[] | undefined) => { nextTimeStep?: [number, number], nextTagStep?: bigint[] } = this.singleTimeWiseStepDirector,
+        resultPageSize = 10000,
+        aggregateFunction: (first: boolean, last: boolean, inputPage: any[][] | null, accumulator: any) => { yield: boolean, yieldValue: any, accumulator: any } = undefined,
+        accumulator: any = undefined,
+        diagnostics = new Map<string, any>()): AsyncIterableIterator<any[][]> {
+
+        const timePages = this.chunkPlanner.decomposeTimeByPages(startInclusive, endExclusive);
+        const tagPages = this.chunkPlanner.decomposeTagsByPages(tagIds);
+        let aggregateResult;
+        let nextStep = nextStepCallback(timePages, tagPages, undefined, undefined);
+
+        if (aggregateFunction !== undefined) {
+            aggregateResult = aggregateFunction(true, false, null, accumulator);
+            if (aggregateResult.yield === true) {
+                yield aggregateResult.yieldValue;
+            }
+        }
+
+        while (nextStep.nextTagStep !== undefined && nextStep.nextTimeStep !== undefined) {
+            const pageCursor = this.iteratorByTimePage(nextStep.nextTagStep, nextStep.nextTimeStep[0], nextStep.nextTimeStep[1], queryId, resultPageSize, diagnostics);
+            if (aggregateFunction !== undefined) {
+                for await (const page of pageCursor) {
+                    aggregateResult = aggregateFunction(false, false, page, aggregateResult.accumulator);
+                    if (aggregateResult.yield === true) {
+                        yield aggregateResult.yieldValue;
+                    }
+                }
+            }
+            else {
+                yield* pageCursor;
+            }
+            nextStep = nextStepCallback(timePages, tagPages, nextStep.nextTimeStep, nextStep.nextTagStep);
+        }
+
+        if (aggregateFunction !== undefined) {
+            aggregateResult = aggregateFunction(false, true, null, aggregateResult.accumulator);
+            if (aggregateResult.yield === true) {
+                yield aggregateResult.yieldValue;
+            }
+        }
+
+    }
+
+    private singleTimeWiseStepDirector(timePages: [number, number][], tagPages: bigint[][], previousTimeStep: [number, number] | undefined, previousTagStep: bigint[] | undefined) {
+        let timeStepIndex = timePages.indexOf(previousTimeStep);
+        let tagStepIndex = tagPages.indexOf(previousTagStep);
+        if (timeStepIndex === -1 || tagStepIndex === -1) {
+            return { nextTimeStep: timePages[0], nextTagStep: tagPages[0] };
+        }
+        timeStepIndex++;
+        if (timeStepIndex >= timePages.length) {
+            timeStepIndex = 0;
+            tagStepIndex++;
+            if (tagStepIndex >= tagPages.length) {
+                return { nextTimeStep: undefined, nextTagStep: undefined };
+            }
+        }
+        return { nextTimeStep: timePages[timeStepIndex], nextTagStep: tagPages[tagStepIndex] };
     }
 }

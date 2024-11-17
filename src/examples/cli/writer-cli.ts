@@ -38,7 +38,7 @@ const insertTimeCol = (time: number, tag: bigint) => insertTime;
 const numericCol = (time: number, tag: bigint) => Math.floor(Math.random() * 1000);
 const otherCol = (time: number, tag: bigint) => null;
 
-const generatedData = generateRandomSamples(totalTags, totalSamplesPerTag, 0, [insertTimeCol, numericCol, otherCol]);
+const generatedData = generateRandomSamples(totalTags, totalSamplesPerTag, 512, 0, [insertTimeCol, numericCol, otherCol]);
 
 console.time("Total")
 //v8.writeHeapSnapshot();

@@ -14,19 +14,19 @@ function generateIndexedString(length: number, index: number) {
     return `Tag${index}`;
 }
 
-export function generateTagNames(totalTags: number, increment: number = 1): Array<bigint> {
+export function generateTagNames(tagsStartFrom: number, totalTags: number, increment: number = 1): Array<bigint> {
     const tagIds = new Array<bigint>();
     for (let tagIndex = 0; (tagIndex / increment) < totalTags; tagIndex += increment) {
         //const tagName = generateRandomString(32, tagIndex);
-        tagIds.push(BigInt(tagIndex));
+        tagIds.push(BigInt(tagsStartFrom + tagIndex));
     }
     return tagIds;
 }
 
-export function generateRandomSamples(totalTags: number, totalSamplesPerTag: number, startTime: number, columns: ((time: number, tagId: bigint) => number | string | null)[]): Map<bigint, number[]> {
+export function generateRandomSamples(totalTags: number, totalSamplesPerTag: number, tagsStartFrom: number, startTime: number, columns: ((time: number, tagId: bigint) => number | string | null)[]): Map<bigint, number[]> {
     const generatedData = new Map<bigint, any[]>();
     const samples = new Array<number | string | null>();
-    const tagIds = generateTagNames(totalTags);
+    const tagIds = generateTagNames(tagsStartFrom, totalTags);
     tagIds.forEach(tagId => {
         if (samples.length === 0) {
             for (let time = 0; time < totalSamplesPerTag; time++) {
