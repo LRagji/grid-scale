@@ -35,7 +35,11 @@ export class GridThreadPlugin extends StatefulRecipient {
         }
     }
 
-    public bulkIterate(queryId: string, plans: [Set<string>, Set<string>, [number, number]][], pageSize: number): any[][] {
+    public async bulkIterate(queryId: string, plans: [Set<string>, Set<string>, [number, number]][], pageSize: number, lambdaFunctionPath: string | null): Promise<any[][]> {
+        let lambdaFunction: (page: any[][]) => any[][] = (page: any[][]) => page;
+        if (lambdaFunctionPath != undefined) {
+            lambdaFunction = (await import(lambdaFunctionPath)).default as (page: any[][]) => any[][];
+        }
         let currentPlanIndex = 0
         const page = new Array<any[]>();
         do {
@@ -78,7 +82,8 @@ export class GridThreadPlugin extends StatefulRecipient {
         if (currentPlanIndex === plans.length) {
             this.iteratorCache.delete(queryId);
         }
-        return page;
+        const computedOutput = lambdaFunction(page);
+        return computedOutput;
     }
 
     public clearIteration(queryId: string): void {

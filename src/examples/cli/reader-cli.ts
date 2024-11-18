@@ -50,9 +50,10 @@ const countPerTagFunction = (first: boolean, last: boolean, page: any[][], acc: 
         return returnObject;
     }
     for (const row of page) {
-        const tagId = row[4];
+        const tagId = row[4]//row[0];
+        const existingCount = 1//row[1];
         const count = acc.get(tagId) ?? 0;
-        acc.set(tagId, count + 1);
+        acc.set(tagId, count + existingCount);
     }
     return returnObject;
 };
@@ -66,9 +67,10 @@ const multiThreadDirector = (timePages: [number, number][], tagPages: bigint[][]
     // if (timeStepIndex >= timePages.length) {
     //     return { nextTimeStep: undefined, nextTagStep: undefined };
     // }
-    const minTime = Math.min(...timePages.flat());
-    const maxTime = Math.max(...timePages.flat());
+
     if (previousTagStep === undefined && previousTimeStep === undefined) {
+        const minTime = Math.min(...timePages.flat());
+        const maxTime = Math.max(...timePages.flat());
         return { nextTimeStep: [minTime, maxTime] as [number, number], nextTagStep: tagPages.flat() };
     }
     else {
@@ -76,6 +78,7 @@ const multiThreadDirector = (timePages: [number, number][], tagPages: bigint[][]
     }
 };
 
+const mapLambda = new URL("../lambda/tag-sample-count.js", import.meta.url);
 for (let i = 0; i < 1; i++) {
     const time = Date.now();
     const resultTagIds = new Set<string>();
@@ -89,7 +92,7 @@ for (let i = 0; i < 1; i++) {
     //for await (const processedRow of result) {
     //  tagCounts = new Map<string, any>(processedRow as [string, number][]);
     //}
-    const pageCursor = gridScale.iterator(tagIds, startInclusiveTime, endExclusiveTime, `Q[${i}]`, multiThreadDirector, 10000, countPerTagFunction, tagCounts, false, diagnostics);
+    const pageCursor = gridScale.iterator(tagIds, startInclusiveTime, endExclusiveTime, `Q[${i}]`, multiThreadDirector, 10000, mapLambda, countPerTagFunction, tagCounts, false, diagnostics);
     for await (const page of pageCursor) {
         trackMemoryFunc();
         tagCounts = new Map<string, any>(page as [string, number][]);

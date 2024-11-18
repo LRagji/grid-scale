@@ -31,7 +31,7 @@ function setupRoutes(rootRouter: IRouter) {
         const endExclusiveTime = parseInt((req.query.endExclusiveTime as string || '0'), 10);
         const queryId = req.query.queryId as string || `Q[${Date.now()}]`;
         const diagnostics = new Array<Map<string, number | String>>();
-        const pageCursor = gridScale.iterator(tags, startInclusiveTime, endExclusiveTime, queryId, undefined, undefined, undefined, undefined, undefined, diagnostics);
+        const pageCursor = gridScale.iterator(tags, startInclusiveTime, endExclusiveTime, queryId, undefined, undefined, undefined, undefined, undefined, undefined, diagnostics);
         res.setHeader('Content-Type', 'application/json');
         res.write(`{ "data": [`);
         let first = true;

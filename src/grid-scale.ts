@@ -65,7 +65,7 @@ export class GridScale {
         diagnostics.set("linkTime", Date.now() - timings);
     }
 
-    private async *multiChunkIterator(tagIds: bigint[], startInclusive: number, endExclusive: number, queryId: string, resultPageSize: number, affinityBasedPlanning: boolean, diagnostics: Map<string, any>): AsyncIterableIterator<any[][]> {
+    private async *multiChunkIterator(tagIds: bigint[], startInclusive: number, endExclusive: number, queryId: string, resultPageSize: number, affinityBasedPlanning: boolean, mapLambdaPath: URL | undefined, diagnostics: Map<string, any>): AsyncIterableIterator<any[][]> {
         let timings = Date.now();
         const iterationPlan = await this.chunkPlanner.planRange(tagIds, startInclusive, endExclusive, this.remoteProxies.WorkerCount, affinityBasedPlanning);
         const diagnosticsWorkerPlan = new Array<string>();
@@ -90,7 +90,7 @@ export class GridScale {
                     const plans = iterationPlan.affinityDistributedChunkReads[workerIdx];
                     if (plans !== undefined) {
                         const resultPromise = async () => {
-                            const results = await this.remoteProxies.invokeMethod<any[]>("bulkIterate", [queryId, plans, resultPageSize], workerIdx);
+                            const results = await this.remoteProxies.invokeMethod<any[]>("bulkIterate", [queryId, plans, resultPageSize, mapLambdaPath?.toString()], workerIdx);
                             return [workerIdx, results];
                         }
                         workerPromises.set(workerIdx, resultPromise());
@@ -130,6 +130,7 @@ export class GridScale {
         queryId = "queryId_" + Math.random().toString(),
         nextStepCallback: (timeSteps: [number, number][], tagsSteps: bigint[][], previousTimeStep: [number, number] | undefined, previousTagStep: bigint[] | undefined) => { nextTimeStep?: [number, number], nextTagStep?: bigint[] } = this.singleTimeWiseStepDirector,
         resultPageSize = 10000,
+        mapLambdaPath: URL | undefined = undefined,
         aggregateFunction: (first: boolean, last: boolean, inputPage: any[][] | null, accumulator: any) => { yield: boolean, yieldValue: any, accumulator: any } = undefined,
         accumulator: any = undefined,
         affinityBasedPlanning = true,
@@ -149,7 +150,7 @@ export class GridScale {
 
         while (nextStep.nextTagStep !== undefined && nextStep.nextTimeStep !== undefined) {
             const stepDiagnostics = new Map<string, any>();
-            const pageCursor = this.multiChunkIterator(nextStep.nextTagStep, nextStep.nextTimeStep[0], nextStep.nextTimeStep[1], queryId, resultPageSize, affinityBasedPlanning, stepDiagnostics);
+            const pageCursor = this.multiChunkIterator(nextStep.nextTagStep, nextStep.nextTimeStep[0], nextStep.nextTimeStep[1], queryId, resultPageSize, affinityBasedPlanning, mapLambdaPath, stepDiagnostics);
             if (aggregateFunction !== undefined) {
                 for await (const page of pageCursor) {
                     aggregateResult = aggregateFunction(false, false, page, aggregateResult.accumulator);
