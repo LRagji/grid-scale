@@ -65,9 +65,9 @@ export class GridScale {
         diagnostics.set("linkTime", Date.now() - timings);
     }
 
-    private async *iteratorByTimePage(tagIds: bigint[], startInclusive: number, endExclusive: number, queryId = "queryId_" + Math.random().toString(), resultPageSize = 10000, diagnostics = new Map<string, any>()): AsyncIterableIterator<any[][]> {
+    private async *multiChunkIterator(tagIds: bigint[], startInclusive: number, endExclusive: number, queryId: string, resultPageSize: number, affinityBasedPlanning: boolean, diagnostics: Map<string, any>): AsyncIterableIterator<any[][]> {
         let timings = Date.now();
-        const iterationPlan = await this.chunkPlanner.planRangeIterationByTime(tagIds, startInclusive, endExclusive, this.remoteProxies.WorkerCount);
+        const iterationPlan = await this.chunkPlanner.planRange(tagIds, startInclusive, endExclusive, this.remoteProxies.WorkerCount, affinityBasedPlanning);
         const diagnosticsWorkerPlan = new Array<string>();
         for (const [workerIdx, plans] of iterationPlan.affinityDistributedChunkReads.entries()) {
             if (plans === undefined) { continue; }
@@ -90,7 +90,7 @@ export class GridScale {
                     const plans = iterationPlan.affinityDistributedChunkReads[workerIdx];
                     if (plans !== undefined) {
                         const resultPromise = async () => {
-                            const results = await this.remoteProxies.invokeMethod<any[]>("bulkIterate", [queryId, plans, startInclusive, endExclusive, resultPageSize], workerIdx);
+                            const results = await this.remoteProxies.invokeMethod<any[]>("bulkIterate", [queryId, plans, resultPageSize], workerIdx);
                             return [workerIdx, results];
                         }
                         workerPromises.set(workerIdx, resultPromise());
@@ -132,7 +132,8 @@ export class GridScale {
         resultPageSize = 10000,
         aggregateFunction: (first: boolean, last: boolean, inputPage: any[][] | null, accumulator: any) => { yield: boolean, yieldValue: any, accumulator: any } = undefined,
         accumulator: any = undefined,
-        diagnostics = new Map<string, any>()): AsyncIterableIterator<any[][]> {
+        affinityBasedPlanning = true,
+        diagnostics = new Array<Map<string, any>>()): AsyncIterableIterator<any[][]> {
 
         const timePages = this.chunkPlanner.decomposeByTimePages(startInclusive, endExclusive);
         const tagPages = this.chunkPlanner.decomposeByTagPages(tagIds);
@@ -147,7 +148,8 @@ export class GridScale {
         }
 
         while (nextStep.nextTagStep !== undefined && nextStep.nextTimeStep !== undefined) {
-            const pageCursor = this.iteratorByTimePage(nextStep.nextTagStep, nextStep.nextTimeStep[0], nextStep.nextTimeStep[1], queryId, resultPageSize, diagnostics);
+            const stepDiagnostics = new Map<string, any>();
+            const pageCursor = this.multiChunkIterator(nextStep.nextTagStep, nextStep.nextTimeStep[0], nextStep.nextTimeStep[1], queryId, resultPageSize, affinityBasedPlanning, stepDiagnostics);
             if (aggregateFunction !== undefined) {
                 for await (const page of pageCursor) {
                     aggregateResult = aggregateFunction(false, false, page, aggregateResult.accumulator);
@@ -159,6 +161,7 @@ export class GridScale {
             else {
                 yield* pageCursor;
             }
+            diagnostics.push(stepDiagnostics);
             nextStep = nextStepCallback(timePages, tagPages, nextStep.nextTimeStep, nextStep.nextTagStep);
         }
 

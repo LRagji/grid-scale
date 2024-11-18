@@ -35,10 +35,13 @@ export class GridThreadPlugin extends StatefulRecipient {
         }
     }
 
-    public bulkIterate(queryId: string, plans: [Set<string>, Set<string>][], startInclusive: number, endExclusive: number, pageSize: number): any[][] {
+    public bulkIterate(queryId: string, plans: [Set<string>, Set<string>, [number, number]][], pageSize: number): any[][] {
         let currentPlanIndex = 0
         const page = new Array<any[]>();
         do {
+            const timeRange = plans[currentPlanIndex][2];
+            const startInclusive = timeRange[0];
+            const endExclusive = timeRange[1];
             if (this.iteratorCache.has(queryId) === false) {
                 const chunkIterators = new Array<IterableIterator<any>>();
                 const connectionPaths = plans[currentPlanIndex][0];

@@ -2,7 +2,6 @@ import { RedisHashMap } from "../../non-volatile-hash-map/redis-hash-map.js";
 import { formatKB, formatMB, generateTagNames, trackMemory } from "../utils.js";
 import { GridScaleFactory } from "../../grid-scale-factory.js";
 import { GridScaleConfig } from "../../grid-scale-config.js";
-import { time } from "node:console";
 
 //Query Plan
 //Read
@@ -22,14 +21,14 @@ const gridScale = await GridScaleFactory.create(chunkRelations, new URL("../chun
 
 trackMemoryFunc();
 console.log(`Started with ${threads} threads @ ${formatMB(formatKB(trackMemoryFunc.stats.heapPeakMemory)).toFixed(1)} heap used & ${formatMB(formatKB(trackMemoryFunc.stats.rssPeakMemory)).toFixed(1)} rss`);
-const totalTags = 1000;
+const totalTags = 5000;
 const startInclusiveTime = 0;//Date.now();
 const endExclusiveTime = 86400000//startInclusiveTime + config.timeBucketWidth;
 
 const tagIds = generateTagNames(0, totalTags, 1);
 
 console.time("Total")
-const results = {};
+const consoleTableResults = {};
 const countPerTagFunction = (first: boolean, last: boolean, page: any[][], acc: Map<string, number>) => {
     const returnObject = {
         yield: false,
@@ -58,33 +57,23 @@ const countPerTagFunction = (first: boolean, last: boolean, page: any[][], acc: 
     return returnObject;
 };
 
-const stepDirector = (timePages: [number, number][], tagPages: bigint[][], previousTimeStep: [number, number] | undefined, previousTagStep: bigint[] | undefined) => {
-    let timeStepIndex = timePages.indexOf(previousTimeStep);
-    let tagStepIndex = tagPages.indexOf(previousTagStep);
-    if (timeStepIndex === -1 || tagStepIndex === -1) {
-        return { nextTimeStep: timePages[0], nextTagStep: tagPages[0] };
-    }
-    timeStepIndex++;
-    if (timeStepIndex >= timePages.length) {
-        timeStepIndex = 0;
-        tagStepIndex++;
-        if (tagStepIndex >= tagPages.length) {
-            return { nextTimeStep: undefined, nextTagStep: undefined };
-        }
-    }
-    return { nextTimeStep: timePages[timeStepIndex], nextTagStep: tagPages[tagStepIndex] };
-};
-
 const multiThreadDirector = (timePages: [number, number][], tagPages: bigint[][], previousTimeStep: [number, number] | undefined, previousTagStep: bigint[] | undefined) => {
-    let timeStepIndex = timePages.indexOf(previousTimeStep);
-    if (timeStepIndex === -1) {
-        return { nextTimeStep: timePages[0], nextTagStep: tagPages.flat() };
+    // let timeStepIndex = timePages.indexOf(previousTimeStep);
+    // if (timeStepIndex === -1) {
+    //     return { nextTimeStep: timePages[0], nextTagStep: tagPages.flat() };
+    // }
+    // timeStepIndex++;
+    // if (timeStepIndex >= timePages.length) {
+    //     return { nextTimeStep: undefined, nextTagStep: undefined };
+    // }
+    const minTime = Math.min(...timePages.flat());
+    const maxTime = Math.max(...timePages.flat());
+    if (previousTagStep === undefined && previousTimeStep === undefined) {
+        return { nextTimeStep: [minTime, maxTime] as [number, number], nextTagStep: tagPages.flat() };
     }
-    timeStepIndex++;
-    if (timeStepIndex >= timePages.length) {
+    else {
         return { nextTimeStep: undefined, nextTagStep: undefined };
     }
-    return { nextTimeStep: timePages[timeStepIndex], nextTagStep: tagPages.flat() };
 };
 
 for (let i = 0; i < 1; i++) {
@@ -94,13 +83,13 @@ for (let i = 0; i < 1; i++) {
 
     let tagCounts = new Map<string, number>();
     //while (timePages.length > 0) {
-    const diagnostics = new Map<string, any>();
+    const diagnostics = new Array<Map<string, any>>();
     //const timePage = timePages.shift();
     //const result = gridScale.iteratorByTimePageWithAggregate(tagIds, timePage[0], timePage[1], countPerTagFunction, tagCounts, `Q[${i}]`, 10000, diagnostics);
     //for await (const processedRow of result) {
     //  tagCounts = new Map<string, any>(processedRow as [string, number][]);
     //}
-    const pageCursor = gridScale.iterator(tagIds, startInclusiveTime, endExclusiveTime, `Q[${i}]`, multiThreadDirector, 10000, countPerTagFunction, tagCounts, diagnostics);
+    const pageCursor = gridScale.iterator(tagIds, startInclusiveTime, endExclusiveTime, `Q[${i}]`, multiThreadDirector, 10000, countPerTagFunction, tagCounts, false, diagnostics);
     for await (const page of pageCursor) {
         trackMemoryFunc();
         tagCounts = new Map<string, any>(page as [string, number][]);
@@ -110,20 +99,20 @@ for (let i = 0; i < 1; i++) {
         //break;
     }
 
-    //diagnostics.set("timePage", timePage.join("->"));
-    diagnostics.set("totalTime", Date.now() - time);
-    diagnostics.set("totalTags", resultTagIds.size);
-    diagnostics.set("maxRSS", formatMB(formatKB(trackMemoryFunc.stats.rssPeakMemory)).toFixed(1) + "MB");
-    diagnostics.set("maxHeap", formatMB(formatKB(trackMemoryFunc.stats.heapPeakMemory)).toFixed(1) + "MB");
-    const workerDiagnostics = diagnostics.get("workersPlan") as string[] ?? [];
-    diagnostics.set("workersPlan", `Total:${threads}`);
-    //results[`Run ${i} TimePage:${timePage.join("->")}`] = Object.fromEntries(diagnostics.entries());
-    results[`Run ${i}`] = Object.fromEntries(diagnostics.entries());
-    for (const [idx, workerDiagnostic] of workerDiagnostics.entries()) {
-        //results[`Run ${i} TimePage:${timePage.join("->")} Worker:${idx}`] = { "workersPlan": workerDiagnostic };
-        results[`Run ${i} Worker:${idx}`] = { "workersPlan": workerDiagnostic };
-    }
     //}
+    for (const [stepIdx, stepDiagnostics] of diagnostics.entries()) {
+        const workerDiagnostics = stepDiagnostics.get("workersPlan") as string[] ?? [];
+        stepDiagnostics.set("step", stepIdx);
+        stepDiagnostics.set("workersPlan", `Total:${threads}`);
+        stepDiagnostics.set("totalTime", Date.now() - time);
+        stepDiagnostics.set("totalTags", resultTagIds.size);
+        stepDiagnostics.set("maxRSS", formatMB(formatKB(trackMemoryFunc.stats.rssPeakMemory)).toFixed(1) + "MB");
+        stepDiagnostics.set("maxHeap", formatMB(formatKB(trackMemoryFunc.stats.heapPeakMemory)).toFixed(1) + "MB");
+        consoleTableResults[`Run ${i} S:${stepIdx}`] = Object.fromEntries(stepDiagnostics.entries());
+        for (const [idx, workerDiagnostic] of workerDiagnostics.entries()) {
+            consoleTableResults[`Run ${i} S:${stepIdx} W:${idx}`] = { "workersPlan": workerDiagnostic, "step": stepIdx };
+        }
+    }
 
 
     if (tagCounts.size > 0) {
@@ -135,8 +124,7 @@ for (let i = 0; i < 1; i++) {
 }
 
 console.timeEnd("Total");
-console.table(results);
-
+console.table(consoleTableResults);
 
 
 

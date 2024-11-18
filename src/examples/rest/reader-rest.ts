@@ -30,10 +30,8 @@ function setupRoutes(rootRouter: IRouter) {
         const startInclusiveTime = parseInt((req.query.startInclusiveTime as string || '0'), 10);
         const endExclusiveTime = parseInt((req.query.endExclusiveTime as string || '0'), 10);
         const queryId = req.query.queryId as string || `Q[${Date.now()}]`;
-        const diagnostics = new Map<string, number | String>();
-        diagnostics.set("queryId", queryId)
-        diagnostics.set("workers", threadCount)
-        const pageCursor = gridScale.iterator(tags, startInclusiveTime, endExclusiveTime, queryId, undefined, undefined, undefined, undefined, diagnostics);
+        const diagnostics = new Array<Map<string, number | String>>();
+        const pageCursor = gridScale.iterator(tags, startInclusiveTime, endExclusiveTime, queryId, undefined, undefined, undefined, undefined, undefined, diagnostics);
         res.setHeader('Content-Type', 'application/json');
         res.write(`{ "data": [`);
         let first = true;
@@ -44,7 +42,7 @@ function setupRoutes(rootRouter: IRouter) {
             }
         }
         res.write(`], "diagnostics":`);
-        res.write(JSON.stringify(Object.fromEntries(diagnostics.entries())));
+        res.write(JSON.stringify(diagnostics.map(_ => Object.fromEntries(diagnostics.entries()))));
         res.write(` }`);
         res.end();
     });
