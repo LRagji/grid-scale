@@ -38,13 +38,14 @@ const insertTimeCol = (time: number, tag: bigint) => insertTime;
 const numericCol = (time: number, tag: bigint) => Math.floor(Math.random() * 1000);
 const otherCol = (time: number, tag: bigint) => null;
 
-const generatedData = generateRandomSamples(totalTags, totalSamplesPerTag, 512, 0, [insertTimeCol, numericCol, otherCol]);
+
 
 console.time("Total")
 //v8.writeHeapSnapshot();
 const results = {};
 
-for (let i = 0; i < 1; i++) {
+for (let i = 0; i < 5; i++) {
+    const generatedData = generateRandomSamples(totalTags, totalSamplesPerTag, i * gsConfig.TagBucketWidth, 0, [insertTimeCol, numericCol, otherCol]);
     const time = Date.now();
     const diagnostics = new Map<string, any>();
     await gridScale.store(generatedData, insertTime, diagnostics);

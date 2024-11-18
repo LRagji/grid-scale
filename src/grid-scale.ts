@@ -134,8 +134,8 @@ export class GridScale {
         accumulator: any = undefined,
         diagnostics = new Map<string, any>()): AsyncIterableIterator<any[][]> {
 
-        const timePages = this.chunkPlanner.decomposeTimeByPages(startInclusive, endExclusive);
-        const tagPages = this.chunkPlanner.decomposeTagsByPages(tagIds);
+        const timePages = this.chunkPlanner.decomposeByTimePages(startInclusive, endExclusive);
+        const tagPages = this.chunkPlanner.decomposeByTagPages(tagIds);
         let aggregateResult;
         let nextStep = nextStepCallback(timePages, tagPages, undefined, undefined);
 

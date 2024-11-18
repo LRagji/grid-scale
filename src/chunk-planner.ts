@@ -96,13 +96,13 @@ export class ChunkPlanner {
             }
 
             const existingTagsAndConnectionPaths = tagsGroupedByLogicalChunkId.get(chunkIdByRecordTime) || [new Set<string>(), new Set<string>()];
+            existingTagsAndConnectionPaths[1].add(tag.toString());
             for (const [setPath, diskPaths] of this.shardSets) {
                 const diskIndex = tagBucketed % BigInt(diskPaths.length);
                 for (const logicalId of logicalIdCache.get(chunkIdByRecordTime)) {
                     const connectionPath = join(setPath, diskPaths[Number(diskIndex)], logicalId);
                     existingTagsAndConnectionPaths[0].add(connectionPath);
                 }
-                existingTagsAndConnectionPaths[1].add(tag.toString());
             }
             tagsGroupedByLogicalChunkId.set(chunkIdByRecordTime, existingTagsAndConnectionPaths);
         }
@@ -123,7 +123,7 @@ export class ChunkPlanner {
         };
     }
 
-    public decomposeTimeByPages(startInclusiveTime: number, endExclusiveTime: number): [number, number][] {
+    public decomposeByTimePages(startInclusiveTime: number, endExclusiveTime: number): [number, number][] {
 
         if (startInclusiveTime >= endExclusiveTime) {
             throw new Error("Invalid time range, end cannot be less than or equal to start");
@@ -145,15 +145,17 @@ export class ChunkPlanner {
         return result;
     }
 
-    public decomposeTagsByPages(tagList: bigint[]): bigint[][] {
-        const tagBucketWidth = BigInt(this.tagBucketWidth);
+    public decomposeByTagPages(tagList: bigint[]): bigint[][] {
         const tagBuckets = new Map<bigint, bigint[]>();
+        const tagBucketWidth = BigInt(this.tagBucketWidth);
+
         for (const tag of tagList) {
             const tagBucketed = bucket(tag, tagBucketWidth);
             const existingBucket = tagBuckets.get(tagBucketed) ?? new Array<bigint>();
             existingBucket.push(tag);
             tagBuckets.set(tagBucketed, existingBucket);
         }
+
         return Array.from(tagBuckets.values());
     }
 
