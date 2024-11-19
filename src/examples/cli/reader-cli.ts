@@ -11,7 +11,7 @@ const trackMemoryFunc = trackMemory.bind(stats);
 trackMemoryFunc.stats = stats;
 const interval = setInterval(trackMemoryFunc, 1000); // Check memory usage every 1 second
 
-const threads = 10;
+const threads = 0;
 const redisConnectionString = "redis://localhost:6379";
 const gsConfig = new GridScaleConfig();
 gsConfig.workerCount = threads;
@@ -112,9 +112,9 @@ for (let i = 0; i < 1; i++) {
         stepDiagnostics.set("totalTags", resultTagIds.size);
         stepDiagnostics.set("maxRSS", formatMB(formatKB(trackMemoryFunc.stats.rssPeakMemory)).toFixed(1) + "MB");
         stepDiagnostics.set("maxHeap", formatMB(formatKB(trackMemoryFunc.stats.heapPeakMemory)).toFixed(1) + "MB");
-        consoleTableResults[`Run ${i} S:${stepIdx}`] = Object.fromEntries(stepDiagnostics.entries());
+        consoleTableResults[`Run:${i} S:${stepIdx}`] = Object.fromEntries(stepDiagnostics.entries());
         for (const [idx, workerDiagnostic] of workerDiagnostics.entries()) {
-            consoleTableResults[`Run ${i} S:${stepIdx} W:${idx}`] = { "workersPlan": workerDiagnostic, "step": stepIdx };
+            consoleTableResults[`Run:${i} S:${stepIdx} W:${idx}`] = { "workersPlan": workerDiagnostic, "step": stepIdx };
         }
     }
 

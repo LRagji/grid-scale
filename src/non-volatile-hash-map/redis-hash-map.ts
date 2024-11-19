@@ -5,7 +5,7 @@ export class RedisHashMap implements INonVolatileHashMap {
 
     private readonly redisClient: RedisClientType;
 
-    constructor(clientConnectionInfo: string) {
+    constructor(clientConnectionInfo: string, private readonly prefix: string = "") {
         this.redisClient = createClient({ url: clientConnectionInfo });
     }
 
@@ -16,15 +16,30 @@ export class RedisHashMap implements INonVolatileHashMap {
     }
 
     public async set(key: string, fieldValues: string[]): Promise<void> {
-        await this.redisClient.HSET(key, fieldValues);
+        await this.redisClient.HSET(this.prefix + key, fieldValues);
     }
 
     public async getFields(key: string): Promise<Array<string>> {
-        return await this.redisClient.HKEYS(key) || [];
+        return await this.redisClient.HKEYS(this.prefix + key) || [];
     }
 
-    public async del(key: string[]): Promise<void> {
-        throw new Error("Method not implemented.");
+    public async getFieldValues(key: string, fields: string[]): Promise<Map<string, string>> {
+        const result = await this.redisClient.HMGET(this.prefix + key, fields);
+        const returnValues = new Map<string, string>();
+        for (const [idx, value] of result.entries()) {
+            if (value !== null) {
+                returnValues.set(fields[idx], value);
+            }
+        }
+        return returnValues;
+    }
+
+    public async rename(key: string, newKey: string): Promise<void> {
+        await this.redisClient.RENAME(this.prefix + key, this.prefix + newKey);
+    }
+
+    public async del(keys: string[]): Promise<void> {
+        await this.redisClient.DEL(keys.map(key => this.prefix + key));
     }
 
     async [Symbol.asyncDispose]() {
