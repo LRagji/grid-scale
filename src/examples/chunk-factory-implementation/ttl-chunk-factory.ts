@@ -41,5 +41,5 @@ export class TTLChunkFactory<T extends IChunk> extends CachedChunkFactory<T> {
     }
 }
 
-export default new TTLChunkFactory<ChunkSqlite>(ChunkSqlite, undefined, undefined, 1000, undefined, 86400000);
+export default new TTLChunkFactory<ChunkSqlite>(ChunkSqlite, undefined, undefined, 1000, undefined, Number.MAX_SAFE_INTEGER);
 //export default new TTLChunkFactory<ChunkGenerator>(ChunkGenerator, undefined, undefined, 1000, undefined, 86400000);

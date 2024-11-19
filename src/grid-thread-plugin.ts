@@ -41,19 +41,17 @@ export class GridThreadPlugin extends StatefulRecipient {
             lambdaFunction = (await import(lambdaFunctionPath)).default as (page: any[][]) => any[][];
         }
         let currentPlanIndex = 0
-        const page = new Array<any[]>();
+        let page = new Array<any[]>();
         do {
-            const timeRange = plans[currentPlanIndex][2];
-            const startInclusive = timeRange[0];
-            const endExclusive = timeRange[1];
             if (this.iteratorCache.has(queryId) === false) {
                 const chunkIterators = new Array<IterableIterator<any>>();
                 const connectionPaths = plans[currentPlanIndex][0];
                 const tagSet = plans[currentPlanIndex][1];
+                const timeRange = plans[currentPlanIndex][2];
                 for (const connectionPath of connectionPaths) {
                     const chunk = this.chunkFactory.getChunk(connectionPath, "read", this.callerSignature);
                     if (chunk !== null) {
-                        chunkIterators.push(chunk.bulkIterator(Array.from(tagSet.values()), startInclusive, endExclusive));
+                        chunkIterators.push(chunk.bulkIterator(Array.from(tagSet.values()), timeRange[0], timeRange[1]));
                     }
                 }
                 this.iteratorCache.set(queryId, [this.mergeFunction(chunkIterators), currentPlanIndex]);
@@ -71,7 +69,10 @@ export class GridThreadPlugin extends StatefulRecipient {
             }
 
             if (page.length !== 0) {
-                break;
+                page = lambdaFunction(page) ?? new Array<any[]>();
+                if (page.length !== 0) {
+                    break;
+                }
             }
 
             this.iteratorCache.delete(queryId);
@@ -82,8 +83,8 @@ export class GridThreadPlugin extends StatefulRecipient {
         if (currentPlanIndex === plans.length) {
             this.iteratorCache.delete(queryId);
         }
-        const computedOutput = lambdaFunction(page);
-        return computedOutput;
+
+        return page;
     }
 
     public clearIteration(queryId: string): void {

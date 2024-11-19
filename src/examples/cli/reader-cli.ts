@@ -39,6 +39,7 @@ const countPerTagFunction = (first: boolean, last: boolean, page: any[][], acc: 
         return returnObject;
     }
     if (last === true) {
+        console.log("Total Tags: ", acc.size);
         for (const [tagId, count] of acc.entries()) {
             if (count === 86400) {
                 acc.delete(tagId);
@@ -50,8 +51,8 @@ const countPerTagFunction = (first: boolean, last: boolean, page: any[][], acc: 
         return returnObject;
     }
     for (const row of page) {
-        const tagId = row[4]//row[0];
-        const existingCount = 1//row[1];
+        const tagId = row[0];
+        const existingCount = row[1];
         const count = acc.get(tagId) ?? 0;
         acc.set(tagId, count + existingCount);
     }
