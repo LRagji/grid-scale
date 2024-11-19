@@ -15,8 +15,8 @@ export class ChunkGenerator implements IChunk {
     metadataSet(key: string, value: string): void {
 
     }
-    metadataGet(key: string): string[] {
-        return null;
+    metadataGet(key: string, defaultValue: string): string[] {
+        return [defaultValue];
     }
 
     bulkSet(records: Map<string, any[][]>): void {

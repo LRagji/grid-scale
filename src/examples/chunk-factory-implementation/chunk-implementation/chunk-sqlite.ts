@@ -71,16 +71,16 @@ export default class ChunkSqlite implements IChunk {
         }
     }
 
-    public metadataGet(key: string): string[] {
+    public metadataGet(key: string, defaultValue: string): string[] {
         if (this.mode === "write") {
             return [this.db.prepare(`SELECT value FROM [metadata] WHERE key = ?;`)
                 .pluck()
-                .get(key) as string];
+                .get(key) as string ?? defaultValue];
         }
         else {
             return this.readonlyDBs.map(db => db.prepare(`SELECT value FROM [metadata] WHERE key = ?;`)
                 .pluck()
-                .get(key) as string)
+                .get(key) as string ?? defaultValue)
         }
     }
 

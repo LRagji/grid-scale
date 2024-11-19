@@ -30,7 +30,7 @@ export class TTLChunkFactory<T extends IChunk> extends CachedChunkFactory<T> {
         else {
             //Check if the chunk is still alive
             //If not, dispose it
-            const anyAlive = chunk.metadataGet("birth")
+            const anyAlive = chunk.metadataGet("birth", "0")
                 .filter(birth => (currentTime - parseInt(birth)) < this.timeToLive);
             if (anyAlive.length === 0) {
                 super.pruneChunk(connectionPath, mode, callerSignature);
