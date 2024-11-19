@@ -89,11 +89,7 @@ export class GridScale {
                 for (let workerIdx = startInclusiveWorkerIndex; workerIdx < endExclusiveWorkerIndex; workerIdx++) {
                     const plans = iterationPlan.affinityDistributedChunkReads[workerIdx];
                     if (plans !== undefined) {
-                        const resultPromise = async () => {
-                            const results = await this.remoteProxies.invokeMethod<any[]>("bulkIterate", [queryId, plans, resultPageSize, mapLambdaPath?.toString()], workerIdx);
-                            return [workerIdx, results];
-                        }
-                        workerPromises.set(workerIdx, resultPromise());
+                        workerPromises.set(workerIdx, this.invokeProxyBulkIterate<any[]>(queryId, plans, resultPageSize, mapLambdaPath, workerIdx));
                     }
                 }
                 const completedThreadResult = await Promise.race(workerPromises.values());
@@ -173,6 +169,11 @@ export class GridScale {
             }
         }
 
+    }
+
+    private async invokeProxyBulkIterate<T>(queryId: string, plans: [Set<string>, Set<string>, [number, number]][], resultPageSize: number, mapLambdaPath: URL, workerIdx: number): Promise<[number, T]> {
+        const results = await this.remoteProxies.invokeMethod<T>("bulkIterate", [queryId, plans, resultPageSize, mapLambdaPath?.toString()], workerIdx);
+        return [workerIdx, results];
     }
 
     private singleTimeWiseStepDirector(timePages: [number, number][], tagPages: bigint[][], previousTimeStep: [number, number] | undefined, previousTagStep: bigint[] | undefined) {
