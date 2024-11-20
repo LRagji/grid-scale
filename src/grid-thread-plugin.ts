@@ -15,6 +15,7 @@ export class GridThreadPlugin extends StatefulRecipient {
     private callerSignature: string;
     private readonly lambdaCache: INonVolatileHashMap = new RedisHashMap("redis://localhost:6379", "lambda-cache-");
     private readonly cacheInProgressSuffix = "-in-progress";
+    private readonly metaKeyLastWrite = "lastWrite";
 
     public constructor(
         shouldActivateMessagePort: boolean = !isMainThread,
@@ -37,6 +38,7 @@ export class GridThreadPlugin extends StatefulRecipient {
             const chunk = this.chunkFactory.getChunk(connectionPath, "write", this.callerSignature);
             if (chunk !== null) {
                 chunk.bulkSet(tagRecords);
+                chunk.metadataSet(this.metaKeyLastWrite, Date.now().toString());
             }
         }
     }
@@ -61,7 +63,7 @@ export class GridThreadPlugin extends StatefulRecipient {
                     const chunk = this.chunkFactory.getChunk(connectionPath, "read", this.callerSignature);
                     if (chunk !== null) {
                         uniqueKey = connectionPath + "," + uniqueKey
-                        const lastMaxWrite = (chunk.metadataGet("lastWrite", "0")).reduce((acc: number, val: string | null) => Math.max(acc, parseInt(val, 10)), 0);
+                        const lastMaxWrite = (chunk.metadataGet(this.metaKeyLastWrite, "0")).reduce((acc: number, val: string | null) => Math.max(acc, parseInt(val, 10)), 0);
                         if (!Number.isNaN(lastMaxWrite)) {
                             chunkLastWrite.set(connectionPath, lastMaxWrite);
                             openChunks.push(chunk);
