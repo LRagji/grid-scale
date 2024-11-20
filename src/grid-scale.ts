@@ -65,7 +65,7 @@ export class GridScale {
         diagnostics.set("linkTime", Date.now() - timings);
     }
 
-    private async *multiChunkIterator(tagIds: bigint[], startInclusive: number, endExclusive: number, queryId: string, resultPageSize: number, affinityBasedPlanning: boolean, mapLambdaPath: URL | undefined, diagnostics: Map<string, any>): AsyncIterableIterator<any[][]> {
+    private async *stepIterator(tagIds: bigint[], startInclusive: number, endExclusive: number, queryId: string, resultPageSize: number, affinityBasedPlanning: boolean, mapLambdaPath: URL | undefined, diagnostics: Map<string, any>): AsyncIterableIterator<any[][]> {
         let timings = Date.now();
         const iterationPlan = await this.chunkPlanner.planRange(tagIds, startInclusive, endExclusive, this.remoteProxies.WorkerCount, affinityBasedPlanning);
         const diagnosticsWorkerPlan = new Array<string>();
@@ -79,46 +79,9 @@ export class GridScale {
         diagnostics.set("planTime", Date.now() - timings);
 
         timings = Date.now();
-        const workerPromises = new Map<number, Promise<unknown>>();
-        let startInclusiveWorkerIndex = 0;
-        let endExclusiveWorkerIndex = iterationPlan.affinityDistributedChunkReads.length;
-        let pageCounter = 0;
-        let rowsCounter = 0;
-        try {
-            do {
-                for (let workerIdx = startInclusiveWorkerIndex; workerIdx < endExclusiveWorkerIndex; workerIdx++) {
-                    const plans = iterationPlan.affinityDistributedChunkReads[workerIdx];
-                    if (plans !== undefined) {
-                        workerPromises.set(workerIdx, this.invokeProxyBulkIterate<any[]>(queryId, plans, resultPageSize, mapLambdaPath, workerIdx));
-                    }
-                }
-                const completedThreadResult = await Promise.race(workerPromises.values());
-                const workerIdx = completedThreadResult[0];
-                const pageData = completedThreadResult[1];
-                pageCounter++;
-                rowsCounter += pageData.length;
-                if (pageData.length === 0) {
-                    workerPromises.delete(workerIdx);
-                    startInclusiveWorkerIndex = 0;
-                    endExclusiveWorkerIndex = 0;
-                }
-                else {
-                    startInclusiveWorkerIndex = workerIdx;
-                    endExclusiveWorkerIndex = startInclusiveWorkerIndex + 1;
-                }
-
-                yield pageData;
-            }
-            while (workerPromises.size > 0)
+        for await (const resultData of this.threadsIterator<any[]>(queryId, iterationPlan.affinityDistributedChunkReads, resultPageSize, mapLambdaPath)) {
+            yield resultData;
         }
-        finally {
-            workerPromises.clear();
-            for (let workerIdx = 0; workerIdx < iterationPlan.affinityDistributedChunkReads.length; workerIdx++) {
-                await this.remoteProxies.invokeMethod<any[]>("clearIteration", [queryId], workerIdx);
-            }
-        }
-        diagnostics.set("dataPageCounter", pageCounter);
-        diagnostics.set("rowCounter", rowsCounter);
         diagnostics.set("yieldTime", Date.now() - timings);
     }
 
@@ -146,7 +109,7 @@ export class GridScale {
 
         while (nextStep.nextTagStep !== undefined && nextStep.nextTimeStep !== undefined) {
             const stepDiagnostics = new Map<string, any>();
-            const pageCursor = this.multiChunkIterator(nextStep.nextTagStep, nextStep.nextTimeStep[0], nextStep.nextTimeStep[1], queryId, resultPageSize, affinityBasedPlanning, mapLambdaPath, stepDiagnostics);
+            const pageCursor = this.stepIterator(nextStep.nextTagStep, nextStep.nextTimeStep[0], nextStep.nextTimeStep[1], queryId, resultPageSize, affinityBasedPlanning, mapLambdaPath, stepDiagnostics);
             if (aggregateFunction !== undefined) {
                 for await (const page of pageCursor) {
                     aggregateResult = aggregateFunction(false, false, page, aggregateResult.accumulator);
@@ -171,11 +134,6 @@ export class GridScale {
 
     }
 
-    private async invokeProxyBulkIterate<T>(queryId: string, plans: [Set<string>, Set<string>, [number, number]][], resultPageSize: number, mapLambdaPath: URL, workerIdx: number): Promise<[number, T]> {
-        const results = await this.remoteProxies.invokeMethod<T>("bulkIterate", [queryId, plans, resultPageSize, mapLambdaPath?.toString()], workerIdx);
-        return [workerIdx, results];
-    }
-
     private singleTimeWiseStepDirector(timePages: [number, number][], tagPages: bigint[][], previousTimeStep: [number, number] | undefined, previousTagStep: bigint[] | undefined) {
         let timeStepIndex = timePages.indexOf(previousTimeStep);
         let tagStepIndex = tagPages.indexOf(previousTagStep);
@@ -191,5 +149,58 @@ export class GridScale {
             }
         }
         return { nextTimeStep: timePages[timeStepIndex], nextTagStep: tagPages[tagStepIndex] };
+    }
+
+    private async *threadsIterator<T>(queryId: string, affinityDistributedChunkReads: [Set<string>, Set<string>, [number, number]][][], resultPageSize: number, mapLambdaPath: URL): AsyncIterableIterator<T[]> {
+        const threadCursors = new Map<number, AsyncIterableIterator<T[]>>();
+        const cursorResults = new Map<number, Promise<{ result: IteratorResult<T[]>, key: number }>>();
+        const triggerNextIterationWithKey = (cursor: AsyncIterableIterator<T[]>, key: number) => cursor.next().then((result) => ({ result, key }));
+        try {
+            //Open Cursors
+            for (const [workerIdx, plans] of affinityDistributedChunkReads.entries()) {
+                if (plans === undefined) { continue; }
+                const cursor = this.planIterator<T>(queryId, plans, resultPageSize, mapLambdaPath, workerIdx);
+                threadCursors.set(workerIdx, cursor);
+                //Trigger First Iteration
+                cursorResults.set(workerIdx, triggerNextIterationWithKey(cursor, workerIdx));
+            }
+
+            //Consume Cursors
+            while (threadCursors.size > 0) {
+                const winnerResult = await Promise.race(cursorResults.values());
+                if (winnerResult.result.done === true) {
+                    cursorResults.delete(winnerResult.key);
+                    threadCursors.delete(winnerResult.key);
+                }
+                else {
+                    yield winnerResult.result.value;
+                    cursorResults.set(winnerResult.key, triggerNextIterationWithKey(threadCursors.get(winnerResult.key), winnerResult.key));
+                }
+            }
+        }
+        finally {
+            for (const [workerIdx, cursor] of threadCursors) {
+                cursor.return();
+                await this.remoteProxies.invokeMethod<any[]>("clearIteration", [queryId], workerIdx);
+            }
+            threadCursors.clear();
+            cursorResults.clear();
+        }
+    }
+
+    private async *planIterator<T>(queryId: string, plans: [Set<string>, Set<string>, [number, number]][], resultPageSize: number, mapLambdaPath: URL, workerIndex: number): AsyncIterableIterator<T[]> {
+
+        for (const [tagNames, connectionPaths, [start, end]] of plans) {
+            yield* this.pageIterator<T>(queryId, tagNames, connectionPaths, resultPageSize, start, end, mapLambdaPath, workerIndex);
+        }
+
+    }
+
+    private async *pageIterator<T>(queryId: string, tagNames: Set<string>, connectionPaths: Set<string>, startInclusive: number, endExclusive: number, resultPageSize: number, mapLambdaPath: URL, workerIndex: number): AsyncIterableIterator<T[]> {
+        let page = await this.remoteProxies.invokeMethod<T[]>("bulkIterate", [queryId, [[tagNames, connectionPaths, [startInclusive, endExclusive]]], resultPageSize, mapLambdaPath?.toString()], workerIndex);
+        while (page.length > 0) {
+            yield page;
+            page = await this.remoteProxies.invokeMethod<T[]>("bulkIterate", [queryId, [[tagNames, connectionPaths, [startInclusive, endExclusive]]], resultPageSize, mapLambdaPath?.toString()], workerIndex);
+        }
     }
 }
