@@ -1,8 +1,10 @@
 import { join } from "node:path";
-import { bigIntMax, bigIntMin, bucket, logicalChunkId, DJB2StringToNumber, bucketInt } from "./chunk-math.js";
+import { bigIntMax, bigIntMin, bucket, logicalChunkId, DJB2StringToNumber } from "./chunk-math.js";
 import { INonVolatileHashMap } from "./non-volatile-hash-map/i-non-volatile-hash-map.js";
 import { DistributedIterationPlan } from "./types/distributed-iteration-plan.js";
 import { DistributedUpsertPlan } from "./types/distributed-upsert-plan.js";
+import { IChunkMetadata } from "./chunk-metadata/i-chunk-metadata.js";
+import { metaKeyBirth, metaKeyLastWrite } from "./types/meta-keys.js";
 
 export class ChunkPlanner {
 
@@ -14,7 +16,8 @@ export class ChunkPlanner {
         private readonly logicalChunkSeparator: string,
         private readonly timeBucketTolerance,
         private readonly writersShardPath: string,
-        private readonly shardSets: Map<string, string[]>) { }
+        private readonly shardSets: Map<string, string[]>,
+        private readonly chunkMetaRegistry: IChunkMetadata) { }
 
     public planUpserts(recordSet: Map<bigint, any[]>, recordSize: number, timeIndex: number, insertTimeIndex: number, insertTime: number, distributionCardinality: number): DistributedUpsertPlan {
         //Plan AIM:Intention of the plan is to touch one chunk at a time with all writes included so that we reduce data fragmentation and IOPS
@@ -71,6 +74,96 @@ export class ChunkPlanner {
         };
     }
 
+    public async planRange(tags: bigint[], startInclusiveTime: number, endExclusiveTime: number, distributionCardinality: number, affinityBasedDistribution = true, timeToLive = Number.MAX_SAFE_INTEGER): Promise<DistributedIterationPlan> {
+        const batchedTags = this.decomposeByTagPages(tags);
+        const batchedTimeRanges = this.decomposeByTimePages(startInclusiveTime, endExclusiveTime);
+        const tagBucketWidth = BigInt(this.tagBucketWidth);
+        const timeBucketWidth = BigInt(this.timeBucketWidth);
+        const affinityDistribution = new Array<[Set<string>, Set<string>, [number, number], number][]>(distributionCardinality);
+        const defaultValueString = "-1;"
+        let countChunks = 0;
+
+        //Rough summary plan
+        const roughSummaryPlan = new Map<string, { tagBucketed: bigint, startInclusiveBucketedTime: bigint, timeRange: [number, number], tagBatch: bigint[] }>();
+        for (const timeRange of batchedTimeRanges) {
+            const startInclusiveBucketedTime = bucket(BigInt(timeRange[0]), timeBucketWidth,);
+            for (const tagBatch of batchedTags) {
+                const representativeTag = tagBatch[0];
+                const tagBucketed = bucket(representativeTag, tagBucketWidth);
+                const chunkIdByRecordTime = logicalChunkId([tagBucketed, startInclusiveBucketedTime], this.logicalChunkPrefix, this.logicalChunkSeparator);
+                roughSummaryPlan.set(chunkIdByRecordTime, { tagBucketed, startInclusiveBucketedTime, timeRange, tagBatch });
+            }
+        }
+
+        //Real Plan for reading
+        for (const [chunkIdByRecordTime, { tagBucketed, startInclusiveBucketedTime, timeRange, tagBatch }] of roughSummaryPlan) {
+
+            //Collect all self & related chunks
+            const toleranceChunks = new Array<string>();
+            for (let i = 1; i <= this.timeBucketTolerance; i++) {
+                const LHSToleranceChunkId = logicalChunkId([tagBucketed, startInclusiveBucketedTime - BigInt(this.timeBucketWidth * i)], this.logicalChunkPrefix, this.logicalChunkSeparator);
+                const RHSToleranceChunkId = logicalChunkId([tagBucketed, startInclusiveBucketedTime + BigInt(this.timeBucketWidth * i)], this.logicalChunkPrefix, this.logicalChunkSeparator);
+                toleranceChunks.push(LHSToleranceChunkId, RHSToleranceChunkId);
+            }
+            const displacedChunks = await this.chunkLinkRegistry.getFields(chunkIdByRecordTime);
+            const allChunkIds = new Set<string>([...displacedChunks, chunkIdByRecordTime, ...toleranceChunks]);
+
+            //Construct set paths
+            const setPaths = new Array<string>();
+            for (const [setPath, diskPaths] of this.shardSets) {
+                const diskIndex = tagBucketed % BigInt(diskPaths.length);
+                const connectionPath = join(setPath, diskPaths[Number(diskIndex)]);
+                setPaths.push(connectionPath);
+            }
+
+            //Join connection paths with logical ids
+            const connectionPaths = new Set<string>();
+            for (const logicalId of allChunkIds) {
+                for (const setPath of setPaths) {
+                    const connectionPath = join(setPath, logicalId);
+                    connectionPaths.add(connectionPath);
+                }
+            }
+            setPaths.length = 0;
+            allChunkIds.clear();
+
+            //Prune for TTL
+            const connectionPathsArray = Array.from(connectionPaths.keys());
+            const defaultValueInt = parseInt(defaultValueString, 10);
+            const metaBirthFetch = await this.chunkMetaRegistry.metadataGet(connectionPathsArray, metaKeyBirth, defaultValueString);
+            for (const [connectionPath, metaValues] of metaBirthFetch) {
+                const birthDate = metaValues.reduce((acc: number, val: string | null) => Math.max(acc, parseInt(val ?? defaultValueString, 10)), Number.MIN_SAFE_INTEGER);
+                const age = Date.now() - birthDate;
+                if (age > timeToLive || birthDate === defaultValueInt) {
+                    connectionPaths.delete(connectionPath);
+                }
+            }
+
+            //Add info for last write
+            const metaLastWriteFetch = await this.chunkMetaRegistry.metadataGet(connectionPathsArray, metaKeyLastWrite, defaultValueString);
+            let lastWrite = parseInt(defaultValueString, 10);
+            for (const [connectionPath, metaValues] of metaLastWriteFetch) {
+                const internalLastWrite = metaValues.reduce((acc: number, val: string | null) => Math.max(acc, parseInt(val ?? defaultValueString, 10)), Number.MIN_SAFE_INTEGER);
+                lastWrite = Math.max(lastWrite, internalLastWrite);
+            }
+
+            //Affinity
+            const workerIndex = (affinityBasedDistribution === true ? DJB2StringToNumber(chunkIdByRecordTime) : countChunks) % affinityDistribution.length;
+            const existingPlans = affinityDistribution[workerIndex] ?? [];
+            const tagsStringSet = new Set<string>(tagBatch.map(tag => tag.toString()));
+            existingPlans.push([connectionPaths, tagsStringSet, timeRange, lastWrite]);
+            affinityDistribution[workerIndex] = existingPlans;
+            countChunks++;
+        }
+
+
+        return {
+            affinityDistributedChunkReads: affinityDistribution,
+            requestedStartTime: startInclusiveTime,
+            requestedEndTime: endExclusiveTime
+        };
+    }
+
     public decomposeByTimePages(startInclusiveTime: number, endExclusiveTime: number): [number, number][] {
 
         if (startInclusiveTime >= endExclusiveTime) {
@@ -107,66 +200,21 @@ export class ChunkPlanner {
         return Array.from(tagBuckets.values());
     }
 
-    public async planRange(tags: bigint[], startInclusiveTime: number, endExclusiveTime: number, distributionCardinality: number, affinityBasedDistribution = true): Promise<DistributedIterationPlan> {
-        const batchedTags = this.decomposeByTagPages(tags);
-        const batchedTimeRanges = this.decomposeByTimePages(startInclusiveTime, endExclusiveTime);
-        const tagBucketWidth = BigInt(this.tagBucketWidth);
-        const timeBucketWidth = BigInt(this.timeBucketWidth);
-        const affinityDistribution = new Array<[Set<string>, Set<string>, [number, number]][]>(distributionCardinality);
-        let countChunks = 0;
-
-        for (const timeRange of batchedTimeRanges) {
-            const startInclusiveBucketedTime = bucket(BigInt(timeRange[0]), timeBucketWidth);
-            for (const tagBatch of batchedTags) {
-                const representativeTag = tagBatch[0];
-                const tagBucketed = bucket(representativeTag, tagBucketWidth);
-                const chunkIdByRecordTime = logicalChunkId([tagBucketed, startInclusiveBucketedTime], this.logicalChunkPrefix, this.logicalChunkSeparator);
-
-                //Collect all self & related chunks
-                const toleranceChunks = new Array<string>();
-                for (let i = 0; i < this.timeBucketTolerance; i++) {
-                    const LHSToleranceChunkId = logicalChunkId([tagBucketed, startInclusiveBucketedTime - BigInt(this.timeBucketWidth * i)], this.logicalChunkPrefix, this.logicalChunkSeparator);
-                    const RHSToleranceChunkId = logicalChunkId([tagBucketed, startInclusiveBucketedTime + BigInt(this.timeBucketWidth * i)], this.logicalChunkPrefix, this.logicalChunkSeparator);
-                    toleranceChunks.push(LHSToleranceChunkId, RHSToleranceChunkId);
-                }
-                const displacedChunks = await this.chunkLinkRegistry.getFields(chunkIdByRecordTime);
-                const allChunkIds = new Set<string>([...displacedChunks, chunkIdByRecordTime, ...toleranceChunks]);
-
-
-                //Construct set paths
-                const setPaths = new Array<string>();
-                for (const [setPath, diskPaths] of this.shardSets) {
-                    const diskIndex = tagBucketed % BigInt(diskPaths.length);
-                    const connectionPath = join(setPath, diskPaths[Number(diskIndex)]);
-                    setPaths.push(connectionPath);
-                }
-
-                //Join connection paths with logical ids
-                const connectionPaths = new Set<string>();
-                for (const logicalId of allChunkIds) {
-                    for (const setPath of setPaths) {
-                        const connectionPath = join(setPath, logicalId);
-                        connectionPaths.add(connectionPath);
-                    }
-                }
-                setPaths.length = 0;
-                allChunkIds.clear();
-
-                //Affinity
-                const workerIndex = (affinityBasedDistribution === true ? DJB2StringToNumber(chunkIdByRecordTime) : countChunks) % affinityDistribution.length;
-                const existingPlans = affinityDistribution[workerIndex] ?? [];
-                const tagsStringSet = new Set<string>(tagBatch.map(tag => tag.toString()));
-                existingPlans.push([connectionPaths, tagsStringSet, timeRange]);
-                affinityDistribution[workerIndex] = existingPlans;
-                countChunks++;
+    public singleTimeWiseStepDirector(timePages: [number, number][], tagPages: bigint[][], previousTimeStep: [number, number] | undefined, previousTagStep: bigint[] | undefined) {
+        let timeStepIndex = timePages.indexOf(previousTimeStep);
+        let tagStepIndex = tagPages.indexOf(previousTagStep);
+        if (timeStepIndex === -1 || tagStepIndex === -1) {
+            return { nextTimeStep: timePages[0], nextTagStep: tagPages[0] };
+        }
+        timeStepIndex++;
+        if (timeStepIndex >= timePages.length) {
+            timeStepIndex = 0;
+            tagStepIndex++;
+            if (tagStepIndex >= tagPages.length) {
+                return { nextTimeStep: undefined, nextTagStep: undefined };
             }
         }
-
-        return {
-            affinityDistributedChunkReads: affinityDistribution,
-            requestedStartTime: startInclusiveTime,
-            requestedEndTime: endExclusiveTime
-        };
+        return { nextTimeStep: timePages[timeStepIndex], nextTagStep: tagPages[tagStepIndex] };
     }
 
 }

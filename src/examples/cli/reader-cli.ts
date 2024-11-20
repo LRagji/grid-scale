@@ -2,6 +2,8 @@ import { RedisHashMap } from "../../non-volatile-hash-map/redis-hash-map.js";
 import { formatKB, formatMB, generateTagNames, trackMemory } from "../utils.js";
 import { GridScaleFactory } from "../../grid-scale-factory.js";
 import { GridScaleConfig } from "../../grid-scale-config.js";
+import { ChunkMetaRegistry } from "../chunk-meta-implementation/chunk-meta-registry.js";
+
 
 //Query Plan
 //Read
@@ -17,11 +19,14 @@ const gsConfig = new GridScaleConfig();
 gsConfig.workerCount = threads;
 const chunkRelations = new RedisHashMap(redisConnectionString);
 await chunkRelations.initialize();
-const gridScale = await GridScaleFactory.create(chunkRelations, new URL("../chunk-factory-implementation/ttl-chunk-factory.js", import.meta.url), gsConfig);
+const lambdaCache = new RedisHashMap(redisConnectionString, "lambda-cache-");
+await lambdaCache.initialize();
+const chunkMetaRegistry = new ChunkMetaRegistry();
+const gridScale = await GridScaleFactory.create(chunkRelations, new URL("../chunk-factory-implementation/cached-chunk-factory.js", import.meta.url), chunkMetaRegistry, lambdaCache, gsConfig);
 
 trackMemoryFunc();
 console.log(`Started with ${threads} threads @ ${formatMB(formatKB(trackMemoryFunc.stats.heapPeakMemory)).toFixed(1)} heap used & ${formatMB(formatKB(trackMemoryFunc.stats.rssPeakMemory)).toFixed(1)} rss`);
-const totalTags = 5000;
+const totalTags = 1000;
 const startInclusiveTime = 0;//Date.now();
 const endExclusiveTime = 86400000//startInclusiveTime + config.timeBucketWidth;
 
@@ -134,6 +139,7 @@ console.table(consoleTableResults);
 
 console.time("Close Operation");
 await (chunkRelations[Symbol.asyncDispose] && chunkRelations[Symbol.asyncDispose]() || Promise.resolve(chunkRelations[Symbol.dispose] && chunkRelations[Symbol.dispose]()));
+await (lambdaCache[Symbol.asyncDispose] && lambdaCache[Symbol.asyncDispose]() || Promise.resolve(lambdaCache[Symbol.dispose] && lambdaCache[Symbol.dispose]()));
 await gridScale[Symbol.asyncDispose]();
 console.timeEnd("Close Operation");
 

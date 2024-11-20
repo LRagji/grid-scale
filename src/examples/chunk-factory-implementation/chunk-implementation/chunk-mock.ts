@@ -12,13 +12,6 @@ export class ChunkGenerator implements IChunk {
         private readonly injectableConstructor: InjectableConstructor = new InjectableConstructor()) {
     }
 
-    metadataSet(key: string, value: string): void {
-
-    }
-    metadataGet(key: string, defaultValue: string): string[] {
-        return [defaultValue];
-    }
-
     bulkSet(records: Map<string, any[][]>): void {
 
     }

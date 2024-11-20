@@ -1,6 +1,6 @@
 export type DistributedIterationPlan = {
-    //[[ConnectionPaths] [TagNames],[start, end]]
-    affinityDistributedChunkReads: [Set<string>, Set<string>, [number, number]][][],
+    //[[ConnectionPaths] [TagNames],[start, end],lastWriteMetadata]
+    affinityDistributedChunkReads: [Set<string>, Set<string>, [number, number], number][][],
     requestedStartTime: number,
     requestedEndTime: number
 }

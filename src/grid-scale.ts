@@ -3,15 +3,24 @@ import { StatefulProxyManager } from "node-apparatus";
 import { INonVolatileHashMap } from "./non-volatile-hash-map/i-non-volatile-hash-map.js";
 import { IChunk } from "./chunk/i-chunk.js";
 import { ChunkFactoryBase } from "./chunk/chunk-factory-base.js";
+import { IChunkMetadata } from "./chunk-metadata/i-chunk-metadata.js";
+import crypto from "node:crypto";
+import { metaKeyBirth, metaKeyLastWrite } from "./types/meta-keys.js";
 
 export class GridScale {
 
     private chunkPluginFactoryType: typeof ChunkFactoryBase<IChunk>;
+    private readonly cachedTimeKey = "cachedTime";
+    private readonly cachedPageCountKey = "cachedPageCount";
+    private readonly cacheInProgressSuffix = "-in-progress";
+
     constructor(
         private readonly chunkRegistry: INonVolatileHashMap,
         private readonly chunkPlanner: ChunkPlanner,
         private readonly remoteProxies: StatefulProxyManager,
-        private readonly chunkPluginFactoryPath: URL
+        private readonly chunkPluginFactoryPath: URL,
+        private readonly chunkMetaRegistry: IChunkMetadata,
+        private readonly lambdaCache: INonVolatileHashMap
     ) { }
 
     public async initialize(): Promise<void> {
@@ -40,8 +49,9 @@ export class GridScale {
         diagnostics.set("workersPlan", diagnosticsWorkerPlan);
         diagnostics.set("planTime", Date.now() - timings);
 
+        //Write data
         timings = Date.now();
-        const promiseHandles = new Array<Promise<void>>();
+        let promiseHandles = new Array<Promise<void>>();
         for (let workerIdx = 0; workerIdx < upsertPlan.chunkAllocations.length; workerIdx++) {
             const workerPlan = upsertPlan.chunkAllocations[workerIdx];
             if (workerPlan == undefined) {
@@ -52,6 +62,7 @@ export class GridScale {
         await Promise.all(promiseHandles);
         diagnostics.set("writeTime", Date.now() - timings);
 
+        //Link 
         timings = Date.now();
         for (const [logicalChunkId, [timeBucket, displacedChunks]] of upsertPlan.chunkDisplacements) {
             const fieldValues = new Array<string>();
@@ -63,31 +74,31 @@ export class GridScale {
             await this.chunkRegistry.set(logicalChunkId, fieldValues);
         }
         diagnostics.set("linkTime", Date.now() - timings);
-    }
 
-    private async *stepIterator(tagIds: bigint[], startInclusive: number, endExclusive: number, queryId: string, resultPageSize: number, affinityBasedPlanning: boolean, mapLambdaPath: URL | undefined, diagnostics: Map<string, any>): AsyncIterableIterator<any[][]> {
-        let timings = Date.now();
-        const iterationPlan = await this.chunkPlanner.planRange(tagIds, startInclusive, endExclusive, this.remoteProxies.WorkerCount, affinityBasedPlanning);
-        const diagnosticsWorkerPlan = new Array<string>();
-        for (const [workerIdx, plans] of iterationPlan.affinityDistributedChunkReads.entries()) {
-            if (plans === undefined) { continue; }
-            for (const [planIdx, plan] of plans.entries()) {
-                diagnosticsWorkerPlan.push(`worker:${workerIdx} plan:${planIdx} shards:${plan[0].size} tags:${plan[1].size}`);
-            }
-        }
-        diagnostics.set("workersPlan", diagnosticsWorkerPlan);
-        diagnostics.set("planTime", Date.now() - timings);
-
+        //Update Metadata
         timings = Date.now();
-        for await (const resultData of this.threadsIterator<any[]>(queryId, iterationPlan.affinityDistributedChunkReads, resultPageSize, mapLambdaPath)) {
-            yield resultData;
+        promiseHandles = new Array<Promise<void>>();
+        for (let workerIdx = 0; workerIdx < upsertPlan.chunkAllocations.length; workerIdx++) {
+            const workerPlan = upsertPlan.chunkAllocations[workerIdx];
+            if (workerPlan == undefined) {
+                continue;
+            }
+            const connectionPaths = new Array<string>();
+            for (const plan of workerPlan) {
+                connectionPaths.push(plan[0]);
+            }
+            promiseHandles.push(this.chunkMetaRegistry.metadataSet(connectionPaths, metaKeyBirth, insertTime.toString()));
+            promiseHandles.push(this.chunkMetaRegistry.metadataSet(connectionPaths, metaKeyLastWrite, insertTime.toString()));
         }
-        diagnostics.set("yieldTime", Date.now() - timings);
+        await Promise.all(promiseHandles);
+        diagnostics.set("metadata", Date.now() - timings);
+
+        //TODO:Update Metadata
     }
 
     public async *iterator(tagIds: bigint[], startInclusive: number, endExclusive: number,
         queryId = "queryId_" + Math.random().toString(),
-        nextStepCallback: (timeSteps: [number, number][], tagsSteps: bigint[][], previousTimeStep: [number, number] | undefined, previousTagStep: bigint[] | undefined) => { nextTimeStep?: [number, number], nextTagStep?: bigint[] } = this.singleTimeWiseStepDirector,
+        nextStepCallback: (timeSteps: [number, number][], tagsSteps: bigint[][], previousTimeStep: [number, number] | undefined, previousTagStep: bigint[] | undefined) => { nextTimeStep?: [number, number], nextTagStep?: bigint[] } = this.chunkPlanner.singleTimeWiseStepDirector,
         resultPageSize = 10000,
         mapLambdaPath: URL | undefined = undefined,
         aggregateFunction: (first: boolean, last: boolean, inputPage: any[][] | null, accumulator: any) => { yield: boolean, yieldValue: any, accumulator: any } = undefined,
@@ -134,24 +145,27 @@ export class GridScale {
 
     }
 
-    private singleTimeWiseStepDirector(timePages: [number, number][], tagPages: bigint[][], previousTimeStep: [number, number] | undefined, previousTagStep: bigint[] | undefined) {
-        let timeStepIndex = timePages.indexOf(previousTimeStep);
-        let tagStepIndex = tagPages.indexOf(previousTagStep);
-        if (timeStepIndex === -1 || tagStepIndex === -1) {
-            return { nextTimeStep: timePages[0], nextTagStep: tagPages[0] };
-        }
-        timeStepIndex++;
-        if (timeStepIndex >= timePages.length) {
-            timeStepIndex = 0;
-            tagStepIndex++;
-            if (tagStepIndex >= tagPages.length) {
-                return { nextTimeStep: undefined, nextTagStep: undefined };
+    private async *stepIterator(tagIds: bigint[], startInclusive: number, endExclusive: number, queryId: string, resultPageSize: number, affinityBasedPlanning: boolean, mapLambdaPath: URL | undefined, diagnostics: Map<string, any>): AsyncIterableIterator<any[][]> {
+        let timings = Date.now();
+        const iterationPlan = await this.chunkPlanner.planRange(tagIds, startInclusive, endExclusive, this.remoteProxies.WorkerCount, affinityBasedPlanning);
+        const diagnosticsWorkerPlan = new Array<string>();
+        for (const [workerIdx, plans] of iterationPlan.affinityDistributedChunkReads.entries()) {
+            if (plans === undefined) { continue; }
+            for (const [planIdx, plan] of plans.entries()) {
+                diagnosticsWorkerPlan.push(`worker:${workerIdx} plan:${planIdx} shards:${plan[0].size} tags:${plan[1].size}`);
             }
         }
-        return { nextTimeStep: timePages[timeStepIndex], nextTagStep: tagPages[tagStepIndex] };
+        diagnostics.set("workersPlan", diagnosticsWorkerPlan);
+        diagnostics.set("planTime", Date.now() - timings);
+
+        timings = Date.now();
+        for await (const resultData of this.threadsIterator<any[]>(queryId, iterationPlan.affinityDistributedChunkReads, resultPageSize, mapLambdaPath)) {
+            yield resultData;
+        }
+        diagnostics.set("yieldTime", Date.now() - timings);
     }
 
-    private async *threadsIterator<T>(queryId: string, affinityDistributedChunkReads: [Set<string>, Set<string>, [number, number]][][], resultPageSize: number, mapLambdaPath: URL): AsyncIterableIterator<T[]> {
+    private async *threadsIterator<T>(queryId: string, affinityDistributedChunkReads: [Set<string>, Set<string>, [number, number], number][][], resultPageSize: number, mapLambdaPath: URL): AsyncIterableIterator<T[]> {
         const threadCursors = new Map<number, AsyncIterableIterator<T[]>>();
         const cursorResults = new Map<number, Promise<{ result: IteratorResult<T[]>, key: number }>>();
         const triggerNextIterationWithKey = (cursor: AsyncIterableIterator<T[]>, key: number) => cursor.next().then((result) => ({ result, key }));
@@ -188,19 +202,55 @@ export class GridScale {
         }
     }
 
-    private async *planIterator<T>(queryId: string, plans: [Set<string>, Set<string>, [number, number]][], resultPageSize: number, mapLambdaPath: URL, workerIndex: number): AsyncIterableIterator<T[]> {
+    private async *planIterator<T>(queryId: string, plans: [Set<string>, Set<string>, [number, number], number][], resultPageSize: number, mapLambdaPath: URL, workerIndex: number): AsyncIterableIterator<T[]> {
 
-        for (const [tagNames, connectionPaths, [start, end]] of plans) {
-            yield* this.pageIterator<T>(queryId, tagNames, connectionPaths, resultPageSize, start, end, mapLambdaPath, workerIndex);
+        for (const [connectionPaths, tagNames, [startInclusive, endExclusive], lastWritten] of plans) {
+            let returnFromCache = true;
+            let uniqueKey = Array.from(connectionPaths).sort().join("");
+            uniqueKey += mapLambdaPath.toString();
+            uniqueKey += Array.from(tagNames).sort().join("");
+            uniqueKey += startInclusive;
+            uniqueKey += endExclusive;
+            uniqueKey += resultPageSize;
+            const cacheKey = `plan-${crypto.createHash("md5").update(uniqueKey).digest("hex")}`;
+            const cachedTime = await this.lambdaCache.getFieldValues(cacheKey, [this.cachedTimeKey]);
+            returnFromCache = returnFromCache && cachedTime.size > 0;
+            returnFromCache = returnFromCache && parseInt(cachedTime.get(this.cachedTimeKey) ?? "0", 10) >= lastWritten;
+
+            if (returnFromCache === false) {
+                let pageCounter = 0;
+                const tempCacheKey = cacheKey + this.cacheInProgressSuffix;
+                await this.lambdaCache.set(tempCacheKey, [this.cachedTimeKey, lastWritten.toString()]);
+                const pageCursor = this.pageIterator<T>(queryId, tagNames, connectionPaths, resultPageSize, startInclusive, endExclusive, mapLambdaPath, workerIndex);
+                for await (const page of pageCursor) {
+                    await this.lambdaCache.set(tempCacheKey, [`p-${pageCounter}`, JSON.stringify(page)]);
+                    yield page;
+                    pageCounter++;
+                }
+                await this.lambdaCache.set(tempCacheKey, [this.cachedPageCountKey, pageCounter.toString()]);
+                await this.lambdaCache.rename(tempCacheKey, cacheKey);//Commit for others to read.
+            }
+            else {
+                const cachedPageCount = await this.lambdaCache.getFieldValues(cacheKey, [this.cachedPageCountKey]);
+                const pageCount = parseInt(cachedPageCount.get(this.cachedPageCountKey) ?? "0", 10);
+                for (let pageCounter = 0; pageCounter < pageCount; pageCounter++) {
+                    const cachedPaged = await this.lambdaCache.getFieldValues(cacheKey, [`p-${pageCounter}`]);
+                    const page = cachedPaged.size > 0 ? JSON.parse(cachedPaged.get(`p-${pageCounter}`) ?? "[]") as T[] : new Array<T>();
+                    yield page;
+                    //TODO: How to handle deletion of a key while iterating
+                }
+            }
         }
-
     }
 
     private async *pageIterator<T>(queryId: string, tagNames: Set<string>, connectionPaths: Set<string>, startInclusive: number, endExclusive: number, resultPageSize: number, mapLambdaPath: URL, workerIndex: number): AsyncIterableIterator<T[]> {
-        let page = await this.remoteProxies.invokeMethod<T[]>("bulkIterate", [queryId, [[tagNames, connectionPaths, [startInclusive, endExclusive]]], resultPageSize, mapLambdaPath?.toString()], workerIndex);
-        while (page.length > 0) {
-            yield page;
-            page = await this.remoteProxies.invokeMethod<T[]>("bulkIterate", [queryId, [[tagNames, connectionPaths, [startInclusive, endExclusive]]], resultPageSize, mapLambdaPath?.toString()], workerIndex);
+        let page = new Array<T>();
+        do {
+            page = await this.remoteProxies.invokeMethod<T[]>("bulkIterate", [queryId, [[connectionPaths, tagNames, [startInclusive, endExclusive]]], resultPageSize, mapLambdaPath?.toString()], workerIndex);
+            if (page.length > 0) {
+                yield page;
+            }
         }
+        while (page.length > 0)
     }
 }

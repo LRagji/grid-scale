@@ -59,30 +59,30 @@ export default class ChunkSqlite implements IChunk {
 
     }
 
-    public metadataSet(key: string, value: string): void {
-        if (this.mode === "write") {
-            if (this.preparedMetadataUpsert === undefined) {
-                this.db.exec(this.metadataTableSqlStatement);
-                this.preparedMetadataUpsert = this.db.prepare(this.metadataUpsertSqlStatement);
-            }
-            this.db.transaction(() => {
-                this.preparedMetadataUpsert.run(key, value);
-            })();
-        }
-    }
+    // public metadataSet(key: string, value: string): void {
+    //     if (this.mode === "write") {
+    //         if (this.preparedMetadataUpsert === undefined) {
+    //             this.db.exec(this.metadataTableSqlStatement);
+    //             this.preparedMetadataUpsert = this.db.prepare(this.metadataUpsertSqlStatement);
+    //         }
+    //         this.db.transaction(() => {
+    //             this.preparedMetadataUpsert.run(key, value);
+    //         })();
+    //     }
+    // }
 
-    public metadataGet(key: string, defaultValue: string): string[] {
-        if (this.mode === "write") {
-            return [this.db.prepare(`SELECT value FROM [metadata] WHERE key = ?;`)
-                .pluck()
-                .get(key) as string ?? defaultValue];
-        }
-        else {
-            return this.readonlyDBs.map(db => db.prepare(`SELECT value FROM [metadata] WHERE key = ?;`)
-                .pluck()
-                .get(key) as string ?? defaultValue)
-        }
-    }
+    // public metadataGet(key: string, defaultValue: string): string[] {
+    //     if (this.mode === "write") {
+    //         return [this.db.prepare(`SELECT value FROM [metadata] WHERE key = ?;`)
+    //             .pluck()
+    //             .get(key) as string ?? defaultValue];
+    //     }
+    //     else {
+    //         return this.readonlyDBs.map(db => db.prepare(`SELECT value FROM [metadata] WHERE key = ?;`)
+    //             .pluck()
+    //             .get(key) as string ?? defaultValue)
+    //     }
+    // }
 
     private searchAndOpenDatabases() {
         try {

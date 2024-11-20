@@ -25,3 +25,7 @@ export function DJB2StringToNumber(input: string): number {
     }
     return hash >>> 0; // Ensure the hash is a positive integer
 }
+
+export function sort(input: bigint[]): bigint[] {
+    return input.sort((a, b) => a < b ? -1 : a > b ? 1 : 0);
+}
