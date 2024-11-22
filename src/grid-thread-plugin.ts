@@ -7,7 +7,7 @@ import { isMainThread, parentPort, MessagePort } from "node:worker_threads";
 export class GridThreadPlugin extends StatefulRecipient {
 
     private mergeFunction: <T>(cursors: IterableIterator<T>[]) => IterableIterator<T>;
-    private readonly iteratorCache = new Map<string, [IterableIterator<any>, number, number]>();
+    private readonly iteratorCache = new Map<string, IterableIterator<any>>();
     private chunkFactory: ChunkFactoryBase<IChunk>;
     private callerSignature: string;
 
@@ -35,33 +35,38 @@ export class GridThreadPlugin extends StatefulRecipient {
         }
     }
 
-    public async bulkIterate(queryId: string, plans: [Set<string>, Set<string>, [number, number]][], pageSize: number, lambdaFunctionPath: string | null): Promise<any[][]> {
+    public async bulkIterate(queryId: string, tagSet: Set<string>, connectionPaths: Set<string>, startInclusive: number, endExclusive: number, pageSize: number, lambdaFunctionPath: string | null): Promise<any[][]> {
         let lambdaFunction: (page: any[][]) => any[][] = (page: any[][]) => page;
         if (lambdaFunctionPath != undefined) {
             lambdaFunction = (await import(lambdaFunctionPath)).default as (page: any[][]) => any[][];
         }
-        let currentPlanIndex = 0
-        let page = new Array<any[]>();
-        do {
-            if (this.iteratorCache.has(queryId) === false) {
-                const connectionPaths = Array.from(plans[currentPlanIndex][0]).sort();
-                const tagSet = plans[currentPlanIndex][1];
-                const timeRange = plans[currentPlanIndex][2];
 
-                const iterators = new Array<IterableIterator<any>>();
-                for (const connectionPath of connectionPaths) {
-                    const chunk = this.chunkFactory.getChunk(connectionPath, "read", this.callerSignature);
-                    if (chunk !== null) {
-                        iterators.push(chunk.bulkIterator(Array.from(tagSet.values()), timeRange[0], timeRange[1]));
-                    }
+        let page = new Array<any[]>();
+
+        if (this.iteratorCache.has(queryId) === false) {
+            const iterators = new Array<IterableIterator<any>>();
+            for (const connectionPath of connectionPaths) {
+                const chunk = this.chunkFactory.getChunk(connectionPath, "read", this.callerSignature);
+                if (chunk !== null) {
+                    iterators.push(chunk.bulkIterator(Array.from(tagSet.values()), startInclusive, endExclusive));
                 }
-                this.iteratorCache.set(queryId, [this.mergeFunction(iterators), currentPlanIndex, 0]);
             }
 
-            let [iterator, planIndex, pageNumber] = this.iteratorCache.get(queryId);
-            currentPlanIndex = planIndex
+            if (iterators.length === 0) {
+                return page;
+            }
+            else if (iterators.length === 1) {
+                this.iteratorCache.set(queryId, iterators[0]);
+            }
+            else {
+                this.iteratorCache.set(queryId, this.mergeFunction(iterators));
+            }
+        }
 
-            let iteratorResult = iterator.next();
+        let iterator = this.iteratorCache.get(queryId);
+        let iteratorResult;
+        do {
+            iteratorResult = iterator.next();
             while (page.length < (pageSize - 1) && iteratorResult.done === false) {
                 page.push(iteratorResult.value);
                 iteratorResult = iterator.next();
@@ -73,27 +78,20 @@ export class GridThreadPlugin extends StatefulRecipient {
 
             if (page.length !== 0) {
                 page = lambdaFunction(page) ?? new Array<any[]>();
-                if (page.length !== 0) {
-                    pageNumber++;
-                    this.iteratorCache.set(queryId, [iterator, currentPlanIndex, pageNumber]);
-                    break;
-                }
             }
-            else {
-                //This is where the plan ends and we have to move to the next plan
-                this.iteratorCache.delete(queryId);
-                currentPlanIndex++;
-            }
-
         }
-        while (currentPlanIndex < plans.length);
+        while (page.length === 0 && iteratorResult.done === false)
+
+        if (iteratorResult.done === true && page.length === 0) {
+            this.clearIteration(queryId);
+        }
 
         return page;
     }
 
     public clearIteration(queryId: string): void {
         if (this.iteratorCache.has(queryId)) {
-            this.iteratorCache.get(queryId)[0].return();
+            this.iteratorCache.get(queryId)?.return();
             this.iteratorCache.delete(queryId);
         }
     }

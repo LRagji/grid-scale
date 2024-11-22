@@ -17,8 +17,7 @@ const trackMemoryFunc = trackMemory.bind(stats);
 trackMemoryFunc.stats = stats;
 const interval = setInterval(trackMemoryFunc, 1000); // Check memory usage every 1 second
 
-const threads = 10;
-const redisConnectionString = "redis://localhost:6379";
+const threads = 0;
 const gsConfig = new GridScaleConfig();
 gsConfig.workerCount = threads;
 
@@ -27,11 +26,15 @@ const totalSamplesPerTag = 86400;
 let insertTime = Date.now();
 // insertTime = insertTime - (insertTime % 86400000);
 // insertTime = insertTime + 86400000;
-const chunkRelations = new RedisHashMap(redisConnectionString);
+const chunkLinkerRedisConnectionString = "redis://localhost:6379";
+const chunkRelations = new RedisHashMap(chunkLinkerRedisConnectionString, "chunk-linker-");
 await chunkRelations.initialize();
-const lambdaCache = new RedisHashMap(redisConnectionString, "lambda-cache-");
+const lambdaCacheRedisConnectionString = "redis://localhost:6380";
+const lambdaCache = new RedisHashMap(lambdaCacheRedisConnectionString, "lambda-cache-");
 await lambdaCache.initialize();
-const chunkMetaRegistry = new ChunkMetaRegistry();
+const chunkMetaRedisConnectionString = "redis://localhost:6381";
+const chunkMetaRegistry = new ChunkMetaRegistry(chunkMetaRedisConnectionString, "chunk-meta-");
+await chunkMetaRegistry.initialize();
 const gridScale = await GridScaleFactory.create(chunkRelations, new URL("../chunk-factory-implementation/cached-chunk-factory.js", import.meta.url), chunkMetaRegistry, lambdaCache, gsConfig);
 
 trackMemoryFunc();
@@ -39,7 +42,7 @@ trackMemoryFunc();
 console.log(`Started with ${threads} threads @ ${formatMB(formatKB(trackMemoryFunc.stats.heapPeakMemory)).toFixed(1)} heap used & ${formatMB(formatKB(trackMemoryFunc.stats.rssPeakMemory)).toFixed(1)} rss`);
 
 const insertTimeCol = (time: number, tag: bigint) => insertTime;
-const numericCol = (time: number, tag: bigint) => Math.floor(Math.random() * 1000);
+const numericCol = (time: number, tag: bigint) => parseInt(`${time}.${tag}`)//Math.floor(Math.random() * 1000);
 const otherCol = (time: number, tag: bigint) => null;
 
 
@@ -72,6 +75,7 @@ console.table(results);
 console.time("Close Operation");
 await (chunkRelations[Symbol.asyncDispose] && chunkRelations[Symbol.asyncDispose]() || Promise.resolve(chunkRelations[Symbol.dispose] && chunkRelations[Symbol.dispose]()));
 await (lambdaCache[Symbol.asyncDispose] && lambdaCache[Symbol.asyncDispose]() || Promise.resolve(lambdaCache[Symbol.dispose] && lambdaCache[Symbol.dispose]()));
+await (chunkMetaRegistry[Symbol.asyncDispose] && chunkMetaRegistry[Symbol.asyncDispose]() || Promise.resolve(chunkMetaRegistry[Symbol.dispose] && chunkMetaRegistry[Symbol.dispose]()));
 await gridScale[Symbol.asyncDispose]();
 console.timeEnd("Close Operation");
 

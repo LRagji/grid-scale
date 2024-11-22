@@ -14,21 +14,24 @@ trackMemoryFunc.stats = stats;
 const interval = setInterval(trackMemoryFunc, 1000); // Check memory usage every 1 second
 
 const threads = 0;
-const redisConnectionString = "redis://localhost:6379";
 const gsConfig = new GridScaleConfig();
 gsConfig.workerCount = threads;
-const chunkRelations = new RedisHashMap(redisConnectionString);
+const chunkLinkerRedisConnectionString = "redis://localhost:6379";
+const chunkRelations = new RedisHashMap(chunkLinkerRedisConnectionString, "chunk-linker-");
 await chunkRelations.initialize();
-const lambdaCache = new RedisHashMap(redisConnectionString, "lambda-cache-");
+const lambdaCacheRedisConnectionString = "redis://localhost:6380";
+const lambdaCache = new RedisHashMap(lambdaCacheRedisConnectionString, "lambda-cache-");
 await lambdaCache.initialize();
-const chunkMetaRegistry = new ChunkMetaRegistry();
+const chunkMetaRedisConnectionString = "redis://localhost:6381";
+const chunkMetaRegistry = new ChunkMetaRegistry(chunkMetaRedisConnectionString, "chunk-meta-");
+await chunkMetaRegistry.initialize();
 const gridScale = await GridScaleFactory.create(chunkRelations, new URL("../chunk-factory-implementation/cached-chunk-factory.js", import.meta.url), chunkMetaRegistry, lambdaCache, gsConfig);
 
 trackMemoryFunc();
 console.log(`Started with ${threads} threads @ ${formatMB(formatKB(trackMemoryFunc.stats.heapPeakMemory)).toFixed(1)} heap used & ${formatMB(formatKB(trackMemoryFunc.stats.rssPeakMemory)).toFixed(1)} rss`);
-const totalTags = 1000;
+const totalTags = gsConfig.TagBucketWidth * 3;
 const startInclusiveTime = 0;//Date.now();
-const endExclusiveTime = 86400000//startInclusiveTime + config.timeBucketWidth;
+const endExclusiveTime = gsConfig.TimeBucketWidth * 1//startInclusiveTime + config.timeBucketWidth;
 
 const tagIds = generateTagNames(0, totalTags, 1);
 
@@ -98,7 +101,7 @@ for (let i = 0; i < 1; i++) {
     //for await (const processedRow of result) {
     //  tagCounts = new Map<string, any>(processedRow as [string, number][]);
     //}
-    const pageCursor = gridScale.iterator(tagIds, startInclusiveTime, endExclusiveTime, `Q[${i}]`, multiThreadDirector, 10000, mapLambda, countPerTagFunction, tagCounts, false, diagnostics);
+    const pageCursor = gridScale.iterator(tagIds, startInclusiveTime, endExclusiveTime, undefined, multiThreadDirector, 10000, mapLambda, countPerTagFunction, tagCounts, false, diagnostics);
     for await (const page of pageCursor) {
         trackMemoryFunc();
         tagCounts = new Map<string, any>(page as [string, number][]);
@@ -140,6 +143,7 @@ console.table(consoleTableResults);
 console.time("Close Operation");
 await (chunkRelations[Symbol.asyncDispose] && chunkRelations[Symbol.asyncDispose]() || Promise.resolve(chunkRelations[Symbol.dispose] && chunkRelations[Symbol.dispose]()));
 await (lambdaCache[Symbol.asyncDispose] && lambdaCache[Symbol.asyncDispose]() || Promise.resolve(lambdaCache[Symbol.dispose] && lambdaCache[Symbol.dispose]()));
+await (chunkMetaRegistry[Symbol.asyncDispose] && chunkMetaRegistry[Symbol.asyncDispose]() || Promise.resolve(chunkMetaRegistry[Symbol.dispose] && chunkMetaRegistry[Symbol.dispose]()));
 await gridScale[Symbol.asyncDispose]();
 console.timeEnd("Close Operation");
 

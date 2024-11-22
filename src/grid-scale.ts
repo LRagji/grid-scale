@@ -6,13 +6,11 @@ import { ChunkFactoryBase } from "./chunk/chunk-factory-base.js";
 import { IChunkMetadata } from "./chunk-metadata/i-chunk-metadata.js";
 import crypto from "node:crypto";
 import { metaKeyBirth, metaKeyLastWrite } from "./types/meta-keys.js";
+import { cachedPageCountKey, cachedRedirectKey, cachedTimeKey, cachePageKey } from "./types/cache-keys.js";
 
 export class GridScale {
 
     private chunkPluginFactoryType: typeof ChunkFactoryBase<IChunk>;
-    private readonly cachedTimeKey = "cachedTime";
-    private readonly cachedPageCountKey = "cachedPageCount";
-    private readonly cacheInProgressSuffix = "-in-progress";
 
     constructor(
         private readonly chunkRegistry: INonVolatileHashMap,
@@ -92,12 +90,10 @@ export class GridScale {
         }
         await Promise.all(promiseHandles);
         diagnostics.set("metadata", Date.now() - timings);
-
-        //TODO:Update Metadata
     }
 
     public async *iterator(tagIds: bigint[], startInclusive: number, endExclusive: number,
-        queryId = "queryId_" + Math.random().toString(),
+        queryId = "queryId_" + Date.now().toString() + Math.random().toString(),
         nextStepCallback: (timeSteps: [number, number][], tagsSteps: bigint[][], previousTimeStep: [number, number] | undefined, previousTagStep: bigint[] | undefined) => { nextTimeStep?: [number, number], nextTagStep?: bigint[] } = this.chunkPlanner.singleTimeWiseStepDirector,
         resultPageSize = 10000,
         mapLambdaPath: URL | undefined = undefined,
@@ -172,7 +168,7 @@ export class GridScale {
         try {
             //Open Cursors
             for (const [workerIdx, plans] of affinityDistributedChunkReads.entries()) {
-                if (plans === undefined) { continue; }
+                if (plans === undefined || plans.length === 0) { continue; }
                 const cursor = this.planIterator<T>(queryId, plans, resultPageSize, mapLambdaPath, workerIdx);
                 threadCursors.set(workerIdx, cursor);
                 //Trigger First Iteration
@@ -205,39 +201,51 @@ export class GridScale {
     private async *planIterator<T>(queryId: string, plans: [Set<string>, Set<string>, [number, number], number][], resultPageSize: number, mapLambdaPath: URL, workerIndex: number): AsyncIterableIterator<T[]> {
 
         for (const [connectionPaths, tagNames, [startInclusive, endExclusive], lastWritten] of plans) {
-            let returnFromCache = true;
-            let uniqueKey = Array.from(connectionPaths).sort().join("");
-            uniqueKey += mapLambdaPath.toString();
-            uniqueKey += Array.from(tagNames).sort().join("");
-            uniqueKey += startInclusive;
-            uniqueKey += endExclusive;
-            uniqueKey += resultPageSize;
-            const cacheKey = `plan-${crypto.createHash("md5").update(uniqueKey).digest("hex")}`;
-            const cachedTime = await this.lambdaCache.getFieldValues(cacheKey, [this.cachedTimeKey]);
-            returnFromCache = returnFromCache && cachedTime.size > 0;
-            returnFromCache = returnFromCache && parseInt(cachedTime.get(this.cachedTimeKey) ?? "0", 10) >= lastWritten;
+
+            const cacheIndexKeyHash = crypto.createHash("md5")
+                .update(Array.from(connectionPaths).sort().join(""))
+                .update(Array.from(tagNames).sort().join(""))
+                .update(startInclusive.toString())
+                .update(endExclusive.toString())
+                .update(resultPageSize.toString())
+                .update(mapLambdaPath.toString());
+
+            const cacheIndexKey = `plan-${cacheIndexKeyHash.digest("hex")}`;
+            let cacheResponse = await this.lambdaCache.getFieldValues(cacheIndexKey, [cachedRedirectKey]);
+            let actualCacheKey = cacheResponse.get(cachedRedirectKey) ?? "";
+            let returnFromCache = actualCacheKey != "";
+            cacheResponse = returnFromCache && await this.lambdaCache.getFieldValues(actualCacheKey, [cachedTimeKey, cachedPageCountKey]);
+            returnFromCache = returnFromCache && cacheResponse.size > 0;
+            returnFromCache = returnFromCache && parseInt(cacheResponse.get(cachedTimeKey) ?? "0", 10) >= lastWritten;
+            returnFromCache = returnFromCache && parseInt(cacheResponse.get(cachedPageCountKey) ?? "0", 10) > 0;
 
             if (returnFromCache === false) {
                 let pageCounter = 0;
-                const tempCacheKey = cacheKey + this.cacheInProgressSuffix;
-                await this.lambdaCache.set(tempCacheKey, [this.cachedTimeKey, lastWritten.toString()]);
-                const pageCursor = this.pageIterator<T>(queryId, tagNames, connectionPaths, resultPageSize, startInclusive, endExclusive, mapLambdaPath, workerIndex);
+                const tempCacheKey = crypto.randomBytes(16).toString("hex");
+                const pageCursor = this.pageIterator<T>(queryId, tagNames, connectionPaths, startInclusive, endExclusive, resultPageSize, mapLambdaPath, workerIndex);
                 for await (const page of pageCursor) {
-                    await this.lambdaCache.set(tempCacheKey, [`p-${pageCounter}`, JSON.stringify(page)]);
-                    yield page;
-                    pageCounter++;
+                    if (page.length > 0) {
+                        await this.lambdaCache.set(tempCacheKey, [cachePageKey(pageCounter), JSON.stringify(page)]);//We have to save as we cannot hold so many pages in memory
+                        yield page;
+                        pageCounter++;
+                    }
                 }
-                await this.lambdaCache.set(tempCacheKey, [this.cachedPageCountKey, pageCounter.toString()]);
-                await this.lambdaCache.rename(tempCacheKey, cacheKey);//Commit for others to read.
+                await this.lambdaCache.set(tempCacheKey, [cachedTimeKey, lastWritten.toString(), cachedPageCountKey, pageCounter.toString()]);
+                await this.lambdaCache.set(cacheIndexKey, [cachedRedirectKey, tempCacheKey]);//Commit for others to read.
             }
             else {
-                const cachedPageCount = await this.lambdaCache.getFieldValues(cacheKey, [this.cachedPageCountKey]);
-                const pageCount = parseInt(cachedPageCount.get(this.cachedPageCountKey) ?? "0", 10);
+                const pageCount = parseInt(cacheResponse.get(cachedPageCountKey) ?? "0", 10);
                 for (let pageCounter = 0; pageCounter < pageCount; pageCounter++) {
-                    const cachedPaged = await this.lambdaCache.getFieldValues(cacheKey, [`p-${pageCounter}`]);
-                    const page = cachedPaged.size > 0 ? JSON.parse(cachedPaged.get(`p-${pageCounter}`) ?? "[]") as T[] : new Array<T>();
-                    yield page;
-                    //TODO: How to handle deletion of a key while iterating
+                    const pageKey = cachePageKey(pageCounter);
+                    const cachedPaged = await this.lambdaCache.getFieldValues(actualCacheKey, [pageKey]);
+                    if (cachedPaged.size != 0 && cachedPaged.get(pageKey) != undefined) {
+                        const page = cachedPaged.size > 0 ? JSON.parse(cachedPaged.get(pageKey) ?? "[]") as T[] : new Array<T>();
+                        yield page;
+                    }
+                    else {
+                        //To eliminate this scenario we need to change the query mechanism to paginated results instead of iteration based.
+                        console.warn(`Cache(${actualCacheKey}) was removed or deleted while read was ongoing for ${pageKey} of total pages ${pageCount}`);
+                    }
                 }
             }
         }
@@ -246,7 +254,7 @@ export class GridScale {
     private async *pageIterator<T>(queryId: string, tagNames: Set<string>, connectionPaths: Set<string>, startInclusive: number, endExclusive: number, resultPageSize: number, mapLambdaPath: URL, workerIndex: number): AsyncIterableIterator<T[]> {
         let page = new Array<T>();
         do {
-            page = await this.remoteProxies.invokeMethod<T[]>("bulkIterate", [queryId, [[connectionPaths, tagNames, [startInclusive, endExclusive]]], resultPageSize, mapLambdaPath?.toString()], workerIndex);
+            page = await this.remoteProxies.invokeMethod<T[]>("bulkIterate", [queryId, tagNames, connectionPaths, startInclusive, endExclusive, resultPageSize, mapLambdaPath?.toString()], workerIndex);
             if (page.length > 0) {
                 yield page;
             }

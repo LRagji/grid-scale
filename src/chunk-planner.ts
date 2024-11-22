@@ -127,8 +127,8 @@ export class ChunkPlanner {
             setPaths.length = 0;
             allChunkIds.clear();
 
-            //Prune for TTL
-            const connectionPathsArray = Array.from(connectionPaths.keys());
+            //Prune for TTL and for unknown last write chunks
+            let connectionPathsArray = Array.from(connectionPaths.keys());
             const defaultValueInt = parseInt(defaultValueString, 10);
             const metaBirthFetch = await this.chunkMetaRegistry.metadataGet(connectionPathsArray, metaKeyBirth, defaultValueString);
             for (const [connectionPath, metaValues] of metaBirthFetch) {
@@ -138,6 +138,8 @@ export class ChunkPlanner {
                     connectionPaths.delete(connectionPath);
                 }
             }
+            connectionPathsArray = Array.from(connectionPaths.keys());
+
 
             //Add info for last write
             const metaLastWriteFetch = await this.chunkMetaRegistry.metadataGet(connectionPathsArray, metaKeyLastWrite, defaultValueString);
