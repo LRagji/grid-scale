@@ -3,7 +3,8 @@ import { formatKB, formatMB, generateTagNames, trackMemory } from "../utils.js";
 import { GridScaleFactory } from "../../grid-scale-factory.js";
 import { GridScaleConfig } from "../../grid-scale-config.js";
 import { ChunkMetaRegistry } from "../chunk-meta-implementation/chunk-meta-registry.js";
-
+import { unzipSync } from "node:zlib";
+import tagSampleCount from "../lambda/tag-sample-count.js";
 
 //Query Plan
 //Read
@@ -32,6 +33,7 @@ console.log(`Started with ${threads} threads @ ${formatMB(formatKB(trackMemoryFu
 const totalTags = gsConfig.TagBucketWidth * 10;
 const startInclusiveTime = 0;//Date.now();
 const endExclusiveTime = gsConfig.TimeBucketWidth * 1//startInclusiveTime + config.timeBucketWidth;
+const expectedSampleCount = (endExclusiveTime - startInclusiveTime) / 1000;
 
 const tagIds = generateTagNames(0, totalTags, 1);
 
@@ -46,10 +48,17 @@ const countPerTagFunction = (first: boolean, last: boolean, page: any[][], acc: 
     if (first === true) {
         return returnObject;
     }
+    //GZip Processing
+    if (page != null && Array.isArray(page) && page.length > 0) {
+        page = JSON.parse(unzipSync(Buffer.from(page as unknown as Uint8Array)).toString());
+        page = tagSampleCount(page);
+    }
     if (last === true) {
         console.log("Total Tags: ", acc.size);
+
         for (const [tagId, count] of acc.entries()) {
-            if (count === 86400) {
+            const delta = Math.abs(expectedSampleCount - count);
+            if (delta <= 1) {
                 acc.delete(tagId);
             }
         }
@@ -87,7 +96,7 @@ const multiThreadDirector = (timePages: [number, number][], tagPages: bigint[][]
     }
 };
 
-const mapLambda = new URL("../lambda/tag-sample-count.js", import.meta.url);
+const mapLambda = new URL("../lambda/zip-window.js", import.meta.url);
 for (let i = 0; i < 1; i++) {
     const time = Date.now();
     const resultTagIds = new Set<string>();
@@ -132,7 +141,7 @@ for (let i = 0; i < 1; i++) {
         console.log(`${tagCounts.size} Tags without 86400 samples.`);
     }
     else {
-        console.log(`All tags have 86400 samples.`);
+        console.log(`All tags have ${expectedSampleCount} samples.`);
     }
 }
 
