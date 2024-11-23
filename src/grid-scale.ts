@@ -18,7 +18,7 @@ export class GridScale {
         private readonly remoteProxies: StatefulProxyManager,
         private readonly chunkPluginFactoryPath: URL,
         private readonly chunkMetaRegistry: IChunkMetadata,
-        private readonly lambdaCache: INonVolatileHashMap
+        private readonly chunkCache: INonVolatileHashMap
     ) { }
 
     public async initialize(): Promise<void> {
@@ -211,10 +211,10 @@ export class GridScale {
                 .update(mapLambdaPath.toString());
 
             const cacheIndexKey = `plan-${cacheIndexKeyHash.digest("hex")}`;
-            let cacheResponse = await this.lambdaCache.getFieldValues(cacheIndexKey, [cachedRedirectKey]);
+            let cacheResponse = await this.chunkCache.getFieldValues(cacheIndexKey, [cachedRedirectKey]);
             let actualCacheKey = cacheResponse.get(cachedRedirectKey) ?? "";
             let returnFromCache = actualCacheKey != "";
-            cacheResponse = returnFromCache && await this.lambdaCache.getFieldValues(actualCacheKey, [cachedTimeKey, cachedPageCountKey]);
+            cacheResponse = returnFromCache && await this.chunkCache.getFieldValues(actualCacheKey, [cachedTimeKey, cachedPageCountKey]);
             returnFromCache = returnFromCache && cacheResponse.size > 0;
             returnFromCache = returnFromCache && parseInt(cacheResponse.get(cachedTimeKey) ?? "0", 10) >= lastWritten;
             returnFromCache = returnFromCache && parseInt(cacheResponse.get(cachedPageCountKey) ?? "0", 10) > 0;
@@ -225,19 +225,19 @@ export class GridScale {
                 const pageCursor = this.pageIterator<T>(queryId, tagNames, connectionPaths, startInclusive, endExclusive, resultPageSize, mapLambdaPath, workerIndex);
                 for await (const page of pageCursor) {
                     if (page.length > 0) {
-                        await this.lambdaCache.set(tempCacheKey, [cachePageKey(pageCounter), JSON.stringify(page)]);//We have to save as we cannot hold so many pages in memory
+                        await this.chunkCache.set(tempCacheKey, [cachePageKey(pageCounter), JSON.stringify(page)]);//We have to save as we cannot hold so many pages in memory
                         yield page;
                         pageCounter++;
                     }
                 }
-                await this.lambdaCache.set(tempCacheKey, [cachedTimeKey, lastWritten.toString(), cachedPageCountKey, pageCounter.toString()]);
-                await this.lambdaCache.set(cacheIndexKey, [cachedRedirectKey, tempCacheKey]);//Commit for others to read.
+                await this.chunkCache.set(tempCacheKey, [cachedTimeKey, lastWritten.toString(), cachedPageCountKey, pageCounter.toString()]);
+                await this.chunkCache.set(cacheIndexKey, [cachedRedirectKey, tempCacheKey]);//Commit for others to read.
             }
             else {
                 const pageCount = parseInt(cacheResponse.get(cachedPageCountKey) ?? "0", 10);
                 for (let pageCounter = 0; pageCounter < pageCount; pageCounter++) {
                     const pageKey = cachePageKey(pageCounter);
-                    const cachedPaged = await this.lambdaCache.getFieldValues(actualCacheKey, [pageKey]);
+                    const cachedPaged = await this.chunkCache.getFieldValues(actualCacheKey, [pageKey]);
                     if (cachedPaged.size != 0 && cachedPaged.get(pageKey) != undefined) {
                         const page = cachedPaged.size > 0 ? JSON.parse(cachedPaged.get(pageKey) ?? "[]") as T[] : new Array<T>();
                         yield page;

@@ -13,23 +13,23 @@ const trackMemoryFunc = trackMemory.bind(stats);
 trackMemoryFunc.stats = stats;
 const interval = setInterval(trackMemoryFunc, 1000); // Check memory usage every 1 second
 
-const threads = 0;
+const threads = 10;
 const gsConfig = new GridScaleConfig();
 gsConfig.workerCount = threads;
 const chunkLinkerRedisConnectionString = "redis://localhost:6379";
 const chunkRelations = new RedisHashMap(chunkLinkerRedisConnectionString, "chunk-linker-");
 await chunkRelations.initialize();
-const lambdaCacheRedisConnectionString = "redis://localhost:6380";
-const lambdaCache = new RedisHashMap(lambdaCacheRedisConnectionString, "lambda-cache-");
-await lambdaCache.initialize();
+const chunkCacheRedisConnectionString = "redis://localhost:6380";
+const chunkCache = new RedisHashMap(chunkCacheRedisConnectionString, "chunk-cache-");
+await chunkCache.initialize();
 const chunkMetaRedisConnectionString = "redis://localhost:6381";
 const chunkMetaRegistry = new ChunkMetaRegistry(chunkMetaRedisConnectionString, "chunk-meta-");
 await chunkMetaRegistry.initialize();
-const gridScale = await GridScaleFactory.create(chunkRelations, new URL("../chunk-factory-implementation/cached-chunk-factory.js", import.meta.url), chunkMetaRegistry, lambdaCache, gsConfig);
+const gridScale = await GridScaleFactory.create(chunkRelations, new URL("../chunk-factory-implementation/cached-chunk-factory.js", import.meta.url), chunkMetaRegistry, chunkCache, gsConfig);
 
 trackMemoryFunc();
 console.log(`Started with ${threads} threads @ ${formatMB(formatKB(trackMemoryFunc.stats.heapPeakMemory)).toFixed(1)} heap used & ${formatMB(formatKB(trackMemoryFunc.stats.rssPeakMemory)).toFixed(1)} rss`);
-const totalTags = gsConfig.TagBucketWidth * 3;
+const totalTags = gsConfig.TagBucketWidth * 1;
 const startInclusiveTime = 0;//Date.now();
 const endExclusiveTime = gsConfig.TimeBucketWidth * 1//startInclusiveTime + config.timeBucketWidth;
 
@@ -142,7 +142,7 @@ console.table(consoleTableResults);
 
 console.time("Close Operation");
 await (chunkRelations[Symbol.asyncDispose] && chunkRelations[Symbol.asyncDispose]() || Promise.resolve(chunkRelations[Symbol.dispose] && chunkRelations[Symbol.dispose]()));
-await (lambdaCache[Symbol.asyncDispose] && lambdaCache[Symbol.asyncDispose]() || Promise.resolve(lambdaCache[Symbol.dispose] && lambdaCache[Symbol.dispose]()));
+await (chunkCache[Symbol.asyncDispose] && chunkCache[Symbol.asyncDispose]() || Promise.resolve(chunkCache[Symbol.dispose] && chunkCache[Symbol.dispose]()));
 await (chunkMetaRegistry[Symbol.asyncDispose] && chunkMetaRegistry[Symbol.asyncDispose]() || Promise.resolve(chunkMetaRegistry[Symbol.dispose] && chunkMetaRegistry[Symbol.dispose]()));
 await gridScale[Symbol.asyncDispose]();
 console.timeEnd("Close Operation");

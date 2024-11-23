@@ -8,7 +8,7 @@ import { IChunkMetadata } from "./chunk-metadata/i-chunk-metadata.js";
 
 export class GridScaleFactory {
 
-    public static async create(chunkRelations: INonVolatileHashMap, chunkFactoryPluginPath: URL, chunkMetaRegistry: IChunkMetadata, lambdaCache: INonVolatileHashMap, config: GridScaleConfig = new GridScaleConfig()): Promise<GridScale> {
+    public static async create(chunkRelations: INonVolatileHashMap, chunkFactoryPluginPath: URL, chunkMetaRegistry: IChunkMetadata, chunkCache: INonVolatileHashMap, config: GridScaleConfig = new GridScaleConfig()): Promise<GridScale> {
         const chunkPlanner = new ChunkPlanner(chunkRelations, config.TagBucketWidth, config.TimeBucketWidth, config.logicalChunkPrefix, config.logicalChunkSeparator, config.timeBucketTolerance, config.writerActiveShard, config.shardSets, chunkMetaRegistry);
         const workerFilePath = fileURLToPath(new URL("./grid-thread-plugin.js", import.meta.url));
         const proxies = new StatefulProxyManager(config.workerCount, workerFilePath);
@@ -17,7 +17,7 @@ export class GridScaleFactory {
             await proxies.invokeMethod("initialize", [`${config.identity}-${idx}`, chunkFactoryPluginPath.toString()], idx);
         }
 
-        const gs = new GridScale(chunkRelations, chunkPlanner, proxies, chunkFactoryPluginPath, chunkMetaRegistry, lambdaCache);
+        const gs = new GridScale(chunkRelations, chunkPlanner, proxies, chunkFactoryPluginPath, chunkMetaRegistry, chunkCache);
         await gs.initialize();
         gs[Symbol.asyncDispose] = async () => {
             await proxies[Symbol.asyncDispose]();

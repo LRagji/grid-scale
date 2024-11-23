@@ -17,7 +17,7 @@ const trackMemoryFunc = trackMemory.bind(stats);
 trackMemoryFunc.stats = stats;
 const interval = setInterval(trackMemoryFunc, 1000); // Check memory usage every 1 second
 
-const threads = 0;
+const threads = 10;
 const gsConfig = new GridScaleConfig();
 gsConfig.workerCount = threads;
 
