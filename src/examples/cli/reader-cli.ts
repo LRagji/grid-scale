@@ -29,7 +29,7 @@ const gridScale = await GridScaleFactory.create(chunkRelations, new URL("../chun
 
 trackMemoryFunc();
 console.log(`Started with ${threads} threads @ ${formatMB(formatKB(trackMemoryFunc.stats.heapPeakMemory)).toFixed(1)} heap used & ${formatMB(formatKB(trackMemoryFunc.stats.rssPeakMemory)).toFixed(1)} rss`);
-const totalTags = gsConfig.TagBucketWidth * 1;
+const totalTags = gsConfig.TagBucketWidth * 10;
 const startInclusiveTime = 0;//Date.now();
 const endExclusiveTime = gsConfig.TimeBucketWidth * 1//startInclusiveTime + config.timeBucketWidth;
 
@@ -101,7 +101,7 @@ for (let i = 0; i < 1; i++) {
     //for await (const processedRow of result) {
     //  tagCounts = new Map<string, any>(processedRow as [string, number][]);
     //}
-    const pageCursor = gridScale.iterator(tagIds, startInclusiveTime, endExclusiveTime, undefined, multiThreadDirector, 10000, mapLambda, countPerTagFunction, tagCounts, false, diagnostics);
+    const pageCursor = gridScale.iterator(tagIds, startInclusiveTime, endExclusiveTime, undefined, multiThreadDirector, gsConfig.TimeBucketWidth, gsConfig.TagBucketWidth, mapLambda, countPerTagFunction, tagCounts, false, diagnostics);
     for await (const page of pageCursor) {
         trackMemoryFunc();
         tagCounts = new Map<string, any>(page as [string, number][]);
@@ -115,12 +115,13 @@ for (let i = 0; i < 1; i++) {
     for (const [stepIdx, stepDiagnostics] of diagnostics.entries()) {
         const workerDiagnostics = stepDiagnostics.get("workersPlan") as string[] ?? [];
         stepDiagnostics.set("step", stepIdx);
-        stepDiagnostics.set("workersPlan", `Total:${threads}`);
+        stepDiagnostics.set("workersPlan", `Threads:${threads} Tasks:${workerDiagnostics.length}`);
         stepDiagnostics.set("totalTime", Date.now() - time);
         stepDiagnostics.set("totalTags", resultTagIds.size);
         stepDiagnostics.set("maxRSS", formatMB(formatKB(trackMemoryFunc.stats.rssPeakMemory)).toFixed(1) + "MB");
         stepDiagnostics.set("maxHeap", formatMB(formatKB(trackMemoryFunc.stats.heapPeakMemory)).toFixed(1) + "MB");
         consoleTableResults[`Run:${i} S:${stepIdx}`] = Object.fromEntries(stepDiagnostics.entries());
+        if (workerDiagnostics.length > 1000) { continue; }
         for (const [idx, workerDiagnostic] of workerDiagnostics.entries()) {
             consoleTableResults[`Run:${i} S:${stepIdx} W:${idx}`] = { "workersPlan": workerDiagnostic, "step": stepIdx };
         }
