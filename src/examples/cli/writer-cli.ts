@@ -42,7 +42,7 @@ trackMemoryFunc();
 console.log(`Started with ${threads} threads @ ${formatMB(formatKB(trackMemoryFunc.stats.heapPeakMemory)).toFixed(1)} heap used & ${formatMB(formatKB(trackMemoryFunc.stats.rssPeakMemory)).toFixed(1)} rss`);
 
 const insertTimeCol = (time: number, tag: bigint) => insertTime;
-const numericCol = (time: number, tag: bigint) => parseInt(`${time}.${tag}`)//Math.floor(Math.random() * 1000);
+const numericCol = (time: number, tag: bigint) => parseInt(`${time}.${tag.toString()}`)//Math.floor(Math.random() * 1000);
 const otherCol = (time: number, tag: bigint) => null;
 
 

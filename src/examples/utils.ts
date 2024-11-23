@@ -28,6 +28,7 @@ export function generateRandomSamples(totalTags: number, totalSamplesPerTag: num
     const samples = new Array<number | string | null>();
     const tagIds = generateTagNames(tagsStartFrom, totalTags);
     tagIds.forEach(tagId => {
+        //samples.length = 0;
         if (samples.length === 0) {
             for (let time = 0; time < totalSamplesPerTag; time++) {
                 const fictionalTime = startTime + (time * 1000);
