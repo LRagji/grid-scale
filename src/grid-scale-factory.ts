@@ -3,7 +3,7 @@ import { GridScale } from "./grid-scale.js";
 import { ChunkPlanner } from "./chunk-planner.js";
 import { INonVolatileHashMap } from "./non-volatile-hash-map/i-non-volatile-hash-map";
 import { fileURLToPath } from "node:url";
-import { GridScaleConfig } from "./grid-scale-config.js";
+import { GridScaleConfig } from "./types/grid-scale-config.js";
 import { IChunkMetadata } from "./chunk-metadata/i-chunk-metadata.js";
 
 export class GridScaleFactory {

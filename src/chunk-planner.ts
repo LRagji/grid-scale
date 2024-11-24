@@ -217,22 +217,4 @@ export class ChunkPlanner {
 
         return Array.from(tagBuckets.values());
     }
-
-    public singleTimeWiseStepDirector(timePages: [number, number][], tagPages: bigint[][], previousTimeStep: [number, number] | undefined, previousTagStep: bigint[] | undefined) {
-        let timeStepIndex = timePages.indexOf(previousTimeStep);
-        let tagStepIndex = tagPages.indexOf(previousTagStep);
-        if (timeStepIndex === -1 || tagStepIndex === -1) {
-            return { nextTimeStep: timePages[0], nextTagStep: tagPages[0] };
-        }
-        timeStepIndex++;
-        if (timeStepIndex >= timePages.length) {
-            timeStepIndex = 0;
-            tagStepIndex++;
-            if (tagStepIndex >= tagPages.length) {
-                return { nextTimeStep: undefined, nextTagStep: undefined };
-            }
-        }
-        return { nextTimeStep: timePages[timeStepIndex], nextTagStep: tagPages[tagStepIndex] };
-    }
-
 }

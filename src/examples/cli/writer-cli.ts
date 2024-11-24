@@ -2,7 +2,7 @@ import { formatKB, formatMB, generateRandomSamples, trackMemory } from "../utils
 import * as v8 from 'v8';
 import { RedisHashMap } from "../../non-volatile-hash-map/redis-hash-map.js";
 import { GridScaleFactory } from "../../grid-scale-factory.js";
-import { GridScaleConfig } from "../../grid-scale-config.js";
+import { GridScaleConfig } from "../../types/grid-scale-config.js";
 import { ChunkMetaRegistry } from "../chunk-meta-implementation/chunk-meta-registry.js";
 
 

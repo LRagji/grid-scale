@@ -1,12 +1,15 @@
+import crypto from "node:crypto";
 import { ChunkPlanner } from "./chunk-planner.js";
 import { StatefulProxyManager } from "node-apparatus";
 import { INonVolatileHashMap } from "./non-volatile-hash-map/i-non-volatile-hash-map.js";
 import { IChunk } from "./chunk/i-chunk.js";
 import { ChunkFactoryBase } from "./chunk/chunk-factory-base.js";
 import { IChunkMetadata } from "./chunk-metadata/i-chunk-metadata.js";
-import crypto from "node:crypto";
 import { metaKeyBirth, metaKeyLastWrite } from "./types/meta-keys.js";
 import { cachedPageCountKey, cachedRedirectKey, cachedTimeKey, cachePageKey } from "./types/cache-keys.js";
+import { IteratorPaginationConfig } from "./types/iterator-pagination-config.js";
+import { IteratorLambdaConfig } from "./types/iterator-lambda-config.js";
+import { IteratorPlanConfig } from "./types/iterator-plan-config.js";
 
 export class GridScale {
 
@@ -93,23 +96,17 @@ export class GridScale {
     }
 
     public async *iterator(tagIds: bigint[], startInclusive: number, endExclusive: number,
-        queryId = "queryId_" + Date.now().toString() + Math.random().toString(),
-        nextStepCallback: (timeSteps: [number, number][], tagsSteps: bigint[][], previousTimeStep: [number, number] | undefined, previousTagStep: bigint[] | undefined) => { nextTimeStep?: [number, number], nextTagStep?: bigint[] } = this.chunkPlanner.singleTimeWiseStepDirector,
-        timeStepSize = 2 ** 16,
-        tagStepSize = 2 ** 6,
-        mapLambdaPath: URL | undefined = undefined,
-        aggregateFunction: (first: boolean, last: boolean, inputPage: any[][] | null, accumulator: any) => { yield: boolean, yieldValue: any, accumulator: any } = undefined,
-        accumulator: any = undefined,
-        affinityBasedPlanning = true,
-        diagnostics = new Array<Map<string, any>>()): AsyncIterableIterator<any[][]> {
+        planConfig: IteratorPlanConfig = new IteratorPlanConfig(),
+        paginationConfig: IteratorPaginationConfig = new IteratorPaginationConfig(),
+        lambdaConfig: IteratorLambdaConfig<any> = new IteratorLambdaConfig<undefined>()): AsyncIterableIterator<any[][]> {
 
-        const timePages = this.chunkPlanner.decomposeByTimePages(startInclusive, endExclusive, timeStepSize);
-        const tagPages = this.chunkPlanner.decomposeByTagPages(tagIds, tagStepSize);
+        const timePages = this.chunkPlanner.decomposeByTimePages(startInclusive, endExclusive, paginationConfig.TimeStepSize);
+        const tagPages = this.chunkPlanner.decomposeByTagPages(tagIds, paginationConfig.TagStepSize);
         let aggregateResult;
-        let nextStep = nextStepCallback(timePages, tagPages, undefined, undefined);
+        let nextStep = paginationConfig.nextStepCallback(timePages, tagPages, undefined, undefined);
 
-        if (aggregateFunction !== undefined) {
-            aggregateResult = aggregateFunction(true, false, null, accumulator);
+        if (lambdaConfig.aggregateLambda !== undefined) {
+            aggregateResult = lambdaConfig.aggregateLambda(true, false, null, lambdaConfig.accumulator);
             if (aggregateResult.yield === true) {
                 yield aggregateResult.yieldValue;
             }
@@ -117,10 +114,10 @@ export class GridScale {
 
         while (nextStep.nextTagStep !== undefined && nextStep.nextTimeStep !== undefined) {
             const stepDiagnostics = new Map<string, any>();
-            const pageCursor = this.stepIterator(nextStep.nextTagStep, nextStep.nextTimeStep[0], nextStep.nextTimeStep[1], timeStepSize, tagStepSize, queryId, affinityBasedPlanning, mapLambdaPath, stepDiagnostics);
-            if (aggregateFunction !== undefined) {
+            const pageCursor = this.stepIterator(nextStep.nextTagStep, nextStep.nextTimeStep[0], nextStep.nextTimeStep[1], paginationConfig.TimeStepSize, paginationConfig.TagStepSize, planConfig.queryId, planConfig.affinityBasedPlan, lambdaConfig.windowLambdaPath, stepDiagnostics);
+            if (lambdaConfig.aggregateLambda !== undefined) {
                 for await (const page of pageCursor) {
-                    aggregateResult = aggregateFunction(false, false, page, aggregateResult.accumulator);
+                    aggregateResult = lambdaConfig.aggregateLambda(false, false, page, aggregateResult.accumulator);
                     if (aggregateResult.yield === true) {
                         yield aggregateResult.yieldValue;
                     }
@@ -129,12 +126,12 @@ export class GridScale {
             else {
                 yield* pageCursor;
             }
-            diagnostics.push(stepDiagnostics);
-            nextStep = nextStepCallback(timePages, tagPages, nextStep.nextTimeStep, nextStep.nextTagStep);
+            planConfig.diagnostics.push(stepDiagnostics);
+            nextStep = paginationConfig.nextStepCallback(timePages, tagPages, nextStep.nextTimeStep, nextStep.nextTagStep);
         }
 
-        if (aggregateFunction !== undefined) {
-            aggregateResult = aggregateFunction(false, true, null, aggregateResult.accumulator);
+        if (lambdaConfig.aggregateLambda !== undefined) {
+            aggregateResult = lambdaConfig.aggregateLambda(false, true, null, aggregateResult.accumulator);
             if (aggregateResult.yield === true) {
                 yield aggregateResult.yieldValue;
             }

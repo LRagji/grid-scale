@@ -1,10 +1,13 @@
 import { RedisHashMap } from "../../non-volatile-hash-map/redis-hash-map.js";
 import { formatKB, formatMB, generateTagNames, trackMemory } from "../utils.js";
 import { GridScaleFactory } from "../../grid-scale-factory.js";
-import { GridScaleConfig } from "../../grid-scale-config.js";
+import { GridScaleConfig } from "../../types/grid-scale-config.js";
 import { ChunkMetaRegistry } from "../chunk-meta-implementation/chunk-meta-registry.js";
 import { unzipSync } from "node:zlib";
 import tagSampleCount from "../lambda/tag-sample-count.js";
+import { IteratorPaginationConfig } from "../../types/iterator-pagination-config.js";
+import { IteratorLambdaConfig } from "../../types/iterator-lambda-config.js";
+import { IteratorPlanConfig } from "../../types/iterator-plan-config.js";
 
 //Query Plan
 //Read
@@ -32,10 +35,12 @@ trackMemoryFunc();
 console.log(`Started with ${threads} threads @ ${formatMB(formatKB(trackMemoryFunc.stats.heapPeakMemory)).toFixed(1)} heap used & ${formatMB(formatKB(trackMemoryFunc.stats.rssPeakMemory)).toFixed(1)} rss`);
 const totalTags = gsConfig.TagBucketWidth * 10;
 const startInclusiveTime = 0;//Date.now();
-const endExclusiveTime = gsConfig.TimeBucketWidth * 1//startInclusiveTime + config.timeBucketWidth;
+const endExclusiveTime = gsConfig.TimeBucketWidth * 2//startInclusiveTime + config.timeBucketWidth;
 const expectedSampleCount = (endExclusiveTime - startInclusiveTime) / 1000;
 
 const tagIds = generateTagNames(0, totalTags, 1);
+
+
 
 console.time("Total")
 const consoleTableResults = {};
@@ -96,24 +101,35 @@ const multiThreadDirector = (timePages: [number, number][], tagPages: bigint[][]
     }
 };
 
-const mapLambda = new URL("../lambda/zip-window.js", import.meta.url);
+const planConfig = new IteratorPlanConfig();
+
+const paginationConfig = new IteratorPaginationConfig();
+paginationConfig.TimeStepSize = gsConfig.TimeBucketWidth;
+paginationConfig.TagStepSize = gsConfig.TagBucketWidth;
+paginationConfig.nextStepCallback = multiThreadDirector;
+
+const lambdaConfig = new IteratorLambdaConfig<Map<string, number>>();
+lambdaConfig.windowLambdaPath = new URL("../lambda/zip-window.js", import.meta.url);
+lambdaConfig.aggregateLambda = countPerTagFunction;
+
+
 for (let i = 0; i < 1; i++) {
     const time = Date.now();
     const resultTagIds = new Set<string>();
     //const timePages = gridScale.fetchTimePages(startInclusiveTime, i + endExclusiveTime);
 
-    let tagCounts = new Map<string, number>();
+    lambdaConfig.accumulator = new Map<string, number>();
     //while (timePages.length > 0) {
-    const diagnostics = new Array<Map<string, any>>();
+    planConfig.diagnostics = new Array<Map<string, any>>();
     //const timePage = timePages.shift();
     //const result = gridScale.iteratorByTimePageWithAggregate(tagIds, timePage[0], timePage[1], countPerTagFunction, tagCounts, `Q[${i}]`, 10000, diagnostics);
     //for await (const processedRow of result) {
     //  tagCounts = new Map<string, any>(processedRow as [string, number][]);
     //}
-    const pageCursor = gridScale.iterator(tagIds, startInclusiveTime, endExclusiveTime, undefined, multiThreadDirector, gsConfig.TimeBucketWidth, gsConfig.TagBucketWidth, mapLambda, countPerTagFunction, tagCounts, false, diagnostics);
+    const pageCursor = gridScale.iterator(tagIds, startInclusiveTime, endExclusiveTime, planConfig, paginationConfig, lambdaConfig);
     for await (const page of pageCursor) {
         trackMemoryFunc();
-        tagCounts = new Map<string, any>(page as [string, number][]);
+        lambdaConfig.accumulator = new Map<string, any>(page as [string, number][]);
         // for (const row of page) {
         //     resultTagIds.add(row[4]);
         // }
@@ -121,7 +137,7 @@ for (let i = 0; i < 1; i++) {
     }
 
     //}
-    for (const [stepIdx, stepDiagnostics] of diagnostics.entries()) {
+    for (const [stepIdx, stepDiagnostics] of planConfig.diagnostics.entries()) {
         const workerDiagnostics = stepDiagnostics.get("workersPlan") as string[] ?? [];
         stepDiagnostics.set("step", stepIdx);
         stepDiagnostics.set("workersPlan", `Threads:${threads} Tasks:${workerDiagnostics.length}`);
@@ -137,8 +153,8 @@ for (let i = 0; i < 1; i++) {
     }
 
 
-    if (tagCounts.size > 0) {
-        console.log(`${tagCounts.size} Tags without 86400 samples.`);
+    if (lambdaConfig.accumulator.size > 0) {
+        console.log(`${lambdaConfig.accumulator.size} Tags without 86400 samples.`);
     }
     else {
         console.log(`All tags have ${expectedSampleCount} samples.`);
