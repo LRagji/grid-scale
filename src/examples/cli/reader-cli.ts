@@ -3,12 +3,11 @@ import { formatKB, formatMB, generateTagNames, trackMemory } from "../utils.js";
 import { GridScaleFactory } from "../../grid-scale-factory.js";
 import { GridScaleConfig } from "../../types/grid-scale-config.js";
 import { ChunkMetaRegistry } from "../chunk-meta-implementation/chunk-meta-registry.js";
-import { unzipSync } from "node:zlib";
-import tagSampleCount from "../lambda/tag-sample-count.js";
 import { IteratorPaginationConfig } from "../../types/iterator-pagination-config.js";
 import { IteratorLambdaConfig } from "../../types/iterator-lambda-config.js";
 import { IteratorPlanConfig } from "../../types/iterator-plan-config.js";
 import { IteratorCacheConfig } from "../../types/iterator-cache-config.js";
+import countPerTagFunction from "../lambda/tag-sample-count.js";
 
 //Query Plan
 //Read
@@ -33,54 +32,18 @@ await chunkMetaRegistry.initialize();
 const gridScale = await GridScaleFactory.create(chunkRelations, new URL("../chunk-factory-implementation/cached-chunk-factory.js", import.meta.url), chunkMetaRegistry, chunkCache, gsConfig);
 
 trackMemoryFunc();
-console.log(`Started with ${threads} threads @ ${formatMB(formatKB(trackMemoryFunc.stats.heapPeakMemory)).toFixed(1)} heap used & ${formatMB(formatKB(trackMemoryFunc.stats.rssPeakMemory)).toFixed(1)} rss |${Date.now()}|`);
+console.log(`Started with ${threads} threads @ ${formatMB(formatKB(trackMemoryFunc.stats.heapPeakMemory)).toFixed(1)} heap used & ${formatMB(formatKB(trackMemoryFunc.stats.rssPeakMemory)).toFixed(1)} rss |${new Date().toString()}|`);
 const totalTags = gsConfig.TagBucketWidth * 10;
 const startInclusiveTime = 0;//Date.now();
 const endExclusiveTime = gsConfig.TimeBucketWidth * 2//startInclusiveTime + config.timeBucketWidth;
-const expectedSampleCount = (endExclusiveTime - startInclusiveTime) / 1000;
+let expectedSampleCount = (endExclusiveTime - startInclusiveTime) / 1000;
+expectedSampleCount = Math.min(86400, expectedSampleCount)
 
 const tagIds = generateTagNames(0, totalTags, 1);
 
 
-
 console.time("Total")
 const consoleTableResults = {};
-const countPerTagFunction = (first: boolean, last: boolean, page: any[][], acc: Map<string, number>) => {
-    const returnObject = {
-        yield: false,
-        yieldValue: null,
-        accumulator: acc
-    };
-    if (first === true) {
-        return returnObject;
-    }
-    //GZip Processing
-    if (page != null && Array.isArray(page) && page.length > 0) {
-        page = JSON.parse(unzipSync(Buffer.from(page as unknown as Uint8Array)).toString());
-        page = tagSampleCount(page);
-    }
-    if (last === true) {
-        console.log("Total Tags: ", acc.size);
-
-        for (const [tagId, count] of acc.entries()) {
-            const delta = Math.abs(expectedSampleCount - count);
-            if (delta <= 1) {
-                acc.delete(tagId);
-            }
-        }
-        returnObject.yield = true;
-        returnObject.yieldValue = Array.from(acc.entries());
-        returnObject.accumulator.clear();
-        return returnObject;
-    }
-    for (const row of page) {
-        const tagId = row[0];
-        const existingCount = row[1];
-        const count = acc.get(tagId) ?? 0;
-        acc.set(tagId, count + existingCount);
-    }
-    return returnObject;
-};
 
 const multiThreadDirector = (timePages: [number, number][], tagPages: bigint[][], previousTimeStep: [number, number] | undefined, previousTagStep: bigint[] | undefined) => {
     // let timeStepIndex = timePages.indexOf(previousTimeStep);
@@ -111,7 +74,6 @@ paginationConfig.TagStepSize = gsConfig.TagBucketWidth;
 paginationConfig.nextStepCallback = multiThreadDirector;
 
 const lambdaConfig = new IteratorLambdaConfig<Map<string, number>>();
-lambdaConfig.windowLambdaPath = new URL("../lambda/zip-window.js", import.meta.url);
 lambdaConfig.aggregateLambda = countPerTagFunction;
 
 
@@ -132,6 +94,15 @@ for (let i = 0; i < 1; i++) {
     for await (const page of pageCursor) {
         trackMemoryFunc();
         lambdaConfig.accumulator = new Map<string, any>(page as [string, number][]);
+        console.log("Total Tags: ", lambdaConfig.accumulator.size);
+
+        for (const [tagId, count] of lambdaConfig.accumulator.entries()) {
+            const delta = Math.abs(expectedSampleCount - count);
+            if (delta <= 1) {
+                lambdaConfig.accumulator.delete(tagId);
+            }
+        }
+
         // for (const row of page) {
         //     resultTagIds.add(row[4]);
         // }

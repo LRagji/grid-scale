@@ -11,6 +11,7 @@ import { IteratorPaginationConfig } from "./types/iterator-pagination-config.js"
 import { IteratorLambdaConfig } from "./types/iterator-lambda-config.js";
 import { IteratorPlanConfig } from "./types/iterator-plan-config.js";
 import { IteratorCacheConfig } from "./types/iterator-cache-config.js";
+import { unzipSync } from "node:zlib";
 
 export class GridScale {
 
@@ -116,7 +117,7 @@ export class GridScale {
 
         while (nextStep.nextTagStep !== undefined && nextStep.nextTimeStep !== undefined) {
             const stepDiagnostics = new Map<string, any>();
-            const pageCursor = this.stepIterator(nextStep.nextTagStep, nextStep.nextTimeStep[0], nextStep.nextTimeStep[1], paginationConfig.TimeStepSize, paginationConfig.TagStepSize, planConfig.perThreadPageSize, planConfig.queryId, planConfig.affinityBasedPlan, lambdaConfig.windowLambdaPath, stepDiagnostics, cacheConfig.readCache, cacheConfig.updateCache, cacheConfig.resultCoolDownTime);
+            const pageCursor = this.stepIterator(nextStep.nextTagStep, nextStep.nextTimeStep[0], nextStep.nextTimeStep[1], paginationConfig.TimeStepSize, paginationConfig.TagStepSize, planConfig.perThreadPageSize, planConfig.queryId, planConfig.affinityBasedPlan, lambdaConfig.windowLambdaPath?.toString() ?? "", stepDiagnostics, cacheConfig.readCache, cacheConfig.updateCache, cacheConfig.resultCoolDownTime, planConfig.zippedResults);
             if (lambdaConfig.aggregateLambda !== undefined) {
                 for await (const page of pageCursor) {
                     aggregateResult = lambdaConfig.aggregateLambda(false, false, page, aggregateResult.accumulator);
@@ -141,21 +142,21 @@ export class GridScale {
 
     }
 
-    private async *stepIterator(tagIds: bigint[], startInclusive: number, endExclusive: number, timeStepSize: number, tagStepSize: number, resultPageSize: number, queryId: string, affinityBasedPlanning: boolean, mapLambdaPath: URL | undefined, diagnostics: Map<string, any>, readCache: boolean, updateCache: boolean, resultCoolDownTime: number): AsyncIterableIterator<any[][]> {
+    private async *stepIterator(tagIds: bigint[], startInclusive: number, endExclusive: number, timeStepSize: number, tagStepSize: number, resultPageSize: number, queryId: string, affinityBasedPlanning: boolean, mapLambdaPath: string, diagnostics: Map<string, any>, readCache: boolean, updateCache: boolean, resultCoolDownTime: number, zippedResults: boolean): AsyncIterableIterator<any[][]> {
         let timings = Date.now();
         const iterationPlan = await this.chunkPlanner.planRange(tagIds, startInclusive, endExclusive, timeStepSize, tagStepSize, this.remoteProxies.WorkerCount, affinityBasedPlanning);
         diagnostics.set("planTime", Date.now() - timings);
 
         timings = Date.now();
         const diagnosticsWorkerPlan = new Array<string>();
-        for await (const resultData of this.threadsIterator<any[]>(queryId, iterationPlan.affinityDistributedChunkReads, resultPageSize, mapLambdaPath, diagnosticsWorkerPlan, readCache, updateCache, resultCoolDownTime)) {
+        for await (const resultData of this.threadsIterator<any[]>(queryId, iterationPlan.affinityDistributedChunkReads, resultPageSize, mapLambdaPath, diagnosticsWorkerPlan, readCache, updateCache, resultCoolDownTime, zippedResults)) {
             yield resultData;
         }
         diagnostics.set("workersPlan", diagnosticsWorkerPlan);
         diagnostics.set("yieldTime", Date.now() - timings);
     }
 
-    private async *threadsIterator<T>(queryId: string, affinityDistributedChunkReads: [Set<string>, Set<string>, [number, number], number][][], resultPageSize: number, mapLambdaPath: URL, diagnosticsWorkerPlan: string[], readCache: boolean, updateCache: boolean, resultCoolDownTime: number): AsyncIterableIterator<T[]> {
+    private async *threadsIterator<T>(queryId: string, affinityDistributedChunkReads: [Set<string>, Set<string>, [number, number], number][][], resultPageSize: number, mapLambdaPath: string, diagnosticsWorkerPlan: string[], readCache: boolean, updateCache: boolean, resultCoolDownTime: number, zippedResults: boolean): AsyncIterableIterator<T[]> {
         const threadCursors = new Map<number, AsyncIterableIterator<T[]>>();
         const cursorResults = new Map<number, Promise<{ result: IteratorResult<T[]>, key: number }>>();
         const triggerNextIterationWithKey = (cursor: AsyncIterableIterator<T[]>, key: number) => cursor.next().then((result) => ({ result, key }));
@@ -163,7 +164,7 @@ export class GridScale {
             //Open Cursors
             for (const [workerIdx, plans] of affinityDistributedChunkReads.entries()) {
                 if (plans === undefined || plans.length === 0) { continue; }
-                const cursor = this.planIterator<T>(queryId, plans, resultPageSize, mapLambdaPath, workerIdx, diagnosticsWorkerPlan, readCache, updateCache, resultCoolDownTime);
+                const cursor = this.planIterator<T>(queryId, plans, resultPageSize, mapLambdaPath, workerIdx, diagnosticsWorkerPlan, readCache, updateCache, resultCoolDownTime, zippedResults);
                 threadCursors.set(workerIdx, cursor);
                 //Trigger First Iteration
                 cursorResults.set(workerIdx, triggerNextIterationWithKey(cursor, workerIdx));
@@ -192,7 +193,7 @@ export class GridScale {
         }
     }
 
-    private async *planIterator<T>(queryId: string, plans: [Set<string>, Set<string>, [number, number], number][], resultPageSize: number, mapLambdaPath: URL, workerIndex: number, diagnosticsWorkerPlan: string[], readCache: boolean, updateCache: boolean, resultCoolDownTime: number): AsyncIterableIterator<T[]> {
+    private async *planIterator<T>(queryId: string, plans: [Set<string>, Set<string>, [number, number], number][], resultPageSize: number, mapLambdaPath: string, workerIndex: number, diagnosticsWorkerPlan: string[], readCache: boolean, updateCache: boolean, resultCoolDownTime: number, zippedResults: boolean): AsyncIterableIterator<T[]> {
 
         let planCounter = 0;
         for (const [connectionPaths, tagNames, [startInclusive, endExclusive], lastWritten] of plans) {
@@ -203,7 +204,8 @@ export class GridScale {
                 .update(startInclusive.toString())
                 .update(endExclusive.toString())
                 .update(resultPageSize.toString())
-                .update(mapLambdaPath.toString());
+                .update(zippedResults.toString())
+                .update(mapLambdaPath);
 
             let totalPages = 0;
             //Cache can expire on 2 accounts 1. last write to the same path 2. Some one linked a new chunk to the path.
@@ -220,13 +222,19 @@ export class GridScale {
             const updateCacheInternal = updateCache && Date.now() - lastWritten > resultCoolDownTime;
             if (returnFromCache === false) {
                 const tempCacheKey = crypto.randomBytes(16).toString("hex");
-                const pageCursor = this.pageIterator<T>(queryId, tagNames, connectionPaths, startInclusive, endExclusive, resultPageSize, mapLambdaPath, workerIndex);
+                const pageCursor = this.pageIterator<T>(queryId, tagNames, connectionPaths, startInclusive, endExclusive, resultPageSize, mapLambdaPath, workerIndex, zippedResults);
                 for await (const page of pageCursor) {
                     if (page.length > 0) {
                         if (updateCacheInternal === true) {
-                            await this.chunkCache.set(tempCacheKey, [cachePageKey(totalPages), JSON.stringify(page)]);//We have to save as we cannot hold so many pages in memory
+                            await this.chunkCache.set(tempCacheKey, [cachePageKey(totalPages), JSON.stringify(page)]);//We have to save each page at a time as we cannot hold so many pages in memory
                         }
-                        yield page;
+                        if (zippedResults === true) {
+                            const unZippedPage = JSON.parse(unzipSync(Buffer.from(page as unknown as Uint8Array)).toString());
+                            yield unZippedPage;
+                        }
+                        else {
+                            yield page;
+                        }
                         totalPages++;
                     }
                 }
@@ -240,14 +248,21 @@ export class GridScale {
                 for (let pageCounter = 0; pageCounter < totalPages; pageCounter++) {
                     const pageKey = cachePageKey(pageCounter);
                     const cachedPaged = await this.chunkCache.getFieldValues(actualCacheKey, [pageKey]);
-                    if (cachedPaged.size != 0 && cachedPaged.get(pageKey) != undefined) {
-                        const page = cachedPaged.size > 0 ? JSON.parse(cachedPaged.get(pageKey) ?? "[]") as T[] : new Array<T>();
-                        yield page;
+                    const cachedPage = cachedPaged.get(pageKey);
+                    if (cachedPaged.size != 0 && cachedPage != undefined) {
+                        if (zippedResults === true) {
+                            const unZippedPage = JSON.parse(unzipSync(Buffer.from(JSON.parse(cachedPage) as unknown as Uint8Array)).toString());
+                            yield unZippedPage;
+                        }
+                        else {
+                            const page = cachedPaged.size > 0 ? JSON.parse(cachedPage) as T[] : new Array<T>();
+                            yield page;
+                        }
                     }
                     else {
                         //To eliminate this scenario we need to change the query mechanism to paginated results instead of iteration based, 
                         //which can be done by taking shorter steps, but this will increase time and reduce memory.
-                        console.warn(`Cache(${actualCacheKey}) was removed or deleted while read was ongoing for ${pageKey} of total pages ${totalPages}`);
+                        console.warn(`Cache(${actualCacheKey}) was removed or deleted while read was ongoing for ${pageKey} of total pages ${totalPages} for Query:${queryId}`);
                     }
                 }
             }
@@ -256,10 +271,10 @@ export class GridScale {
         }
     }
 
-    private async *pageIterator<T>(queryId: string, tagNames: Set<string>, connectionPaths: Set<string>, startInclusive: number, endExclusive: number, resultPageSize: number, mapLambdaPath: URL, workerIndex: number): AsyncIterableIterator<T[]> {
+    private async *pageIterator<T>(queryId: string, tagNames: Set<string>, connectionPaths: Set<string>, startInclusive: number, endExclusive: number, resultPageSize: number, mapLambdaPath: string, workerIndex: number, zippedResults: boolean): AsyncIterableIterator<T[]> {
         let page = new Array<T>();
         do {
-            page = await this.remoteProxies.invokeMethod<T[]>("bulkIterate", [queryId, tagNames, connectionPaths, startInclusive, endExclusive, resultPageSize, mapLambdaPath?.toString()], workerIndex);
+            page = await this.remoteProxies.invokeMethod<T[]>("bulkIterate", [queryId, tagNames, connectionPaths, startInclusive, endExclusive, resultPageSize, mapLambdaPath, zippedResults], workerIndex);
             if (page.length > 0) {
                 yield page;
             }

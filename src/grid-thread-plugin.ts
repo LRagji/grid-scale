@@ -3,6 +3,7 @@ import { ChunkFactoryBase } from "./chunk/chunk-factory-base.js";
 import { IChunk } from "./chunk/i-chunk.js";
 import { gridKWayMerge } from "./merge/grid-row-merge.js";
 import { isMainThread, parentPort, MessagePort } from "node:worker_threads";
+import { gzipSync } from "node:zlib";
 
 export class GridThreadPlugin extends StatefulRecipient {
 
@@ -35,9 +36,9 @@ export class GridThreadPlugin extends StatefulRecipient {
         }
     }
 
-    public async bulkIterate(queryId: string, tagSet: Set<string>, connectionPaths: Set<string>, startInclusive: number, endExclusive: number, pageSize: number, lambdaFunctionPath: string | null): Promise<any[][]> {
+    public async bulkIterate(queryId: string, tagSet: Set<string>, connectionPaths: Set<string>, startInclusive: number, endExclusive: number, pageSize: number, lambdaFunctionPath: string, zippedResults: boolean): Promise<any[][]> {
         let lambdaFunction: (page: any[][]) => any[][] = (page: any[][]) => page;
-        if (lambdaFunctionPath != undefined) {
+        if (lambdaFunctionPath != "") {
             lambdaFunction = (await import(lambdaFunctionPath)).default as (page: any[][]) => any[][];
         }
 
@@ -53,7 +54,7 @@ export class GridThreadPlugin extends StatefulRecipient {
             }
 
             if (iterators.length === 0) {
-                return page;
+                return this.readyReturnPage(page, zippedResults);
             }
             else if (iterators.length === 1) {
                 this.iteratorCache.set(queryId, iterators[0]);
@@ -86,7 +87,17 @@ export class GridThreadPlugin extends StatefulRecipient {
             this.clearIteration(queryId);
         }
 
-        return page;
+        return this.readyReturnPage(page, zippedResults);
+    }
+
+    private readyReturnPage(page: any[][], zippedResults: boolean): any[][] {
+        if (zippedResults === true && page.length !== 0) {
+            const compressedPage = Array.from(gzipSync(JSON.stringify(page)));
+            return compressedPage as unknown as any[][];
+        }
+        else {
+            return page;
+        }
     }
 
     public clearIteration(queryId: string): void {
