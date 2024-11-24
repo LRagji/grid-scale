@@ -35,7 +35,7 @@
   "dependencies": {
     "better-sqlite3": "^11.3.0",
     "express-service-bootstrap": "^0.15.0",
-    "node-apparatus": "^0.1.11",
+    "node-apparatus": "^0.1.12",
     "redis": "^4.7.0"
   }
 }
