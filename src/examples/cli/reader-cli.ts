@@ -121,7 +121,7 @@ for (let i = 0; i < 1; i++) {
         consoleTableResults[`Run:${i} S:${stepIdx}`] = Object.fromEntries(stepDiagnostics.entries());
         if (workerDiagnostics.length > 1000) { continue; }
         for (const [idx, workerDiagnostic] of workerDiagnostics.entries()) {
-            consoleTableResults[`Run:${i} S:${stepIdx} W:${idx}`] = { "workersPlan": workerDiagnostic, "step": stepIdx };
+            consoleTableResults[`Run:${i} S:${stepIdx} W:${idx}`] = { "workersPlan": workerDiagnostic };
         }
     }
 
