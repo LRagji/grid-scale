@@ -10,6 +10,7 @@ import { cachedPageCountKey, cachedRedirectKey, cachedTimeKey, cachePageKey } fr
 import { IteratorPaginationConfig } from "./types/iterator-pagination-config.js";
 import { IteratorLambdaConfig } from "./types/iterator-lambda-config.js";
 import { IteratorPlanConfig } from "./types/iterator-plan-config.js";
+import { IteratorCacheConfig } from "./types/iterator-cache-config.js";
 
 export class GridScale {
 
@@ -98,6 +99,7 @@ export class GridScale {
     public async *iterator(tagIds: bigint[], startInclusive: number, endExclusive: number,
         planConfig: IteratorPlanConfig = new IteratorPlanConfig(),
         paginationConfig: IteratorPaginationConfig = new IteratorPaginationConfig(),
+        cacheConfig: IteratorCacheConfig = new IteratorCacheConfig(),
         lambdaConfig: IteratorLambdaConfig<any> = new IteratorLambdaConfig<undefined>()): AsyncIterableIterator<any[][]> {
 
         const timePages = this.chunkPlanner.decomposeByTimePages(startInclusive, endExclusive, paginationConfig.TimeStepSize);
@@ -114,7 +116,7 @@ export class GridScale {
 
         while (nextStep.nextTagStep !== undefined && nextStep.nextTimeStep !== undefined) {
             const stepDiagnostics = new Map<string, any>();
-            const pageCursor = this.stepIterator(nextStep.nextTagStep, nextStep.nextTimeStep[0], nextStep.nextTimeStep[1], paginationConfig.TimeStepSize, paginationConfig.TagStepSize, planConfig.queryId, planConfig.affinityBasedPlan, lambdaConfig.windowLambdaPath, stepDiagnostics);
+            const pageCursor = this.stepIterator(nextStep.nextTagStep, nextStep.nextTimeStep[0], nextStep.nextTimeStep[1], paginationConfig.TimeStepSize, paginationConfig.TagStepSize, planConfig.perThreadPageSize, planConfig.queryId, planConfig.affinityBasedPlan, lambdaConfig.windowLambdaPath, stepDiagnostics, cacheConfig.readCache, cacheConfig.updateCache, cacheConfig.resultCoolDownTime);
             if (lambdaConfig.aggregateLambda !== undefined) {
                 for await (const page of pageCursor) {
                     aggregateResult = lambdaConfig.aggregateLambda(false, false, page, aggregateResult.accumulator);
@@ -139,21 +141,21 @@ export class GridScale {
 
     }
 
-    private async *stepIterator(tagIds: bigint[], startInclusive: number, endExclusive: number, timeStepSize: number, tagStepSize: number, queryId: string, affinityBasedPlanning: boolean, mapLambdaPath: URL | undefined, diagnostics: Map<string, any>): AsyncIterableIterator<any[][]> {
+    private async *stepIterator(tagIds: bigint[], startInclusive: number, endExclusive: number, timeStepSize: number, tagStepSize: number, resultPageSize: number, queryId: string, affinityBasedPlanning: boolean, mapLambdaPath: URL | undefined, diagnostics: Map<string, any>, readCache: boolean, updateCache: boolean, resultCoolDownTime: number): AsyncIterableIterator<any[][]> {
         let timings = Date.now();
         const iterationPlan = await this.chunkPlanner.planRange(tagIds, startInclusive, endExclusive, timeStepSize, tagStepSize, this.remoteProxies.WorkerCount, affinityBasedPlanning);
         diagnostics.set("planTime", Date.now() - timings);
 
         timings = Date.now();
         const diagnosticsWorkerPlan = new Array<string>();
-        for await (const resultData of this.threadsIterator<any[]>(queryId, iterationPlan.affinityDistributedChunkReads, mapLambdaPath, diagnosticsWorkerPlan)) {
+        for await (const resultData of this.threadsIterator<any[]>(queryId, iterationPlan.affinityDistributedChunkReads, resultPageSize, mapLambdaPath, diagnosticsWorkerPlan, readCache, updateCache, resultCoolDownTime)) {
             yield resultData;
         }
         diagnostics.set("workersPlan", diagnosticsWorkerPlan);
         diagnostics.set("yieldTime", Date.now() - timings);
     }
 
-    private async *threadsIterator<T>(queryId: string, affinityDistributedChunkReads: [Set<string>, Set<string>, [number, number], number][][], mapLambdaPath: URL, diagnosticsWorkerPlan: string[]): AsyncIterableIterator<T[]> {
+    private async *threadsIterator<T>(queryId: string, affinityDistributedChunkReads: [Set<string>, Set<string>, [number, number], number][][], resultPageSize: number, mapLambdaPath: URL, diagnosticsWorkerPlan: string[], readCache: boolean, updateCache: boolean, resultCoolDownTime: number): AsyncIterableIterator<T[]> {
         const threadCursors = new Map<number, AsyncIterableIterator<T[]>>();
         const cursorResults = new Map<number, Promise<{ result: IteratorResult<T[]>, key: number }>>();
         const triggerNextIterationWithKey = (cursor: AsyncIterableIterator<T[]>, key: number) => cursor.next().then((result) => ({ result, key }));
@@ -161,7 +163,7 @@ export class GridScale {
             //Open Cursors
             for (const [workerIdx, plans] of affinityDistributedChunkReads.entries()) {
                 if (plans === undefined || plans.length === 0) { continue; }
-                const cursor = this.planIterator<T>(queryId, plans, mapLambdaPath, workerIdx, diagnosticsWorkerPlan);
+                const cursor = this.planIterator<T>(queryId, plans, resultPageSize, mapLambdaPath, workerIdx, diagnosticsWorkerPlan, readCache, updateCache, resultCoolDownTime);
                 threadCursors.set(workerIdx, cursor);
                 //Trigger First Iteration
                 cursorResults.set(workerIdx, triggerNextIterationWithKey(cursor, workerIdx));
@@ -190,44 +192,45 @@ export class GridScale {
         }
     }
 
-    private async *planIterator<T>(queryId: string, plans: [Set<string>, Set<string>, [number, number], number][], mapLambdaPath: URL, workerIndex: number, diagnosticsWorkerPlan: string[]): AsyncIterableIterator<T[]> {
+    private async *planIterator<T>(queryId: string, plans: [Set<string>, Set<string>, [number, number], number][], resultPageSize: number, mapLambdaPath: URL, workerIndex: number, diagnosticsWorkerPlan: string[], readCache: boolean, updateCache: boolean, resultCoolDownTime: number): AsyncIterableIterator<T[]> {
 
         let planCounter = 0;
         for (const [connectionPaths, tagNames, [startInclusive, endExclusive], lastWritten] of plans) {
-
-            const cacheIndexKeyHash = crypto.createHash("md5")
+            let returnFromCache = readCache;
+            const cacheIndexKeyHash = returnFromCache && crypto.createHash("md5")
                 .update(Array.from(connectionPaths).sort().join(""))
                 .update(Array.from(tagNames).sort().join(""))
                 .update(startInclusive.toString())
                 .update(endExclusive.toString())
+                .update(resultPageSize.toString())
                 .update(mapLambdaPath.toString());
 
             let totalPages = 0;
             //Cache can expire on 2 accounts 1. last write to the same path 2. Some one linked a new chunk to the path.
-            const cacheIndexKey = `plan-${cacheIndexKeyHash.digest("hex")}`;
-            let cacheResponse = await this.chunkCache.getFieldValues(cacheIndexKey, [cachedRedirectKey]);
-            let actualCacheKey = cacheResponse.get(cachedRedirectKey) ?? "";
-            let returnFromCache = actualCacheKey != "";
+            const cacheIndexKey = returnFromCache && `plan-${cacheIndexKeyHash.digest("hex")}`;
+            let cacheResponse = returnFromCache && await this.chunkCache.getFieldValues(cacheIndexKey, [cachedRedirectKey]);
+            let actualCacheKey = returnFromCache && (cacheResponse.get(cachedRedirectKey) ?? "");
+            returnFromCache = returnFromCache && actualCacheKey != "";
             cacheResponse = returnFromCache && await this.chunkCache.getFieldValues(actualCacheKey, [cachedTimeKey, cachedPageCountKey]);
             returnFromCache = returnFromCache && cacheResponse.size > 0;
             returnFromCache = returnFromCache && parseInt(cacheResponse.get(cachedTimeKey) ?? "0", 10) >= lastWritten;
             returnFromCache = returnFromCache && parseInt(cacheResponse.get(cachedPageCountKey) ?? "0", 10) > 0;
 
-            const writeCoolDownPeriod = 1000 * 60 * 5;//5 minutes
-            const updateCache = Date.now() - lastWritten > writeCoolDownPeriod;
+
+            const updateCacheInternal = updateCache && Date.now() - lastWritten > resultCoolDownTime;
             if (returnFromCache === false) {
                 const tempCacheKey = crypto.randomBytes(16).toString("hex");
-                const pageCursor = this.pageIterator<T>(queryId, tagNames, connectionPaths, startInclusive, endExclusive, mapLambdaPath, workerIndex);
+                const pageCursor = this.pageIterator<T>(queryId, tagNames, connectionPaths, startInclusive, endExclusive, resultPageSize, mapLambdaPath, workerIndex);
                 for await (const page of pageCursor) {
                     if (page.length > 0) {
-                        if (updateCache === true) {
+                        if (updateCacheInternal === true) {
                             await this.chunkCache.set(tempCacheKey, [cachePageKey(totalPages), JSON.stringify(page)]);//We have to save as we cannot hold so many pages in memory
                         }
                         yield page;
                         totalPages++;
                     }
                 }
-                if (updateCache === true) {
+                if (updateCacheInternal === true) {
                     await this.chunkCache.set(tempCacheKey, [cachedTimeKey, lastWritten.toString(), cachedPageCountKey, totalPages.toString()]);
                     await this.chunkCache.set(cacheIndexKey, [cachedRedirectKey, tempCacheKey]);//Commit for others to read.
                 }
@@ -253,10 +256,10 @@ export class GridScale {
         }
     }
 
-    private async *pageIterator<T>(queryId: string, tagNames: Set<string>, connectionPaths: Set<string>, startInclusive: number, endExclusive: number, mapLambdaPath: URL, workerIndex: number): AsyncIterableIterator<T[]> {
+    private async *pageIterator<T>(queryId: string, tagNames: Set<string>, connectionPaths: Set<string>, startInclusive: number, endExclusive: number, resultPageSize: number, mapLambdaPath: URL, workerIndex: number): AsyncIterableIterator<T[]> {
         let page = new Array<T>();
         do {
-            page = await this.remoteProxies.invokeMethod<T[]>("bulkIterate", [queryId, tagNames, connectionPaths, startInclusive, endExclusive, 10000, mapLambdaPath?.toString()], workerIndex);
+            page = await this.remoteProxies.invokeMethod<T[]>("bulkIterate", [queryId, tagNames, connectionPaths, startInclusive, endExclusive, resultPageSize, mapLambdaPath?.toString()], workerIndex);
             if (page.length > 0) {
                 yield page;
             }

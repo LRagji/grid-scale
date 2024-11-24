@@ -8,6 +8,7 @@ import tagSampleCount from "../lambda/tag-sample-count.js";
 import { IteratorPaginationConfig } from "../../types/iterator-pagination-config.js";
 import { IteratorLambdaConfig } from "../../types/iterator-lambda-config.js";
 import { IteratorPlanConfig } from "../../types/iterator-plan-config.js";
+import { IteratorCacheConfig } from "../../types/iterator-cache-config.js";
 
 //Query Plan
 //Read
@@ -32,7 +33,7 @@ await chunkMetaRegistry.initialize();
 const gridScale = await GridScaleFactory.create(chunkRelations, new URL("../chunk-factory-implementation/cached-chunk-factory.js", import.meta.url), chunkMetaRegistry, chunkCache, gsConfig);
 
 trackMemoryFunc();
-console.log(`Started with ${threads} threads @ ${formatMB(formatKB(trackMemoryFunc.stats.heapPeakMemory)).toFixed(1)} heap used & ${formatMB(formatKB(trackMemoryFunc.stats.rssPeakMemory)).toFixed(1)} rss`);
+console.log(`Started with ${threads} threads @ ${formatMB(formatKB(trackMemoryFunc.stats.heapPeakMemory)).toFixed(1)} heap used & ${formatMB(formatKB(trackMemoryFunc.stats.rssPeakMemory)).toFixed(1)} rss |${Date.now()}|`);
 const totalTags = gsConfig.TagBucketWidth * 10;
 const startInclusiveTime = 0;//Date.now();
 const endExclusiveTime = gsConfig.TimeBucketWidth * 2//startInclusiveTime + config.timeBucketWidth;
@@ -102,6 +103,7 @@ const multiThreadDirector = (timePages: [number, number][], tagPages: bigint[][]
 };
 
 const planConfig = new IteratorPlanConfig();
+const cacheConfig = new IteratorCacheConfig();
 
 const paginationConfig = new IteratorPaginationConfig();
 paginationConfig.TimeStepSize = gsConfig.TimeBucketWidth;
@@ -126,7 +128,7 @@ for (let i = 0; i < 1; i++) {
     //for await (const processedRow of result) {
     //  tagCounts = new Map<string, any>(processedRow as [string, number][]);
     //}
-    const pageCursor = gridScale.iterator(tagIds, startInclusiveTime, endExclusiveTime, planConfig, paginationConfig, lambdaConfig);
+    const pageCursor = gridScale.iterator(tagIds, startInclusiveTime, endExclusiveTime, planConfig, paginationConfig, cacheConfig, lambdaConfig);
     for await (const page of pageCursor) {
         trackMemoryFunc();
         lambdaConfig.accumulator = new Map<string, any>(page as [string, number][]);
@@ -154,7 +156,7 @@ for (let i = 0; i < 1; i++) {
 
 
     if (lambdaConfig.accumulator.size > 0) {
-        console.log(`${lambdaConfig.accumulator.size} Tags without 86400 samples.`);
+        console.log(`${lambdaConfig.accumulator.size} Tags without ${expectedSampleCount} samples.`);
     }
     else {
         console.log(`All tags have ${expectedSampleCount} samples.`);
