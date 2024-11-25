@@ -1,8 +1,8 @@
 import { InjectableConstructor } from "node-apparatus";
-import { IChunk } from "../../chunk/i-chunk.js";
+import { IChunk } from "../../types/i-chunk.js";
 import { SqliteChunkFactory } from "./sqlite-chunk-factory.js";
 import { gridKWayMerge } from "../../merge/grid-row-merge.js";
-import { ChunkFactoryBase } from "../../chunk/chunk-factory-base.js";
+import { ChunkFactoryBase } from "../../types/chunk-factory-base.js";
 import { ShardAccessMode } from "../../types/shard-access-mode.js";
 import ChunkSqlite from "./chunk-implementation/chunk-sqlite.js";
 import { ChunkGenerator } from "./chunk-implementation/chunk-mock.js";

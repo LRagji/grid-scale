@@ -3,7 +3,7 @@ import { InjectableConstructor } from "node-apparatus";
 import { join } from "node:path";
 import { mkdirSync, readdirSync, watch, WatchEventType, FSWatcher } from "node:fs";
 import { ShardAccessMode } from "../../../types/shard-access-mode.js";
-import { IChunk } from "../../../chunk/i-chunk.js";
+import { IChunk } from "../../../types/i-chunk.js";
 
 /**
  * This is an example ChunkBase implementation using SQLite

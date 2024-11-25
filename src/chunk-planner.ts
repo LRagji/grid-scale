@@ -3,7 +3,7 @@ import { bigIntMax, bigIntMin, bucket, logicalChunkId, DJB2StringToNumber } from
 import { INonVolatileHashMap } from "./non-volatile-hash-map/i-non-volatile-hash-map.js";
 import { DistributedIterationPlan } from "./types/distributed-iteration-plan.js";
 import { DistributedUpsertPlan } from "./types/distributed-upsert-plan.js";
-import { IChunkMetadata } from "./chunk-metadata/i-chunk-metadata.js";
+import { IChunkMetadata } from "./types/i-chunk-metadata.js";
 import { metaKeyBirth, metaKeyLastWrite } from "./types/meta-keys.js";
 
 export class ChunkPlanner {

@@ -1,6 +1,6 @@
 import { InjectableConstructor, StatefulRecipient } from "node-apparatus";
-import { ChunkFactoryBase } from "./chunk/chunk-factory-base.js";
-import { IChunk } from "./chunk/i-chunk.js";
+import { ChunkFactoryBase } from "./types/chunk-factory-base.js";
+import { IChunk } from "./types/i-chunk.js";
 import { gridKWayMerge } from "./merge/grid-row-merge.js";
 import { isMainThread, parentPort, MessagePort } from "node:worker_threads";
 import { gzipSync } from "node:zlib";

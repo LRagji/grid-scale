@@ -1,6 +1,6 @@
 import { InjectableConstructor } from "node-apparatus";
-import { ChunkFactoryBase } from "../../chunk/chunk-factory-base.js";
-import { IChunk } from "../../chunk/i-chunk.js";
+import { ChunkFactoryBase } from "../../types/chunk-factory-base.js";
+import { IChunk } from "../../types/i-chunk.js";
 import { ShardAccessMode } from "../../types/shard-access-mode.js";
 import { gridKWayMerge } from "../../merge/grid-row-merge.js";
 

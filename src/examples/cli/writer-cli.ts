@@ -52,7 +52,7 @@ console.time("Total")
 const results = {};
 
 for (let i = 0; i < 10; i++) {
-    const generatedData = generateRandomSamples(totalTags, totalSamplesPerTag, i * gsConfig.TagBucketWidth, 0, [insertTimeCol, numericCol, otherCol]);
+    const generatedData = generateRandomSamples(totalTags, totalSamplesPerTag, i * totalTags, 0, [insertTimeCol, numericCol, otherCol]);
     const time = Date.now();
     const diagnostics = new Map<string, any>();
     await gridScale.store(generatedData, insertTime, diagnostics);

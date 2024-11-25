@@ -1,4 +1,4 @@
-import { IChunkMetadata } from "../../chunk-metadata/i-chunk-metadata.js";
+import { IChunkMetadata } from "../../types/i-chunk-metadata.js";
 import { RedisHashMap } from "../../non-volatile-hash-map/redis-hash-map.js";
 
 export class ChunkMetaRegistry implements IChunkMetadata {

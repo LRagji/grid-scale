@@ -32,7 +32,6 @@ await chunkMetaRegistry.initialize();
 const gridScale = await GridScaleFactory.create(chunkRelations, new URL("../chunk-factory-implementation/cached-chunk-factory.js", import.meta.url), chunkMetaRegistry, chunkCache, gsConfig);
 
 trackMemoryFunc();
-console.log(`Started with ${threads} threads @ ${formatMB(formatKB(trackMemoryFunc.stats.heapPeakMemory)).toFixed(1)} heap used & ${formatMB(formatKB(trackMemoryFunc.stats.rssPeakMemory)).toFixed(1)} rss |${new Date().toString()}|`);
 const totalTags = gsConfig.TagBucketWidth * 10;
 const startInclusiveTime = 0;//Date.now();
 const endExclusiveTime = gsConfig.TimeBucketWidth * 2//startInclusiveTime + config.timeBucketWidth;
@@ -40,6 +39,8 @@ let expectedSampleCount = (endExclusiveTime - startInclusiveTime) / 1000;
 expectedSampleCount = Math.min(86400, expectedSampleCount)
 
 const tagIds = generateTagNames(0, totalTags, 1);
+
+console.log(`Started with ${threads} threads @ ${formatMB(formatKB(trackMemoryFunc.stats.heapPeakMemory)).toFixed(1)} heap used & ${formatMB(formatKB(trackMemoryFunc.stats.rssPeakMemory)).toFixed(1)} rss |${new Date().toString()}| Tags:${tagIds.length} Time:${startInclusiveTime} -> ${endExclusiveTime}`);
 
 
 console.time("Total")
