@@ -59,31 +59,6 @@ export default class ChunkSqlite implements IChunk {
 
     }
 
-    // public metadataSet(key: string, value: string): void {
-    //     if (this.mode === "write") {
-    //         if (this.preparedMetadataUpsert === undefined) {
-    //             this.db.exec(this.metadataTableSqlStatement);
-    //             this.preparedMetadataUpsert = this.db.prepare(this.metadataUpsertSqlStatement);
-    //         }
-    //         this.db.transaction(() => {
-    //             this.preparedMetadataUpsert.run(key, value);
-    //         })();
-    //     }
-    // }
-
-    // public metadataGet(key: string, defaultValue: string): string[] {
-    //     if (this.mode === "write") {
-    //         return [this.db.prepare(`SELECT value FROM [metadata] WHERE key = ?;`)
-    //             .pluck()
-    //             .get(key) as string ?? defaultValue];
-    //     }
-    //     else {
-    //         return this.readonlyDBs.map(db => db.prepare(`SELECT value FROM [metadata] WHERE key = ?;`)
-    //             .pluck()
-    //             .get(key) as string ?? defaultValue)
-    //     }
-    // }
-
     private searchAndOpenDatabases() {
         try {
             const fileEntries = readdirSync(this.directoryPath, { recursive: false, withFileTypes: true });
@@ -154,9 +129,11 @@ export default class ChunkSqlite implements IChunk {
             }
             const tagsInHex = tags.map(tag => Buffer.from(tag, "utf-8").toString('hex'));
             const cursors = new Array<IterableIterator<any[]>>();
+            const SQLITE_MAX_COMPOUND_SELECT = 500; //This is limit of how many tables in union call from https://www.sqlite.org/limits.html
             const SQLITE_MAX_VARIABLE_NUMBER = 3000;   //This limit is to prevent error from too many tag names in variable, SQLITE_MAX_VARIABLE_NUMBER comes from https://www.sqlite.org/limits.html
+            const chunkSize = Math.min(SQLITE_MAX_VARIABLE_NUMBER, SQLITE_MAX_COMPOUND_SELECT);
             while (tagsInHex.length > 0) {
-                const chunkedTags = tagsInHex.splice(0, SQLITE_MAX_VARIABLE_NUMBER);
+                const chunkedTags = tagsInHex.splice(0, chunkSize);
                 for (const db of this.readonlyDBs) {
                     const existingTables = db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name IN (${chunkedTags.map(_ => "?").join(",")});`)
                         .raw()
