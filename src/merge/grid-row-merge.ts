@@ -11,22 +11,31 @@ function frameMerge<T>(elements: T[]): { yieldIndex: number, purgeIndexes: numbe
         }
 
         if (yieldIndex === -1) {
+            //Promote first element as the yield element
             yieldIndex = elementIndex;
+            continue;
         }
-        else {
-            //TagName need to be compared
-            if (element[this.tagIndex] === elements[yieldIndex][this.tagIndex] && element[this.timeIndex] < elements[yieldIndex][this.timeIndex]) {
+
+        // Compare TagName
+        if (element[this.tagIndex] === elements[yieldIndex][this.tagIndex]) {
+            //Compare sample time
+            if (element[this.timeIndex] < elements[yieldIndex][this.timeIndex]) {
+                //Promote element as the yield element when its time is less than the yield element(Ascending order by sample time.)
                 yieldIndex = elementIndex;
             }
-            else if (element[this.tagIndex] === elements[yieldIndex][this.tagIndex] && element[this.timeIndex] === elements[yieldIndex][this.timeIndex]) {
-                //Compare Insert time in descending order MVCC
-                if (elements[this.insertTimeIndex] > elements[yieldIndex][this.insertTimeIndex]) {
+            else if (element[this.timeIndex] === elements[yieldIndex][this.timeIndex]) {
+
+                if (element[this.insertTimeIndex] > elements[yieldIndex][this.insertTimeIndex]) {
+                    //Purge yield element when insert time is less than the yield element.(This row needs to be vacuumed from MVCC standpoint.)
                     purgeIndexes.push(yieldIndex);
+                    //Promote element as the yield element when its insert time is greater than the yield element.(Descending order by insert time.)
                     yieldIndex = elementIndex;
                 }
                 else {
+                    //Purge element when insert time is less than the yield element.(This row needs to be vacuumed from MVCC standpoint.)
                     purgeIndexes.push(elementIndex);
                 }
+
             }
         }
     };
