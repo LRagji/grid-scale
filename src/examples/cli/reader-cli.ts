@@ -32,7 +32,7 @@ await chunkMetaRegistry.initialize();
 const gridScale = await GridScaleFactory.create(chunkRelations, new URL("../chunk-factory-implementation/cached-chunk-factory.js", import.meta.url), chunkMetaRegistry, chunkCache, gsConfig);
 
 trackMemoryFunc();
-const totalTags = gsConfig.TagBucketWidth * 10;
+const totalTags = gsConfig.TagBucketWidth * 2;
 const startInclusiveTime = 0;//Date.now();
 const endExclusiveTime = gsConfig.TimeBucketWidth * 2//startInclusiveTime + config.timeBucketWidth;
 let expectedSampleCount = (endExclusiveTime - startInclusiveTime) / 1000;
@@ -91,17 +91,29 @@ for (let i = 0; i < 1; i++) {
     //for await (const processedRow of result) {
     //  tagCounts = new Map<string, any>(processedRow as [string, number][]);
     //}
+
+    // cacheConfig.readCache = false;
+    // cacheConfig.updateCache = false;
+    // planConfig.zippedResults = false;
+
     const pageCursor = gridScale.iterator(tagIds, startInclusiveTime, endExclusiveTime, planConfig, paginationConfig, cacheConfig, lambdaConfig);
     for await (const page of pageCursor) {
         trackMemoryFunc();
         lambdaConfig.accumulator = new Map<string, any>(page as [string, number][]);
-        console.log("Total Tags: ", lambdaConfig.accumulator.size);
+        const totalTags = lambdaConfig.accumulator.size;
 
         for (const [tagId, count] of lambdaConfig.accumulator.entries()) {
             const delta = Math.abs(expectedSampleCount - count);
             if (delta <= 1) {
                 lambdaConfig.accumulator.delete(tagId);
             }
+        }
+
+        if (lambdaConfig.accumulator.size > 0) {
+            console.log(`${lambdaConfig.accumulator.size} tags without ${expectedSampleCount} samples.`);
+        }
+        else {
+            console.log(`${totalTags} tags have ${expectedSampleCount} samples.`);
         }
 
         // for (const row of page) {
@@ -124,14 +136,6 @@ for (let i = 0; i < 1; i++) {
         for (const [idx, workerDiagnostic] of workerDiagnostics.entries()) {
             consoleTableResults[`Run:${i} S:${stepIdx} W:${idx}`] = { "workersPlan": workerDiagnostic };
         }
-    }
-
-
-    if (lambdaConfig.accumulator.size > 0) {
-        console.log(`${lambdaConfig.accumulator.size} Tags without ${expectedSampleCount} samples.`);
-    }
-    else {
-        console.log(`All tags have ${expectedSampleCount} samples.`);
     }
 }
 

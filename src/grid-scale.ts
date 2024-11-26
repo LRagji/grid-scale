@@ -197,6 +197,7 @@ export class GridScale {
 
         let planCounter = 0;
         for (const [connectionPaths, tagNames, [startInclusive, endExclusive], lastWritten] of plans) {
+            const taskStartTime = Date.now();
             let returnFromCache = readCache;
             const cacheIndexKeyHash = returnFromCache && crypto.createHash("md5")
                 .update(Array.from(connectionPaths).sort().join(""))
@@ -266,7 +267,7 @@ export class GridScale {
                     }
                 }
             }
-            diagnosticsWorkerPlan.push(`W:${workerIndex} P:${planCounter} CKey:${cacheIndexKey} Cached:${returnFromCache} WritesCooled:${updateCache} Pages:${totalPages}`);
+            diagnosticsWorkerPlan.push(`W:${workerIndex} P:${planCounter} CKey:${cacheIndexKey} Cached:${returnFromCache} WritesCooled:${updateCache} Pages:${totalPages} T:${Date.now() - taskStartTime}`);
             planCounter++;
         }
     }
