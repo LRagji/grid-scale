@@ -29,9 +29,6 @@ export default class ChunkSqlite implements IChunk {
     private readonly reconcileHandler = this.reconcileDirectoryChanges.bind(this);
     private readonly readonlyDBActivePaths = new Set<string>();
     private readonly preConditionedSectors = new Set<string>();
-    private preparedMetadataUpsert: Database.Statement = undefined;
-    private readonly metadataTableSqlStatement = `CREATE TABLE IF NOT EXISTS [metadata] (key TEXT PRIMARY KEY NOT NULL, value TEXT);`;
-    private readonly metadataUpsertSqlStatement = `INSERT INTO [metadata] (key,value) values (?,?) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value;`;
     private readonly tableSqlStatement = (tableName: string) => `CREATE TABLE IF NOT EXISTS [${tableName}] (sampleTime INTEGER PRIMARY KEY NOT NULL, insertTime INTEGER NOT NULL, nValue INTEGER, oValue TEXT);`;
     private readonly indexSqlStatement = (tableName: string) => `CREATE INDEX IF NOT EXISTS [timeIndex_${tableName}] ON [${tableName}] (sampleTime,insertTime,nValue);`;
     private readonly upsertSqlStatement = (tableName: string) => `INSERT INTO [${tableName}] (sampleTime,insertTime,nValue,oValue) values (?,?,?,?)
