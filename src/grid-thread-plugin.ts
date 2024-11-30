@@ -27,11 +27,11 @@ export class GridThreadPlugin extends StatefulRecipient {
         this.mergeFunction = gridKWayMerge(chunkFactoryType.tagColumnIndex, chunkFactoryType.timeColumnIndex, chunkFactoryType.insertTimeColumnIndex);
     }
 
-    public bulkWrite(plan: [string, Map<string, any[]>][]): void {
+    public async bulkWrite(plan: [string, Map<string, any[]>][]): Promise<void> {
         for (const [connectionPath, tagRecords] of plan) {
             const chunk = this.chunkFactory.getChunk(connectionPath, "write", this.callerSignature);
             if (chunk !== null) {
-                chunk.bulkSet(tagRecords);
+                await chunk.bulkSet(tagRecords);
             }
         }
     }

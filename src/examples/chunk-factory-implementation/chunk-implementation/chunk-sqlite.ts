@@ -94,7 +94,7 @@ export default class ChunkSqlite implements IChunk {
         }
     }
 
-    public bulkSet(records: Map<string, any[][]>): void {
+    public async bulkSet(records: Map<string, any[][]>): Promise<void> {
         if (this.mode === "read") {
             throw new Error(`ChunkShard ${this.directoryPath} is readonly, cannot set values`);
         }

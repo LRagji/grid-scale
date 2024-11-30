@@ -12,7 +12,7 @@ export class ChunkGenerator implements IChunk {
         private readonly injectableConstructor: InjectableConstructor = new InjectableConstructor()) {
     }
 
-    bulkSet(records: Map<string, any[][]>): void {
+    async bulkSet(records: Map<string, any[][]>): Promise<void> {
 
     }
 
