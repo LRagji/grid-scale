@@ -1,7 +1,5 @@
-import { InjectableConstructor } from "node-apparatus";
 import { IChunk } from "../../types/i-chunk.js";
 import { SqliteChunkFactory } from "./sqlite-chunk-factory.js";
-import { gridKWayMerge } from "../../merge/grid-row-merge.js";
 import { ShardAccessMode } from "../../types/shard-access-mode.js";
 import ChunkSqlite from "./chunk-implementation/chunk-sqlite.js";
 import { ChunkGenerator } from "./chunk-implementation/chunk-mock.js";
@@ -11,11 +9,9 @@ export class CachedChunkFactory<T extends IChunk> extends SqliteChunkFactory<T> 
     private readonly chunkCache = new Map<string, T>();
 
     constructor(chunkType: new (...args: any[]) => T,
-        mergeFunction: <T>(cursors: IterableIterator<T>[]) => IterableIterator<T> = gridKWayMerge(CachedChunkFactory.tagColumnIndex, CachedChunkFactory.timeColumnIndex, CachedChunkFactory.insertTimeColumnIndex),
-        injectableConstructor: InjectableConstructor = new InjectableConstructor(),
         private readonly cacheLimit: number,
         private readonly bulkDropLimit: number = Math.ceil(cacheLimit / 4)) {
-        super(chunkType, mergeFunction, injectableConstructor);
+        super(chunkType);
     }
 
     public override getChunk(connectionPath: string, mode: ShardAccessMode, callerSignature: string): T | null {
@@ -67,5 +63,5 @@ export class CachedChunkFactory<T extends IChunk> extends SqliteChunkFactory<T> 
     }
 }
 
-export default new CachedChunkFactory<ChunkSqlite>(ChunkSqlite, undefined, undefined, 1000);
-//export default new CachedChunkFactory<ChunkGenerator>(ChunkGenerator, undefined, undefined, 1000);
+export default new CachedChunkFactory<ChunkSqlite>(ChunkSqlite, 1000);
+//export default new CachedChunkFactory<ChunkGenerator>(ChunkGenerator, 1000);

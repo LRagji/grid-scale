@@ -2,7 +2,7 @@ import { InjectableConstructor } from "node-apparatus";
 import { ChunkFactoryBase } from "../../types/chunk-factory-base.js";
 import { IChunk } from "../../types/i-chunk.js";
 import { ShardAccessMode } from "../../types/shard-access-mode.js";
-import { gridKWayMerge } from "../../merge/grid-row-merge.js";
+import { gridKWayMerge } from "./grid-row-merge.js";
 
 export class SqliteChunkFactory<T extends IChunk> extends ChunkFactoryBase<T> {
 
