@@ -1,4 +1,4 @@
-import { kWayMerge } from "node-apparatus";
+import { kWayMergeAsync } from "node-apparatus";
 
 function frameMerge<T>(elements: T[]): { yieldIndex: number, purgeIndexes: number[] } {
     let purgeIndexes = [];
@@ -45,7 +45,7 @@ function frameMerge<T>(elements: T[]): { yieldIndex: number, purgeIndexes: numbe
 
 export function gridKWayMerge(tagIndex: number, timeIndex: number, insertTimeIndex: number) {
     const mergeFunction = frameMerge.bind({ tagIndex, timeIndex, insertTimeIndex });
-    return <T>(iterators: IterableIterator<T>[]): IterableIterator<T> => {
-        return kWayMerge<T>(iterators, mergeFunction);
+    return <T>(iterators: AsyncIterableIterator<T>[]): AsyncIterableIterator<T> => {
+        return kWayMergeAsync<T>(iterators, mergeFunction);
     }
 }

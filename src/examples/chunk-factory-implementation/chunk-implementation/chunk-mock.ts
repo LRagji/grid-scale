@@ -12,21 +12,21 @@ export class ChunkGenerator implements IChunk {
         private readonly injectableConstructor: InjectableConstructor = new InjectableConstructor()) {
     }
 
-    async bulkSet(records: Map<string, any[][]>): Promise<void> {
+    public async bulkSet(records: Map<string, any[][]>): Promise<void> {
 
     }
 
-    * bulkIterator(tags: string[], startTimeInclusive: number, endTimeExclusive: number): IterableIterator<any[]> {
+    public async  * bulkIterator(tags: string[], startTimeInclusive: number, endTimeExclusive: number): AsyncIterableIterator<any[]> {
         for (let i = 0; i < (86400 * 5); i++) {
             yield [i, i, i, null, `Tag${i - (i % 86400)}-${this.connectionPath}`];
         }
     }
 
-    canBeDisposed(): boolean {
+    public canBeDisposed(): boolean {
         return true;
     }
 
-    [Symbol.asyncDispose](): Promise<void> {
+    public [Symbol.asyncDispose](): Promise<void> {
         return Promise.resolve();
     }
 

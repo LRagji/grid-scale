@@ -7,8 +7,8 @@ import { gzipSync } from "node:zlib";
 
 export class GridThreadPlugin extends StatefulRecipient {
 
-    private mergeFunction: <T>(cursors: IterableIterator<T>[]) => IterableIterator<T>;
-    private readonly iteratorCache = new Map<string, IterableIterator<any>>();
+    private mergeFunction: <T>(cursors: AsyncIterableIterator<T>[]) => AsyncIterableIterator<T>;
+    private readonly iteratorCache = new Map<string, AsyncIterableIterator<any>>();
     private chunkFactory: ChunkFactoryBase<IChunk>;
     private callerSignature: string;
 
@@ -45,7 +45,7 @@ export class GridThreadPlugin extends StatefulRecipient {
         let page = new Array<any[]>();
 
         if (this.iteratorCache.has(queryId) === false) {
-            const iterators = new Array<IterableIterator<any>>();
+            const iterators = new Array<AsyncIterableIterator<any>>();
             for (const connectionPath of connectionPaths) {
                 const chunk = this.chunkFactory.getChunk(connectionPath, "read", this.callerSignature);
                 if (chunk !== null) {
@@ -67,10 +67,10 @@ export class GridThreadPlugin extends StatefulRecipient {
         let iterator = this.iteratorCache.get(queryId);
         let iteratorResult;
         do {
-            iteratorResult = iterator.next();
+            iteratorResult = await iterator.next();
             while (page.length < (pageSize - 1) && iteratorResult.done === false) {
                 page.push(iteratorResult.value);
-                iteratorResult = iterator.next();
+                iteratorResult = await iterator.next();
             }
 
             if (iteratorResult.done === false) {
@@ -109,7 +109,7 @@ export class GridThreadPlugin extends StatefulRecipient {
 
     public async[Symbol.asyncDispose]() {
         await super[Symbol.asyncDispose]();
-        for (const [iterator, planIndex] of this.iteratorCache.values()) {
+        for (const iterator of this.iteratorCache.values()) {
             iterator.return();
         }
         this.iteratorCache.clear();

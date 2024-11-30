@@ -118,7 +118,7 @@ export default class ChunkSqlite implements IChunk {
         }
     }
 
-    public *bulkIterator(tags: string[], startTimeInclusive: number, endTimeExclusive: number): IterableIterator<any[]> {
+    public async *bulkIterator(tags: string[], startTimeInclusive: number, endTimeExclusive: number): AsyncIterableIterator<any[]> {
         try {
             this.readCursorOpen = true;
             if (this.reconcileDirectory === true) {
