@@ -7,3 +7,4 @@ data
 *.cpuprofile
 *.heapsnapshot
 *.heapprofile
+coverage
