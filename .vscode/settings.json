@@ -1,0 +1,11 @@
+{
+    "cSpell.words": [
+        "BITFIELD",
+        "INCRBY",
+        "PEXPIRE",
+        "WITHSCORES",
+        "ZADD",
+        "ZRANGE",
+        "ZREMRANGEBYRANK"
+    ]
+}
