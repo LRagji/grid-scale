@@ -5,14 +5,12 @@ import { GenericContainer, StartedTestContainer } from "testcontainers";
 import { createClient } from "redis";
 import Redis, { Cluster } from "ioredis";
 import { IRedisClientPool, IORedisClientPool, RedisClientPool } from "redis-abstraction";
+import { setTimeout as delay } from 'node:timers/promises';
 
 import { RedisWAL } from "../src/index.js";
 import { RedisKeyBuilder } from "../src/redis-key-builder.js";
 import { ISample } from "../src/interfaces/i-sample.js";
 
-function sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 class NodeRedisClientPoolAdapter implements IRedisClientPool {
     private activeClients = new Map<string, any>();
@@ -106,25 +104,25 @@ describe("RedisWAL Integration", () => {
         const port = container.getMappedPort(6379);
         const singleNodeRedisConnectionString = `redis://${host}:${port}`;
         //IORedis
-        // //Function which can decompose the connection string into different components like hostname,password etc.
-        // const parseRedisConnectionString = (connectionString) => {
-        //     //Used to parse the connection string and return components of the same 
-        //     //Refer:ioredis/built/utils/index.js parseURL function for more details
-        //     //This is just a mock implementation, you can enhance it as per your needs.
-        //     return {
-        //         password: ""
-        //     };
-        // }
-        // const connectionInjector = () => IORedisClientPool.IORedisClientClusterFactory([singleNodeRedisConnectionString], Redis as any, Cluster as any, parseRedisConnectionString);
-        // pool = new IORedisClientPool(connectionInjector);
+        //Function which can decompose the connection string into different components like hostname,password etc.
+        const parseRedisConnectionString = (connectionString) => {
+            //Used to parse the connection string and return components of the same 
+            //Refer:ioredis/built/utils/index.js parseURL function for more details
+            //This is just a mock implementation, you can enhance it as per your needs.
+            return {
+                password: ""
+            };
+        }
+        const connectionInjector = () => IORedisClientPool.IORedisClientClusterFactory([singleNodeRedisConnectionString], Redis as any, Cluster as any, parseRedisConnectionString);
+        pool = new IORedisClientPool(connectionInjector);
 
-        //Node-redis
+        //Node-redis To enable this we need to change redis-abstraction to support add command instead of invoking the command dynamically.
         // const connectionInjector = () => createClient({ url: singleNodeRedisConnectionString });
         // pool = new RedisClientPool<any>(connectionInjector);
 
 
         //Test Adapter with node-redis
-        pool = new NodeRedisClientPoolAdapter(singleNodeRedisConnectionString);
+        // pool = new NodeRedisClientPoolAdapter(singleNodeRedisConnectionString);
     });
 
     beforeEach(async () => {
@@ -146,21 +144,19 @@ describe("RedisWAL Integration", () => {
 
     describe("upsert and query behavior", () => {
 
-        it("writes and queries single-tag samples", async () => {
-            const keyBuilder = new RedisKeyBuilder("it-single");
-            const wal = new RedisWAL(pool, 1n, 1000n, 100000n, 100000n, keyBuilder);
+        it("writes and queries sorted timestamp single-tag samples", async () => {
+            const wal = new RedisWAL(pool);
 
             const input: ISample[] = [
-                { tag: "alpha", ts: 1, pld: { nV: 11 } },
-                { tag: "alpha", ts: 2, pld: { nV: 22 } }
+                { tag: "alpha", ts: 2, pld: { nV: 22 } },
+                { tag: "alpha", ts: 1, pld: { nV: 11 } }
             ];
 
             await wal.upsertBulkSamples(input.map((_) => structuredClone(_)));
 
             const result = await wal.queryRange(["alpha"], 0n, 10n, 100);
             const simplified = result
-                .map((sample) => ({ tag: sample.tag, ts: sample.ts, nV: sample.pld.nV }))
-                .sort((a, b) => a.ts - b.ts);
+                .map((sample) => ({ tag: sample.tag, ts: sample.ts, nV: sample.pld.nV }));
 
             assert.deepEqual(simplified, [
                 { tag: "alpha", ts: 1, nV: 11 },
@@ -169,8 +165,7 @@ describe("RedisWAL Integration", () => {
         });
 
         it("deduplicates duplicate tag names in query input", async () => {
-            const keyBuilder = new RedisKeyBuilder("it-query-dedupe");
-            const wal = new RedisWAL(pool, 1n, 1000n, 100000n, 100000n, keyBuilder);
+            const wal = new RedisWAL(pool);
 
             await wal.upsertBulkSamples([{ tag: "dupTag", ts: 1, pld: { nV: 7 } }]);
 
@@ -181,8 +176,7 @@ describe("RedisWAL Integration", () => {
         });
 
         it("returns combined results for multiple tags", async () => {
-            const keyBuilder = new RedisKeyBuilder("it-multi-tag");
-            const wal = new RedisWAL(pool, 1n, 1000n, 100000n, 100000n, keyBuilder);
+            const wal = new RedisWAL(pool);
 
             await wal.upsertBulkSamples([
                 { tag: "A", ts: 1, pld: { nV: 101 } },
@@ -199,11 +193,10 @@ describe("RedisWAL Integration", () => {
         });
 
         it("picks latest update for same tag and timestamp across pages", async () => {
-            const keyBuilder = new RedisKeyBuilder("it-latest-page");
-            const wal = new RedisWAL(pool, 1n, 1n, 100000n, 100000n, keyBuilder);
+            const wal = new RedisWAL(pool, 1n, 1n, 100000n, 100000n);
 
             await wal.upsertBulkSamples([{ tag: "same", ts: 5, pld: { nV: 1 } }]);
-            await sleep(10);
+            await delay(10); //Ensure the second upsert goes to a different page
             await wal.upsertBulkSamples([{ tag: "same", ts: 5, pld: { nV: 999 } }]);
 
             const result = await wal.queryRange(["same"], 0n, 10n, 100);
@@ -216,9 +209,9 @@ describe("RedisWAL Integration", () => {
             const wal = new RedisWAL(pool, 1n, 1n, 100000n, 100000n, keyBuilder, RedisWAL.estimateBulkSamplesBytesUpper, 2);
 
             await wal.upsertBulkSamples([{ tag: "P", ts: 1, pld: { nV: 1 } }]);
-            await sleep(5);
+            await delay(5);
             await wal.upsertBulkSamples([{ tag: "P", ts: 2, pld: { nV: 2 } }]);
-            await sleep(5);
+            await delay(5);
             await wal.upsertBulkSamples([{ tag: "P", ts: 3, pld: { nV: 3 } }]);
 
             const token = pool.generateUniqueToken("InspectBook");

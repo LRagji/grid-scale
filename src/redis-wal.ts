@@ -3,23 +3,24 @@ import { RedisKeyBuilder } from "./redis-key-builder.js";
 import { ISample, IScoredSample } from "./interfaces/i-sample.js";
 
 class RedisKeywords {
-    static BITFIELD = "BITFIELD";
-    static INCRBY = "INCRBY";
-    static OVERFLOW = "OVERFLOW";
-    static FAIL = "FAIL";
-    static PEXPIRE = "PEXPIRE";
-    static ZADD = "ZADD";
-    static ZREMRANGEBYRANK = "ZREMRANGEBYRANK";
-    static TIME = "TIME";
-    static ZRANGE = "ZRANGE";
-    static BYSCORE = "BYSCORE";
-    static LIMIT = "LIMIT";
-    static WITHSCORES = "WITHSCORES";
+    static BITFIELD = "bitfield";
+    static INCRBY = "incrby";
+    static OVERFLOW = "overflow";
+    static FAIL = "fail";
+    static PEXPIRE = "pexpire";
+    static ZADD = "zadd";
+    static ZREMRANGEBYRANK = "zremrangebyrank";
+    static TIME = "time";
+    static ZRANGE = "zrange";
+    static BYSCORE = "byscore";
+    static LIMIT = "limit";
+    static WITHSCORES = "withscores";
+    static SET_ONLY_IF_NO_EXPIRY = "nx";
 }
 
 export class RedisWAL {
 
-    private u63Max = BigInt("0x7FFFFFFFFFFFFFFF"); // 63-bit max value
+    private static readonly u63Max = BigInt("0x7FFFFFFFFFFFFFFF"); // 63-bit max value
 
     public static modMinus(value: bigint, divisor: bigint): bigint {
         return value - (value % divisor);
@@ -43,9 +44,9 @@ export class RedisWAL {
         private readonly redisDriver: IRedisClientPool,
         //Defaults.
         private readonly timeToleranceInMs: bigint = 1n * 60n * 1000n, // 1 minute
-        private readonly timeWindowInMs: bigint = this.u63Max,
-        private readonly sizeWindowInBytes: bigint = this.u63Max,
-        private readonly writeWindow: bigint = this.u63Max,
+        private readonly timeWindowInMs: bigint = 24n * 60n * 60n * 1000n, // 24 hours
+        private readonly sizeWindowInBytes: bigint = RedisWAL.u63Max,
+        private readonly writeWindow: bigint = RedisWAL.u63Max,
         private readonly keyBuilder: RedisKeyBuilder = new RedisKeyBuilder(),
         private readonly sizeEstimator: (samples: ISample[]) => bigint = RedisWAL.estimateBulkSamplesBytesUpper,
         private readonly maxPagesInBook: number = 100
@@ -95,7 +96,7 @@ export class RedisWAL {
         const returnObject = { sizeInBytes: 0n, writes: 0n };
         const commands = [
             [RedisKeywords.BITFIELD, counterKey, RedisKeywords.OVERFLOW, RedisKeywords.FAIL, RedisKeywords.INCRBY, "u63", "#0", `${sizeInBytes}`, RedisKeywords.INCRBY, "u63", "#1", `${writes}`],
-            [RedisKeywords.PEXPIRE, counterKey, `${this.timeWindowInMs * 2n}`]
+            [RedisKeywords.PEXPIRE, counterKey, `${this.timeWindowInMs * 2n}`, RedisKeywords.SET_ONLY_IF_NO_EXPIRY]
         ];
         const token = this.redisDriver.generateUniqueToken('IncrementCounter');
         try {
