@@ -10,6 +10,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { RedisWAL } from "../src/index.js";
 import { RedisKeyBuilder } from "../src/redis-key-builder.js";
 import { ISample } from "../src/interfaces/i-sample.js";
+import { Utilities } from "../src/utilities.js";
 
 
 class NodeRedisClientPoolAdapter implements IRedisClientPool {
@@ -206,7 +207,7 @@ describe("RedisWAL Integration", () => {
 
         it("enforces max pages in book by evicting oldest pages", async () => {
             const keyBuilder = new RedisKeyBuilder("it-book-limit");
-            const wal = new RedisWAL(pool, 1n, 1n, 100000n, 100000n, keyBuilder, RedisWAL.estimateBulkSamplesBytesUpper, 2);
+            const wal = new RedisWAL(pool, 1n, 1n, 100000n, 100000n, keyBuilder, Utilities.roughSizeEstimator, 2);
 
             await wal.upsertBulkSamples([{ tag: "P", ts: 1, pld: { nV: 1 } }]);
             await delay(5);

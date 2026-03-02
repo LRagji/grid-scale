@@ -1,6 +1,7 @@
 import { IRedisClientPool } from "redis-abstraction";
 import { RedisKeyBuilder } from "./redis-key-builder.js";
 import { ISample, IScoredSample } from "./interfaces/i-sample.js";
+import { Utilities } from "./utilities.js";
 
 class RedisKeywords {
     static BITFIELD = "bitfield";
@@ -20,35 +21,15 @@ class RedisKeywords {
 
 export class RedisWAL {
 
-    private static readonly u63Max = BigInt("0x7FFFFFFFFFFFFFFF"); // 63-bit max value
-
-    public static modMinus(value: bigint, divisor: bigint): bigint {
-        return value - (value % divisor);
-    }
-
-    public static estimateBulkSamplesBytesUpper(samples: ISample[]): bigint {
-        //This needs to be tweaked later based on actual encoding and Redis storage overhead, but this is a starting point for estimation.
-        if (samples.length === 0) {
-            return 2n;
-        }
-
-        let total = 2n + BigInt(samples.length - 1);
-        for (const sample of samples) {
-            total += 94n + (6n * BigInt(sample.tag.length));
-        }
-
-        return total;
-    }
-
     constructor(
         private readonly redisDriver: IRedisClientPool,
         //Defaults.
         private readonly timeToleranceInMs: bigint = 1n * 60n * 1000n, // 1 minute
         private readonly timeWindowInMs: bigint = 24n * 60n * 60n * 1000n, // 24 hours
-        private readonly sizeWindowInBytes: bigint = RedisWAL.u63Max,
-        private readonly writeWindow: bigint = RedisWAL.u63Max,
+        private readonly sizeWindowInBytes: bigint = Utilities.u63Max,
+        private readonly writeWindow: bigint = Utilities.u63Max,
         private readonly keyBuilder: RedisKeyBuilder = new RedisKeyBuilder(),
-        private readonly sizeEstimator: (samples: ISample[]) => bigint = RedisWAL.estimateBulkSamplesBytesUpper,
+        private readonly sizeEstimator: (samples: ISample[]) => bigint = Utilities.roughSizeEstimator,
         private readonly maxPagesInBook: number = 100
     ) { }
 
@@ -74,18 +55,18 @@ export class RedisWAL {
         finally {
             await this.redisDriver.release(token);
         }
-        return RedisWAL.modMinus(hostTime, this.timeToleranceInMs) == RedisWAL.modMinus(redisTime, this.timeToleranceInMs);
+        return Utilities.modMinus(hostTime, this.timeToleranceInMs) == Utilities.modMinus(redisTime, this.timeToleranceInMs);
     }
 
     public async upsertBulkSamples(samples: ISample[]): Promise<void> {
-        const currentTimeWithTolerance = RedisWAL.modMinus(BigInt(Date.now()), this.timeToleranceInMs);
+        const currentTimeWithTolerance = Utilities.modMinus(BigInt(Date.now()), this.timeToleranceInMs);
         const sizeInBytes = this.sizeEstimator(samples);
         const writes = 1n;
         const actualPageCounters = await this.incrementCounter(currentTimeWithTolerance, sizeInBytes, writes);
 
-        const modTime = RedisWAL.modMinus(currentTimeWithTolerance, this.timeWindowInMs);
-        const modSize = RedisWAL.modMinus(actualPageCounters.sizeInBytes, this.sizeWindowInBytes);
-        const modWrites = RedisWAL.modMinus(actualPageCounters.writes, this.writeWindow);
+        const modTime = Utilities.modMinus(currentTimeWithTolerance, this.timeWindowInMs);
+        const modSize = Utilities.modMinus(actualPageCounters.sizeInBytes, this.sizeWindowInBytes);
+        const modWrites = Utilities.modMinus(actualPageCounters.writes, this.writeWindow);
         const pageKey = this.keyBuilder.pageKey(modTime.toString(), modSize.toString(), modWrites.toString());
 
         await this.dumpDataToPage(pageKey, samples, modTime);

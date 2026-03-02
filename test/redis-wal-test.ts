@@ -4,6 +4,7 @@ import type { IRedisClientPool } from "redis-abstraction";
 
 import { RedisWAL } from "../src/index.js";
 import sinon from "sinon";
+import { Utilities } from "../src/utilities.js";
 
 class SinonRedisClientPoolMock implements IRedisClientPool {
     public acquire = sinon.stub<[string], Promise<void>>().resolves();
@@ -20,19 +21,19 @@ const pool: IRedisClientPool = new SinonRedisClientPoolMock();
 describe("RedisWAL static tests", () => {
 
     it("modMinus floors numbers to the nearest divisor block", () => {
-        assert.equal(RedisWAL.modMinus(1234n, 10n), 1230n);
-        assert.equal(RedisWAL.modMinus(1234n, 100n), 1200n);
+        assert.equal(Utilities.modMinus(1234n, 10n), 1230n);
+        assert.equal(Utilities.modMinus(1234n, 100n), 1200n);
     });
 
     // it("estimateBulkSamplesBytesUpper handles empty and populated arrays", () => {
-    //     assert.equal(RedisWAL.estimateBulkSamplesBytesUpper([]), 2n);
+    //     assert.equal(Utilities.estimateBulkSamplesBytesUpper([]), 2n);
 
     //     const samples: ISample[] = [
     //         { tag: "A", ts: 1, pld: { nV: 1 } },
     //         { tag: "AB", ts: 2, pld: { nV: 2 } }
     //     ];
     //     const correctSize = new TextEncoder().encode(JSON.stringify(samples)).byteLength;
-    //     const actualSize = Number(RedisWAL.estimateBulkSamplesBytesUpper(samples));
+    //     const actualSize = Number(Utilities.estimateBulkSamplesBytesUpper(samples));
     //     assert.equal(Math.abs(actualSize - correctSize) < (0.1 * correctSize), true, `Expected size to be within 10% of actual size. Actual: ${actualSize}, Correct: ${correctSize}`);
     // });
 });
