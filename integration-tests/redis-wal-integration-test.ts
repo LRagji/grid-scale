@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import crypto from "node:crypto";
+
 import { after, before, beforeEach, describe, it } from "node:test";
 import { GenericContainer, StartedTestContainer } from "testcontainers";
 import { createClient } from "redis";
@@ -11,77 +11,9 @@ import { RedisWAL } from "../src/index.js";
 import { RedisKeyBuilder } from "../src/redis-key-builder.js";
 import { ISample } from "../src/interfaces/i-sample.js";
 import { Utilities } from "../src/utilities.js";
+import { NodeRedisTestDriver } from "./node-redis-test-driver.js";
 
-
-class NodeRedisClientPoolAdapter implements IRedisClientPool {
-    private activeClients = new Map<string, any>();
-
-    constructor(private readonly redisUrl: string) { }
-
-    public async acquire(token: string): Promise<void> {
-        if (this.activeClients.has(token)) {
-            return;
-        }
-        const client = createClient({ url: this.redisUrl });
-        await client.connect();
-        this.activeClients.set(token, client);
-    }
-
-    public async release(token: string): Promise<void> {
-        const client = this.activeClients.get(token);
-        if (!client) {
-            return;
-        }
-        this.activeClients.delete(token);
-        await client.quit();
-    }
-
-    public async shutdown(): Promise<void> {
-        const closeHandles = [...this.activeClients.values()].map((client) => client.quit());
-        await Promise.allSettled(closeHandles);
-        this.activeClients.clear();
-    }
-
-    public async run(token: string, commandArgs: string[]): Promise<any> {
-        const client = this.getClient(token);
-        return await client.sendCommand(commandArgs);
-    }
-
-    public async pipeline(token: string, commands: string[][], transaction: boolean): Promise<any> {
-        const client = this.getClient(token);
-        if (transaction) {
-            const multi = client.multi();
-            for (const command of commands) {
-                multi.addCommand(command);
-            }
-            return await multi.exec();
-        }
-
-        const responses: any[] = [];
-        for (const command of commands) {
-            responses.push(await client.sendCommand(command));
-        }
-        return responses;
-    }
-
-    public async script(_token: string, _filePath: string, _keys: string[], _args: string[]): Promise<any> {
-        throw new Error("Method not implemented.");
-    }
-
-    public generateUniqueToken(prefix: string): string {
-        return `${prefix}-${crypto.randomUUID()}`;
-    }
-
-    private getClient(token: string): any {
-        const client = this.activeClients.get(token);
-        if (!client) {
-            throw new Error("Please acquire a client with proper token");
-        }
-        return client;
-    }
-}
-
-describe("RedisWAL Integration", () => {
+describe(`RedisWAL Integration with ${process.env.REDIS_DRIVER}`, () => {
     let container: StartedTestContainer;
     let pool: IRedisClientPool;
 
@@ -104,26 +36,35 @@ describe("RedisWAL Integration", () => {
         const host = container.getHost();
         const port = container.getMappedPort(6379);
         const singleNodeRedisConnectionString = `redis://${host}:${port}`;
-        //IORedis
-        //Function which can decompose the connection string into different components like hostname,password etc.
-        const parseRedisConnectionString = (connectionString) => {
-            //Used to parse the connection string and return components of the same 
-            //Refer:ioredis/built/utils/index.js parseURL function for more details
-            //This is just a mock implementation, you can enhance it as per your needs.
-            return {
-                password: ""
-            };
+
+        const selectedDrivers = process.env.REDIS_DRIVER
+
+        switch (selectedDrivers) {
+            case "ioredis":
+                //IORedis
+                //Function which can decompose the connection string into different components like hostname,password etc.
+                const parseRedisConnectionString = (connectionString) => {
+                    //Used to parse the connection string and return components of the same 
+                    //Refer:ioredis/built/utils/index.js parseURL function for more details
+                    //This is just a mock implementation, you can enhance it as per your needs.
+                    return {
+                        password: ""
+                    };
+                }
+                const connectionInjector = () => IORedisClientPool.IORedisClientClusterFactory([singleNodeRedisConnectionString], Redis as any, Cluster as any, parseRedisConnectionString);
+                pool = new IORedisClientPool(connectionInjector);
+                break;
+            case "node-test-driver":
+                // Test Adapter with node-redis
+                pool = new NodeRedisTestDriver(singleNodeRedisConnectionString);
+                break;
+            case "node-redis":
+            default:
+                //Node-redis
+                const connectionInjector2 = () => createClient({ url: singleNodeRedisConnectionString });
+                pool = new RedisClientPool<any>(connectionInjector2);
+                break;
         }
-        const connectionInjector = () => IORedisClientPool.IORedisClientClusterFactory([singleNodeRedisConnectionString], Redis as any, Cluster as any, parseRedisConnectionString);
-        pool = new IORedisClientPool(connectionInjector);
-
-        //Node-redis To enable this we need to change redis-abstraction to support add command instead of invoking the command dynamically.
-        // const connectionInjector = () => createClient({ url: singleNodeRedisConnectionString });
-        // pool = new RedisClientPool<any>(connectionInjector);
-
-
-        //Test Adapter with node-redis
-        // pool = new NodeRedisClientPoolAdapter(singleNodeRedisConnectionString);
     });
 
     beforeEach(async () => {

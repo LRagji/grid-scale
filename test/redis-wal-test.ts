@@ -7,6 +7,7 @@ import sinon from "sinon";
 import { Utilities } from "../src/utilities.js";
 
 class SinonRedisClientPoolMock implements IRedisClientPool {
+    public initialize = sinon.stub<[], Promise<void>>().resolves();
     public acquire = sinon.stub<[string], Promise<void>>().resolves();
     public release = sinon.stub<[string], Promise<void>>().resolves();
     public shutdown = sinon.stub<[], Promise<void>>().resolves();

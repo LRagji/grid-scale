@@ -34,7 +34,9 @@ export class RedisWAL {
     ) { }
 
     public async initialize(): Promise<void> {
-        // Initialize redis connection if required.
+
+        await this.redisDriver.initialize();
+
         const timeAligned = await this.checkTimeTolerance();
         if (!timeAligned) {
             throw new Error("Time tolerance check failed. Host and Redis server times are not aligned, Cannot proceed with operations.");

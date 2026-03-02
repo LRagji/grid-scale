@@ -11,7 +11,7 @@
     "build": "npm run build-test && npm run clean-prod",
     "build-test": "npm run clean-build && npx tsc && npm run copy-files",
     "test": "npm run build-test && node --test ./dist/test/**/*.js && npm run integration-test",
-    "integration-test": "npm run build-test && node --test ./dist/integration-tests/**/*.js",
+    "integration-test": "npm run build-test && REDIS_DRIVER=node-redis node --test ./dist/integration-tests/**/*.js && REDIS_DRIVER=ioredis node --test ./dist/integration-tests/**/*.js && REDIS_DRIVER=node-test-driver node --test ./dist/integration-tests/**/*.js",
     "docker-local": "docker build -f ./Dockerfile -t notification-hub-svc:local .",
     "coverage": "c8 --config ./coverage-config.json npm run test",
     "coverage:integration": "c8 --config ./coverage-config.json npm run integration-test"
@@ -33,6 +33,6 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
-    "redis-abstraction": "^1.0.11"
+    "redis-abstraction": "^2.0.12"
   }
 }
