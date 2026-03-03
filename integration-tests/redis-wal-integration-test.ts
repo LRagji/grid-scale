@@ -8,7 +8,7 @@ import { IRedisClientPool, IORedisClientPool, RedisClientPool } from "redis-abst
 import { setTimeout as delay } from 'node:timers/promises';
 
 import { RedisWAL } from "../src/index.js";
-import { RedisKeyBuilder } from "../src/redis-key-builder.js";
+import { RedisKeyBuilder } from "../src/redis-wal/redis-key-builder.js";
 import { ISample } from "../src/interfaces/i-sample.js";
 import { Utilities } from "../src/utilities.js";
 import { NodeRedisTestDriver } from "./node-redis-test-driver.js";

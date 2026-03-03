@@ -1,4 +1,4 @@
 
-import { RedisWAL } from './redis-wal.js';
+import { RedisWAL } from './redis-wal/redis-wal.js';
 
 export { RedisWAL };

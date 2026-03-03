@@ -1,7 +1,7 @@
 import { IRedisClientPool } from "redis-abstraction";
 import { RedisKeyBuilder } from "./redis-key-builder.js";
-import { ISample, IScoredSample } from "./interfaces/i-sample.js";
-import { Utilities } from "./utilities.js";
+import { ISample, IScoredSample } from "../interfaces/i-sample.js";
+import { Utilities } from "../utilities.js";
 
 class RedisKeywords {
     static BITFIELD = "bitfield";
