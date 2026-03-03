@@ -7,14 +7,15 @@
   "scripts": {
     "clean-build": "rimraf ./dist && tsc",
     "copy-files": "copyfiles ./package.json ./license.md ./dist/",
-    "clean-prod": "rimraf ./dist/test",
+    "clean-prod": "rimraf ./dist/test ./dist/integration-tests ./dist/api-tests",
     "build": "npm run build-test && npm run clean-prod",
     "build-test": "npm run clean-build && npx tsc && npm run copy-files",
     "test": "npm run build-test && node --test ./dist/test/**/*.js && npm run integration-test",
     "integration-test": "npm run build-test && REDIS_DRIVER=node-redis node --test ./dist/integration-tests/**/*.js && REDIS_DRIVER=ioredis node --test ./dist/integration-tests/**/*.js && REDIS_DRIVER=node-test-driver node --test ./dist/integration-tests/**/*.js",
     "docker-local": "docker build -f ./Dockerfile -t notification-hub-svc:local .",
     "coverage": "c8 --config ./coverage-config.json npm run test",
-    "coverage:integration": "c8 --config ./coverage-config.json npm run integration-test"
+    "coverage:integration": "c8 --config ./coverage-config.json npm run integration-test",
+    "api": "npm run build-test && node ./dist/api-tests/rest-wrapper/rest-wrapper.js"
   },
   "keywords": [],
   "author": "Laukik",
@@ -25,6 +26,7 @@
     "c8": "^11.0.0",
     "copyfiles": "^2.4.1",
     "dotenv": "^17.3.1",
+    "express-service-bootstrap": "^0.18.0",
     "ioredis": "^5.10.0",
     "redis": "^4.7.1",
     "rimraf": "^6.1.3",

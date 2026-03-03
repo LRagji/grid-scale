@@ -9,12 +9,15 @@
     "outDir": "dist",
     "emitDecoratorMetadata": false,
     "skipLibCheck": true,
-    "resolveJsonModule": true
+    "resolveJsonModule": true,
+    "declaration": true,
+    "declarationMap": true
   },
   "include": [
     "src/**/*.ts",
     "test/**/*.ts",
-    "integration-tests/**/*.ts"
+    "integration-tests/**/*.ts",
+    "api-tests/**/*.ts"
   ],
   "exclude": [
     "dist",

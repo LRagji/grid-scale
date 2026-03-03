@@ -2,7 +2,8 @@
     - Maximum number of samples to write 1000
     - Maximum number of samples to read per tag 1000
     - Maximum number of tags to read in one call 10
-    - Maximum number of active redis connection per instance 6
+    - Maximum number of active redis connection per instance 6.
+    - Maximum JSON payload in Size bytes.
 
 Use `async-sema` package if required to restrict, the reason to restrict is we can have definite limits of the load of the service to have a flat line for p90.
 ```typescript 

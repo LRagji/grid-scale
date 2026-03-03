@@ -1,6 +1,7 @@
 
 import { RedisWAL } from './redis-wal/redis-wal.js';
 import { type IKeyBuilder, RedisKeyBuilder } from './redis-wal/redis-key-builder.js';
+import { type ISample } from './interfaces/i-sample.js';
 
 //Implementation to export
 export {
@@ -10,5 +11,6 @@ export {
 
 //Types to export
 export type {
+    ISample,
     IKeyBuilder
 };
