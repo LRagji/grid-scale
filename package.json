@@ -15,7 +15,9 @@
     "docker-local": "docker build -f ./Dockerfile -t notification-hub-svc:local .",
     "coverage": "c8 --config ./coverage-config.json npm run test",
     "coverage:integration": "c8 --config ./coverage-config.json npm run integration-test",
-    "api": "npm run build-test && node ./dist/api-tests/rest-wrapper/rest-wrapper.js"
+    "docker-api": "docker build -f ./api-tests/rest-wrapper/dockerfile -t rest-wrapper-svc:local .",
+    "api": "npm run build-test && node ./dist/api-tests/rest-wrapper/rest-wrapper.js",
+    "docker-api:run": "npm run docker-api && docker run -p 8080:8080 -p 8081:8081 rest-wrapper-svc:local"
   },
   "keywords": [],
   "author": "Laukik",

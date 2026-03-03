@@ -27,6 +27,7 @@ describe("RedisWAL static tests", () => {
         assert.equal(Utilities.modMinus(1234n, 100n), 1200n);
     });
 
+    //TODO: Fix this estimation logic
     // it("estimateBulkSamplesBytesUpper handles empty and populated arrays", () => {
     //     assert.equal(Utilities.estimateBulkSamplesBytesUpper([]), 2n);
 
