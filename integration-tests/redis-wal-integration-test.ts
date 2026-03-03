@@ -7,8 +7,7 @@ import Redis, { Cluster } from "ioredis";
 import { IRedisClientPool, IORedisClientPool, RedisClientPool } from "redis-abstraction";
 import { setTimeout as delay } from 'node:timers/promises';
 
-import { RedisWAL } from "../src/index.js";
-import { RedisKeyBuilder } from "../src/redis-wal/redis-key-builder.js";
+import { RedisWAL, RedisKeyBuilder } from "../src/index.js";
 import { ISample } from "../src/interfaces/i-sample.js";
 import { Utilities } from "../src/utilities.js";
 import { NodeRedisTestDriver } from "./node-redis-test-driver.js";

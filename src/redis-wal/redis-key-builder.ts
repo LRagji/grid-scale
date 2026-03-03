@@ -1,4 +1,11 @@
-export class RedisKeyBuilder {
+export interface IKeyBuilder {
+    counterKey(timeKeyPart: string): string;
+    pageKey(timeKeyPart: string, sizeKeyPart: string, writeKeyPart: string): string;
+    bookKey(): string;
+    tagKey(pageKey: string, tagName: string): string;
+}
+
+export class RedisKeyBuilder implements IKeyBuilder {
     constructor(
         private readonly keyPrefix: string = "wal",
         private readonly keySeparator: string = ":"

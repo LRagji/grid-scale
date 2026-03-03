@@ -1,5 +1,5 @@
 import { IRedisClientPool } from "redis-abstraction";
-import { RedisKeyBuilder } from "./redis-key-builder.js";
+import { IKeyBuilder, RedisKeyBuilder } from "./redis-key-builder.js";
 import { ISample, IScoredSample } from "../interfaces/i-sample.js";
 import { Utilities } from "../utilities.js";
 
@@ -28,7 +28,7 @@ export class RedisWAL {
         private readonly timeWindowInMs: bigint = 24n * 60n * 60n * 1000n, // 24 hours
         private readonly sizeWindowInBytes: bigint = Utilities.u63Max,
         private readonly writeWindow: bigint = Utilities.u63Max,
-        private readonly keyBuilder: RedisKeyBuilder = new RedisKeyBuilder(),
+        private readonly keyBuilder: IKeyBuilder = new RedisKeyBuilder(),
         private readonly sizeEstimator: (samples: ISample[]) => bigint = Utilities.roughSizeEstimator,
         private readonly maxPagesInBook: number = 100
     ) { }
