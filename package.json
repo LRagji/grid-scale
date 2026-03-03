@@ -35,6 +35,6 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
-    "redis-abstraction": "^2.0.12"
+    "redis-abstraction": "^2.0.13"
   }
 }

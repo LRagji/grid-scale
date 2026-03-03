@@ -29,6 +29,10 @@ export class NodeRedisTestDriver implements IRedisClientPool {
         await client.quit();
     }
 
+    public async [Symbol.asyncDispose](): Promise<void> {
+        await this.shutdown();
+    }
+
     public async shutdown(): Promise<void> {
         const closeHandles = [...this.activeClients.values()].map((client) => client.quit());
         await Promise.allSettled(closeHandles);

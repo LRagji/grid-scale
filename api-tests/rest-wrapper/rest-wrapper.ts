@@ -41,8 +41,9 @@ function setupRoutes(rootRouter: IRouter) {
         diagnostics.set("numberOfSamples", samples.length);
         await redisWal.upsertBulkSamples(samples);
         let endTime = Date.now();
-        diagnostics.set("duration", endTime - startTime);
-        res.json(Object.fromEntries(diagnostics.entries()));
+        diagnostics.set("durationMs", endTime - startTime);
+        res.status(201) //Created
+            .json(Object.fromEntries(diagnostics.entries()));
     });
 
     //Read Samples API
@@ -57,13 +58,14 @@ function setupRoutes(rootRouter: IRouter) {
         const samples = await redisWal.queryRange(fetchRequest.tagsFilter.in, BigInt(fetchRequest.timeFilter.startInclusiveTime), BigInt(fetchRequest.timeFilter.endExclusiveTime), samplesPerPage + 1);
         diagnostics.set("numberOfSamples", samples.length);
         let endTime = Date.now();
-        diagnostics.set("duration", endTime - startTime);
+        diagnostics.set("durationMs", endTime - startTime);
         if (samples.length > samplesPerPage) {
             res.status(206) //Partial Content
-                .json(Object.fromEntries(diagnostics.entries()));
+                .json({ "samples": samples, "diagnostics": Object.fromEntries(diagnostics.entries()) });
         }
         else {
-            res.json(Object.fromEntries(diagnostics.entries()));
+            res.status(200) //OK
+                .json({ "samples": samples, "diagnostics": Object.fromEntries(diagnostics.entries()) });
         }
     });
 }

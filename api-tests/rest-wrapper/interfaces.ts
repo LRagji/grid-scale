@@ -37,8 +37,3 @@ export interface IFetchRequest {
         sequence: (number | "&" | "|")[]
     }
 }
-
-export type IRestWrapper = {
-    upsertSamples: (samples: any[]) => Promise<{ [key: string]: any }>,
-    fetchSamples: (fetchRequest: IFetchRequest) => Promise<{ samples: any[], diagnostics: { [key: string]: any } }>
-}
