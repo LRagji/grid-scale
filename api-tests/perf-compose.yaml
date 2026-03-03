@@ -1,0 +1,33 @@
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  rest-wrapper:
+    build:
+      context: ../
+      dockerfile: ./api-tests/rest-wrapper/dockerfile
+    ports:
+      - "8080:8080"
+      - "8081:8081"
+    environment:
+      REDIS_CONNECTION_STRING: redis://redis:6379
+      TIME_TOLERANCE_IN_MS: "60000"
+      TIME_WINDOW_IN_MS: "86400000"
+      SIZE_WINDOW_IN_BYTES: "314572800"
+      WRITE_WINDOW: "1000000"
+      MAX_PAGES_IN_BOOK: "100"
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8081/health/liveliness" ]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    depends_on:
+      redis:
+        condition: service_healthy
