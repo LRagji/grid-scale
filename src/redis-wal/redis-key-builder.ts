@@ -1,5 +1,5 @@
 export interface IKeyBuilder {
-    counterKey(timeKeyPart: string): string;
+    counterKey(): string;
     pageKey(timeKeyPart: string, sizeKeyPart: string, writeKeyPart: string): string;
     bookKey(): string;
     tagKey(pageKey: string, tagName: string): string;
@@ -8,23 +8,27 @@ export interface IKeyBuilder {
 export class RedisKeyBuilder implements IKeyBuilder {
     constructor(
         private readonly keyPrefix: string = "wal",
-        private readonly keySeparator: string = ":"
+        private readonly keySeparator: string = ":",
+        private readonly counterKeyName: string = "counter",
+        private readonly pageKeyName: string = "page",
+        private readonly bookKeyName: string = "book"
     ) { }
 
 
-    public counterKey(timeKeyPart: string): string {
-        return `${this.keyPrefix}${this.keySeparator}counter${this.keySeparator}${timeKeyPart}`;
+    public counterKey(): string {
+        return `${this.keyPrefix}${this.keySeparator}${this.counterKeyName}`;
     }
 
+
     public pageKey(timeKeyPart: string, sizeKeyPart: string, writeKeyPart: string): string {
-        return `${this.keyPrefix}${this.keySeparator}page${this.keySeparator}${timeKeyPart}${this.keySeparator}${sizeKeyPart}${this.keySeparator}${writeKeyPart}`;
+        return `${this.keyPrefix}${this.keySeparator}${this.pageKeyName}${this.keySeparator}${timeKeyPart}${this.keySeparator}${sizeKeyPart}${this.keySeparator}${writeKeyPart}`;
     }
 
     public bookKey(): string {
-        return `${this.keyPrefix}${this.keySeparator}book`;
+        return `${this.keyPrefix}${this.keySeparator}${this.bookKeyName}`;
     }
 
     public tagKey(pageKey: string, tagName: string): string {
-        return `${this.keyPrefix}${this.keySeparator}tag${this.keySeparator}${pageKey}${this.keySeparator}${tagName}`;
+        return `${pageKey}${this.keySeparator}${tagName}`;
     }
 }

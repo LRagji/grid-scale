@@ -105,6 +105,68 @@ describe(`RedisWAL Integration with ${process.env.REDIS_DRIVER}`, () => {
             ]);
         });
 
+
+        it("updates a tag with the same timestamp and returns the latest value on query", async () => {
+            const wal = new RedisWAL(pool);
+
+            await wal.upsertBulkSamples([
+                { tag: "sensor-1", ts: 100, pld: { nV: 50 } }
+            ]);
+
+            let result = await wal.queryRange(["sensor-1"], 0n, 500n, 100);
+            assert.equal(result.length, 1);
+            assert.equal(result[0].pld.nV, 50);
+
+            await wal.upsertBulkSamples([
+                { tag: "sensor-1", ts: 100, pld: { nV: 75 } }
+            ]);
+
+            result = await wal.queryRange(["sensor-1"], 0n, 500n, 100);
+            assert.equal(result.length, 1);
+            assert.equal(result[0].tag, "sensor-1");
+            assert.equal(result[0].ts, 100);
+            assert.equal(result[0].pld.nV, 75);
+        });
+
+        it("handles multiple sequential updates on same tag and timestamp", async () => {
+            const wal = new RedisWAL(pool);
+
+            const updates = [10, 25, 50, 100];
+
+            for (const value of updates) {
+                await wal.upsertBulkSamples([
+                    { tag: "counter", ts: 99, pld: { nV: value } }
+                ]);
+            }
+
+            const result = await wal.queryRange(["counter"], 0n, 500n, 100);
+            assert.equal(result.length, 1);
+            assert.equal(result[0].pld.nV, 100);
+        });
+
+        it("updates multiple tags with same timestamp and verifies latest values", async () => {
+            const wal = new RedisWAL(pool);
+
+            await wal.upsertBulkSamples([
+                { tag: "A", ts: 50, pld: { nV: 1 } },
+                { tag: "B", ts: 50, pld: { nV: 2 } }
+            ]);
+
+            await wal.upsertBulkSamples([
+                { tag: "A", ts: 50, pld: { nV: 10 } },
+                { tag: "B", ts: 50, pld: { nV: 20 } }
+            ]);
+
+            const result = await wal.queryRange(["A", "B"], 0n, 500n, 100);
+            const resultMap = result.reduce((acc, sample) => {
+                acc[sample.tag] = sample.pld.nV;
+                return acc;
+            }, {} as Record<string, number>);
+
+            assert.equal(resultMap["A"], 10);
+            assert.equal(resultMap["B"], 20);
+        });
+
         it("deduplicates duplicate tag names in query input", async () => {
             const wal = new RedisWAL(pool);
 
@@ -177,17 +239,16 @@ describe(`RedisWAL Integration with ${process.env.REDIS_DRIVER}`, () => {
             await wal.upsertBulkSamples([{ tag: "S", ts: 2, pld: { nV: 20 } }]);
 
             const token = pool.generateUniqueToken("InspectSizePages");
-            let counterKeys: string[] = [];
             let totalSize = 0n;
             let totalWrites = 0n;
             try {
                 await pool.acquire(token);
-                counterKeys = await pool.run(token, ["KEYS", "it-size-window:counter:*"]);
-                for (const counterKey of counterKeys) {
-                    const values = await pool.run(token, ["BITFIELD", counterKey, "GET", "u63", "#0", "GET", "u63", "#1"]);
-                    totalSize += BigInt(values[0]);
-                    totalWrites += BigInt(values[1]);
-                }
+                const counterKey = "it-size-window:counter";
+                const sizeCounterBitLocation = 21 * 8; // 168
+                const writeCounterBitLocation = sizeCounterBitLocation + 63; // 231
+                const values = await pool.run(token, ["BITFIELD", counterKey, "GET", "u63", `${sizeCounterBitLocation}`, "GET", "u63", `${writeCounterBitLocation}`]);
+                totalSize = BigInt(values[0] || 0);
+                totalWrites = BigInt(values[1] || 0);
             }
             finally {
                 await pool.release(token);
@@ -205,17 +266,16 @@ describe(`RedisWAL Integration with ${process.env.REDIS_DRIVER}`, () => {
             await wal.upsertBulkSamples([{ tag: "W", ts: 2, pld: { nV: 2 } }]);
 
             const token = pool.generateUniqueToken("InspectWritePages");
-            let counterKeys: string[] = [];
             let totalSize = 0n;
             let totalWrites = 0n;
             try {
                 await pool.acquire(token);
-                counterKeys = await pool.run(token, ["KEYS", "it-write-window:counter:*"]);
-                for (const counterKey of counterKeys) {
-                    const values = await pool.run(token, ["BITFIELD", counterKey, "GET", "u63", "#0", "GET", "u63", "#1"]);
-                    totalSize += BigInt(values[0]);
-                    totalWrites += BigInt(values[1]);
-                }
+                const counterKey = "it-write-window:counter";
+                const sizeCounterBitLocation = 21 * 8; // 168
+                const writeCounterBitLocation = sizeCounterBitLocation + 63; // 231
+                const values = await pool.run(token, ["BITFIELD", counterKey, "GET", "u63", `${sizeCounterBitLocation}`, "GET", "u63", `${writeCounterBitLocation}`]);
+                totalSize = BigInt(values[0] || 0);
+                totalWrites = BigInt(values[1] || 0);
             }
             finally {
                 await pool.release(token);

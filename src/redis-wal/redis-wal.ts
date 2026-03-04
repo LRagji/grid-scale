@@ -17,6 +17,8 @@ class RedisKeywords {
     static LIMIT = "limit";
     static WITHSCORES = "withscores";
     static SET_ONLY_IF_NO_EXPIRY = "nx";
+    static SET = "set";
+    static GET = "get";
 }
 
 export class RedisWAL {
@@ -66,27 +68,50 @@ export class RedisWAL {
         const writes = 1n;
         const actualPageCounters = await this.incrementCounter(currentTimeWithTolerance, sizeInBytes, writes);
 
-        const modTime = Utilities.modMinus(currentTimeWithTolerance, this.timeWindowInMs);
         const modSize = Utilities.modMinus(actualPageCounters.sizeInBytes, this.sizeWindowInBytes);
         const modWrites = Utilities.modMinus(actualPageCounters.writes, this.writeWindow);
-        const pageKey = this.keyBuilder.pageKey(modTime.toString(), modSize.toString(), modWrites.toString());
+        const pageKey = this.keyBuilder.pageKey(actualPageCounters.timeKey, modSize.toString(), modWrites.toString());
 
-        await this.dumpDataToPage(pageKey, samples, modTime);
+        await this.dumpDataToPage(pageKey, samples, currentTimeWithTolerance, actualPageCounters.writes);
     }
 
-    private async incrementCounter(timeKeyPart: bigint, sizeInBytes: bigint, writes: bigint): Promise<{ sizeInBytes: bigint, writes: bigint }> {
-        const counterKey = this.keyBuilder.counterKey(timeKeyPart.toString());
-        const returnObject = { sizeInBytes: 0n, writes: 0n };
+    private async incrementCounter(timeWithTolerance: bigint, sizeInBytes: bigint, writes: bigint): Promise<{ timeKey: string, sizeInBytes: bigint, writes: bigint }> {
+        const counterKey = this.keyBuilder.counterKey();
+        const returnObject = { timeKey: "", sizeInBytes: 0n, writes: 0n };
+        //This is the number of bytes we need to reserve for encoding the time part in the key. 
+        //This allows us to have a fixed length binary representation for the time part, 
+        //This is max length of 64bit Uint in string length, which is 20 characters, plus some extra padding to be safe.
+        // Also 21 bytes are a multiple of 3 get operations in redis using u56 encoding.
+        const headerBytes = 21;
+        const binaryTimeValue = timeWithTolerance.toString()
+            .padStart(headerBytes, "0")
+            .substring(0, headerBytes);
+        const sizeCounterBitLocation = headerBytes * 8; // Each character is 8 bits.
+        const writeCounterBitLocation = sizeCounterBitLocation + 63; // Size counter takes 63 bits, we start the write counter right after that.
+
         const commands = [
-            [RedisKeywords.BITFIELD, counterKey, RedisKeywords.OVERFLOW, RedisKeywords.FAIL, RedisKeywords.INCRBY, "u63", "#0", `${sizeInBytes}`, RedisKeywords.INCRBY, "u63", "#1", `${writes}`],
-            [RedisKeywords.PEXPIRE, counterKey, `${this.timeWindowInMs * 2n}`, RedisKeywords.SET_ONLY_IF_NO_EXPIRY]
+            [RedisKeywords.SET, counterKey, binaryTimeValue, RedisKeywords.SET_ONLY_IF_NO_EXPIRY],
+            [
+                RedisKeywords.BITFIELD, counterKey, RedisKeywords.OVERFLOW, RedisKeywords.FAIL,
+                RedisKeywords.GET, "u56", "#0", RedisKeywords.GET, "u56", "#1", RedisKeywords.GET, "u56", "#2",
+                RedisKeywords.INCRBY, "u63", `${sizeCounterBitLocation}`, `${sizeInBytes}`,
+                RedisKeywords.INCRBY, "u63", `${writeCounterBitLocation}`, `${writes}`
+            ],
+            [RedisKeywords.PEXPIRE, counterKey, `${this.timeWindowInMs}`, RedisKeywords.SET_ONLY_IF_NO_EXPIRY]
         ];
         const token = this.redisDriver.generateUniqueToken('IncrementCounter');
         try {
             await this.redisDriver.acquire(token);
             const response = await this.redisDriver.pipeline(token, commands, false) as string[][];
-            returnObject.sizeInBytes = BigInt(response[0][0]);
-            returnObject.writes = BigInt(response[0][1]);
+            const buff = Buffer.alloc(headerBytes + 1);
+            //Start writing and overwriting from end cause we just have 7 bytes not 8 bytes
+            buff.writeBigUInt64BE(BigInt(response[1][2]), (buff.length - (8 - 0)));
+            buff.writeBigUInt64BE(BigInt(response[1][1]), (buff.length - (16 - 1)));
+            buff.writeBigUInt64BE(BigInt(response[1][0]), (buff.length - (24 - 2)));
+            returnObject.timeKey = buff.toString("ascii", 1, buff.length);
+            //returnObject.timeKey = `${response[1][0]}${response[1][1]}${response[1][2]}`;
+            returnObject.sizeInBytes = BigInt(response[1][3]);
+            returnObject.writes = BigInt(response[1][4]);
         }
         finally {
             await this.redisDriver.release(token);
@@ -94,14 +119,14 @@ export class RedisWAL {
         return returnObject;
     }
 
-    private async dumpDataToPage(pageKey: string, samples: ISample[], insertTime: bigint): Promise<void> {
+    private async dumpDataToPage(pageKey: string, samples: ISample[], insertTime: bigint, currentWriteCount: bigint): Promise<void> {
         const updateBookCommands = this.generateBookUpdateCommand(pageKey, insertTime);
         const pageUpsertCommands = new Map<string, string[]>();[RedisKeywords.ZADD, pageKey];
         for (const sample of samples) {
             const tagKey = this.keyBuilder.tagKey(pageKey, sample.tag);
             const existingCommands = pageUpsertCommands.get(tagKey) || [RedisKeywords.ZADD, tagKey];
             delete sample.tag;
-            existingCommands.push(sample.ts.toString(), JSON.stringify(sample));
+            existingCommands.push(`${sample.ts.toString()}.${currentWriteCount.toString()}`, JSON.stringify(sample));
             pageUpsertCommands.set(tagKey, existingCommands);
         }
 
