@@ -3,20 +3,22 @@ export class Utilities {
 
     public static readonly u63Max = BigInt("0x7FFFFFFFFFFFFFFF"); // 63-bit max value redis counter will only go upto this.
 
+    public static readonly u48Max = Number("0xFFFFFFFFFFFF"); // 48-bit max value for time header and counters.
 
-    public static modMinus(value: bigint, divisor: bigint): bigint {
+
+    public static modMinus(value: number, divisor: number): number {
         return value - (value % divisor);
     }
 
-    public static roughSizeEstimator(samples: any[]): bigint {
+    public static roughSizeEstimator(samples: any[]): number {
         //This needs to be tweaked later based on actual encoding and Redis storage overhead, but this is a starting point for estimation.
         if (samples.length === 0) {
-            return 2n;
+            return 2;
         }
 
-        let total = 2n + BigInt(samples.length - 1);
+        let total = 2 + (samples.length - 1);
         for (const sample of samples) {
-            total += 94n + (6n * BigInt(sample.tag.length));
+            total += 94 + (6 * sample.tag.length);
         }
 
         return total;

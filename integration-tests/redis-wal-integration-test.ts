@@ -95,7 +95,7 @@ describe(`RedisWAL Integration with ${process.env.REDIS_DRIVER}`, () => {
 
             await wal.upsertBulkSamples(input.map((_) => structuredClone(_)));
 
-            const result = await wal.queryRange(["alpha"], 0n, 10n, 100);
+            const result = await wal.queryRange(["alpha"], 0, 10, 100);
             const simplified = result
                 .map((sample) => ({ tag: sample.tag, ts: sample.ts, nV: sample.pld.nV }));
 
@@ -112,7 +112,7 @@ describe(`RedisWAL Integration with ${process.env.REDIS_DRIVER}`, () => {
                 { tag: "sensor-1", ts: 100, pld: { nV: 50 } }
             ]);
 
-            let result = await wal.queryRange(["sensor-1"], 0n, 500n, 100);
+            let result = await wal.queryRange(["sensor-1"], 0, 500, 100);
             assert.equal(result.length, 1);
             assert.equal(result[0].pld.nV, 50);
 
@@ -120,7 +120,7 @@ describe(`RedisWAL Integration with ${process.env.REDIS_DRIVER}`, () => {
                 { tag: "sensor-1", ts: 100, pld: { nV: 75 } }
             ]);
 
-            result = await wal.queryRange(["sensor-1"], 0n, 500n, 100);
+            result = await wal.queryRange(["sensor-1"], 0, 500, 100);
             assert.equal(result.length, 1);
             assert.equal(result[0].tag, "sensor-1");
             assert.equal(result[0].ts, 100);
@@ -138,7 +138,7 @@ describe(`RedisWAL Integration with ${process.env.REDIS_DRIVER}`, () => {
                 ]);
             }
 
-            const result = await wal.queryRange(["counter"], 0n, 500n, 100);
+            const result = await wal.queryRange(["counter"], 0, 500, 100);
             assert.equal(result.length, 1);
             assert.equal(result[0].pld.nV, 100);
         });
@@ -156,7 +156,7 @@ describe(`RedisWAL Integration with ${process.env.REDIS_DRIVER}`, () => {
                 { tag: "B", ts: 50, pld: { nV: 20 } }
             ]);
 
-            const result = await wal.queryRange(["A", "B"], 0n, 500n, 100);
+            const result = await wal.queryRange(["A", "B"], 0, 500, 100);
             const resultMap = result.reduce((acc, sample) => {
                 acc[sample.tag] = sample.pld.nV;
                 return acc;
@@ -171,7 +171,7 @@ describe(`RedisWAL Integration with ${process.env.REDIS_DRIVER}`, () => {
 
             await wal.upsertBulkSamples([{ tag: "dupTag", ts: 1, pld: { nV: 7 } }]);
 
-            const result = await wal.queryRange(["dupTag", "dupTag", "dupTag"], 0n, 10n, 100);
+            const result = await wal.queryRange(["dupTag", "dupTag", "dupTag"], 0, 10, 100);
             assert.equal(result.length, 1);
             assert.equal(result[0].tag, "dupTag");
             assert.equal(result[0].pld.nV, 7);
@@ -186,7 +186,7 @@ describe(`RedisWAL Integration with ${process.env.REDIS_DRIVER}`, () => {
                 { tag: "A", ts: 3, pld: { nV: 303 } }
             ]);
 
-            const result = await wal.queryRange(["A", "B"], 0n, 10n, 100);
+            const result = await wal.queryRange(["A", "B"], 0, 10, 100);
             const view = result
                 .map((_) => `${_.tag}:${_.ts}:${_.pld.nV}`)
                 .sort();
@@ -195,12 +195,12 @@ describe(`RedisWAL Integration with ${process.env.REDIS_DRIVER}`, () => {
         });
 
         it("picks latest update for same tag and timestamp across pages", async () => {
-            const wal = new RedisWAL(pool, 10001n, 20000n, 1n, 100000n);
+            const wal = new RedisWAL(pool, 10001, 20000, 1, 100000);
 
             await wal.upsertBulkSamples([{ tag: "same", ts: 5, pld: { nV: 1 } }]);
             await wal.upsertBulkSamples([{ tag: "same", ts: 5, pld: { nV: 999 } }]);
 
-            const result = await wal.queryRange(["same"], 0n, 10n, 100);
+            const result = await wal.queryRange(["same"], 0, 10, 100);
             assert.equal(result.length, 1);
             assert.equal(result[0].pld.nV, 999);
         });

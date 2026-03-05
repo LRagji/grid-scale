@@ -55,7 +55,7 @@ function setupRoutes(rootRouter: IRouter) {
         const redisWal = DIContainer.fetchInstance<RedisWAL>(DIConstants.RedisWAL) as RedisWAL;
         const samplesPerPage = 1000; //TODO: Make this configurable through env vars if needed.
         const fetchRequest = req.body as IFetchRequest;
-        const samples = await redisWal.queryRange(fetchRequest.tagsFilter.in, BigInt(fetchRequest.timeFilter.startInclusiveTime), BigInt(fetchRequest.timeFilter.endExclusiveTime), samplesPerPage + 1);
+        const samples = await redisWal.queryRange(fetchRequest.tagsFilter.in, fetchRequest.timeFilter.startInclusiveTime, fetchRequest.timeFilter.endExclusiveTime, samplesPerPage + 1);
         diagnostics.set("numberOfSamples", samples.length);
         let endTime = Date.now();
         diagnostics.set("durationMs", endTime - startTime);

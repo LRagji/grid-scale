@@ -43,5 +43,4 @@ fastify.listen({ port: process.env.PORT || 3000, host: '0.0.0.0' });
 3. Add K6 support.
 4. Add multiple integration test files for partitioning on time, size and writes.
 5. Add validations for maximum 48bit integer or uint. 
-6. Remove bigint support as JS only support valid 53bit precision numbers.
-7. Performance nightmare with multiple for loops for read and writes.
+6. Performance nightmare with multiple for loops for read and writes.

@@ -26,29 +26,29 @@ export class RedisWAL {
     constructor(
         private readonly redisDriver: IRedisClientPool,
         //Defaults.
-        private readonly timeToleranceInMs: bigint = 1n * 60n * 1000n, // 1 minute
-        private readonly timeWindowInMs: bigint = 24n * 60n * 60n * 1000n, // 24 hours
-        private readonly sizeWindowInBytes: bigint = Utilities.u63Max,
-        private readonly writeWindow: bigint = Utilities.u63Max,
+        private readonly timeToleranceInMs: number = 1 * 60 * 1000, // 1 minute
+        private readonly timeWindowInMs: number = 24 * 60 * 60 * 1000, // 24 hours
+        private readonly sizeWindowInBytes: number = Utilities.u48Max,
+        private readonly writeWindow: number = Utilities.u48Max,
         private readonly keyBuilder: IKeyBuilder = new RedisKeyBuilder(),
-        private readonly sizeEstimator: (samples: ISample[]) => bigint = Utilities.roughSizeEstimator,
+        private readonly sizeEstimator: (samples: ISample[]) => number = Utilities.roughSizeEstimator,
         private readonly maxPagesInBook: number = 100,
         private readonly newPageCallback: (pageKey: string) => Promise<void> = async (_pageKey: string) => { }
     ) {
-        if (this.timeToleranceInMs <= 1000n) {
-            throw new Error("Time tolerance must be greater than 1 second. Currently, it is set to " + this.timeToleranceInMs.toString() + " ms.");
+        if (this.timeToleranceInMs <= 1000 || this.timeToleranceInMs > Utilities.u48Max) {
+            throw new Error("Time tolerance must be between 1 second and " + Utilities.u48Max + " ms. Currently, it is set to " + this.timeToleranceInMs.toString() + " ms.");
         }
-        if (this.timeWindowInMs <= 1000n) {
-            throw new Error("Time window must be greater than 1 second. Currently, it is set to " + this.timeWindowInMs.toString() + " ms.");
+        if (this.timeWindowInMs <= 1000 || this.timeWindowInMs > Utilities.u48Max) {
+            throw new Error("Time window must be between 1 second and " + Utilities.u48Max + " ms. Currently, it is set to " + this.timeWindowInMs.toString() + " ms.");
         }
-        if (this.sizeWindowInBytes <= 0n) {
-            throw new Error("Size window must be greater than 0. Currently, it is set to " + this.sizeWindowInBytes.toString() + " bytes.");
+        if (this.sizeWindowInBytes <= 0 || this.sizeWindowInBytes > Utilities.u48Max) {
+            throw new Error("Size window must be between 0 and " + Utilities.u48Max + ". Currently, it is set to " + this.sizeWindowInBytes.toString() + " bytes.");
         }
-        if (this.writeWindow <= 0n) {
-            throw new Error("Write window must be greater than 0. Currently, it is set to " + this.writeWindow.toString() + " writes.");
+        if (this.writeWindow <= 0 || this.writeWindow > Utilities.u48Max) {
+            throw new Error("Write window must be between 0 and " + Utilities.u48Max + ". Currently, it is set to " + this.writeWindow.toString() + " writes.");
         }
-        if (this.maxPagesInBook <= 0) {
-            throw new Error("Max pages in book must be greater than 0. Currently, it is set to " + this.maxPagesInBook + " pages.");
+        if (this.maxPagesInBook <= 0 || this.maxPagesInBook > 1000) {
+            throw new Error("Max pages in book must be between 1 and 1000. Currently, it is set to " + this.maxPagesInBook + " pages.");
         }
         if (this.timeToleranceInMs >= this.timeWindowInMs) {
             throw new Error("Time tolerance must be less than time window to ensure proper functioning of the system. Currently, time tolerance is " + this.timeToleranceInMs.toString() + " ms and time window is " + this.timeWindowInMs.toString() + " ms.");
@@ -66,15 +66,15 @@ export class RedisWAL {
     }
 
     private async checkTimeTolerance(): Promise<boolean> {
-        const hostTime = BigInt(Date.now());
-        let redisTime = 0n;
+        const hostTime = Date.now();
+        let redisTime = 0;
         const token = this.redisDriver.generateUniqueToken('TimeToleranceCheck');
         try {
             await this.redisDriver.acquire(token);
             const redisTimeArray = await this.redisDriver.run(token, [RedisKeywords.TIME]) as string[];
-            const redisSeconds = BigInt(redisTimeArray[0]);
-            const redisMicroseconds = BigInt(redisTimeArray[1]);
-            redisTime = (redisSeconds * 1000n) + (redisMicroseconds / 1000n);
+            const redisSeconds = parseInt(redisTimeArray[0], 10);
+            const redisMicroseconds = parseInt(redisTimeArray[1], 10);
+            redisTime = (redisSeconds * 1000) + (redisMicroseconds / 1000);
         }
         finally {
             await this.redisDriver.release(token);
@@ -83,9 +83,9 @@ export class RedisWAL {
     }
 
     public async upsertBulkSamples(samples: ISample[]): Promise<void> {
-        const currentTimeWithTolerance = Utilities.modMinus(BigInt(Date.now()), this.timeToleranceInMs);
+        const currentTimeWithTolerance = Utilities.modMinus(Date.now(), this.timeToleranceInMs);
         const sizeInBytes = this.sizeEstimator(samples);
-        const writes = 1n;
+        const writes = 1;
         const actualPageCounters = await this.incrementCounter(currentTimeWithTolerance, sizeInBytes, writes);
 
         const modSize = Utilities.modMinus(actualPageCounters.sizeInBytes, this.sizeWindowInBytes);
@@ -98,9 +98,9 @@ export class RedisWAL {
         }
     }
 
-    private async incrementCounter(timeWithTolerance: bigint, sizeInBytes: bigint, writes: bigint): Promise<{ timeKey: string, sizeInBytes: bigint, writes: bigint, newPage: boolean }> {
+    private async incrementCounter(timeWithTolerance: number, sizeInBytes: number, writes: number): Promise<{ timeKey: string, sizeInBytes: number, writes: number, newPage: boolean }> {
         const counterKey = this.keyBuilder.counterKey();
-        const returnObject = { timeKey: "", sizeInBytes: 0n, writes: 0n, newPage: false };
+        const returnObject = { timeKey: "", sizeInBytes: 0, writes: 0, newPage: false };
         // Current js engine v8 only guarantees 53 bit precision for integers, so we use 48 bits for the time header.
         // We use the same 48 bits for counter sizes etc.
         const headerBytes = 6;
@@ -122,8 +122,8 @@ export class RedisWAL {
             await this.redisDriver.acquire(token);
             const response = await this.redisDriver.pipeline(token, commands, false) as string[][];
             returnObject.timeKey = response[1][0].toString();
-            returnObject.sizeInBytes = BigInt(parseInt(response[1][1], 10));
-            returnObject.writes = BigInt(parseInt(response[1][2], 10));
+            returnObject.sizeInBytes = parseInt(response[1][1], 10);
+            returnObject.writes = parseInt(response[1][2], 10);
             returnObject.newPage = (response[0] ?? "").toString().toLowerCase() === "ok";
             if (returnObject.newPage && returnObject.timeKey !== Number(timeWithTolerance).toString()) {
                 throw new Error(`System Error:Time key mismatch when creating new page. Expected: ${Number(timeWithTolerance).toString()}, Actual: ${returnObject.timeKey}. This indicates a potential issue with time alignment between host and Redis server.`);
@@ -135,7 +135,7 @@ export class RedisWAL {
         return returnObject;
     }
 
-    private async dumpDataToPage(pageKey: string, samples: ISample[], insertTime: bigint, currentWriteCount: bigint): Promise<void> {
+    private async dumpDataToPage(pageKey: string, samples: ISample[], insertTime: number, currentWriteCount: number): Promise<void> {
         const updateBookCommands = this.generateBookUpdateCommand(pageKey, insertTime);
         const pageUpsertCommands = new Map<string, string[]>();[RedisKeywords.ZADD, pageKey];
         for (const sample of samples) {
@@ -157,14 +157,14 @@ export class RedisWAL {
         }
     }
 
-    private generateBookUpdateCommand(pageKey: string, insertTime: bigint): string[][] {
+    private generateBookUpdateCommand(pageKey: string, insertTime: number): string[][] {
         return [
             [RedisKeywords.ZADD, this.keyBuilder.bookKey(), insertTime.toString(), pageKey],
             [RedisKeywords.ZREMRANGEBYRANK, this.keyBuilder.bookKey(), "0", `-${this.maxPagesInBook + 1}`]
         ];
     }
 
-    public async queryRange(tags: string[], startTime: bigint, endTime: bigint, pageSize = 100): Promise<ISample[]> {
+    public async queryRange(tags: string[], startTime: number, endTime: number, pageSize = 100): Promise<ISample[]> {
         const deDuplicatedTags = this.validateQueryRangeParams(tags, startTime, endTime);
         const rankedPages = await this.fetchAllPagesWithRanks();
         return await this.fetchDataForPagesInRange(deDuplicatedTags, rankedPages, startTime, endTime, pageSize);
@@ -190,18 +190,18 @@ export class RedisWAL {
         }
     }
 
-    private validateQueryRangeParams(tags: string[], startTime: bigint, endTime: bigint): string[] {
+    private validateQueryRangeParams(tags: string[], startTime: number, endTime: number): string[] {
 
         if (tags.length === 0) {
             throw new Error("At least one tag must be specified for querying.");
         }
-        if (startTime < 0n || endTime < 0n) {
+        if (startTime < 0 || endTime < 0) {
             throw new Error("Start time and end time must be non-negative.");
         }
         if (endTime < startTime) {
             throw new Error("End time must be greater than or equal to start time.");
         }
-        if ((endTime - startTime) === 0n) {
+        if ((endTime - startTime) === 0) {
             throw new Error(`The difference between end time and start time must be greater than 0. Currently, it is ${endTime - startTime} ms.`);
         }
         if (tags.length > 10) {
@@ -211,7 +211,7 @@ export class RedisWAL {
         return [...(new Set(tags)).values()]
     }
 
-    private async fetchDataForPagesInRange(tagNames: string[], rankedPages: Map<number, string>, startTime: bigint, endTime: bigint, pageSize: number): Promise<ISample[]> {
+    private async fetchDataForPagesInRange(tagNames: string[], rankedPages: Map<number, string>, startTime: number, endTime: number, pageSize: number): Promise<ISample[]> {
 
         const commands: string[][] = [];
         const indexedResponseContext = new Array<{ pageRank: number, tagName: string }>();
