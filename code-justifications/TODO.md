@@ -38,3 +38,10 @@ fastify.post('/write', async (req, reply) => {
 
 fastify.listen({ port: process.env.PORT || 3000, host: '0.0.0.0' });
 ```
+1. Move all code paths outside of the redis acquire/release life cycle such that connections are not blocked.
+2. Add OTEL support
+3. Add K6 support.
+4. Add multiple integration test files for partitioning on time, size and writes.
+5. Add validations for maximum 48bit integer or uint. 
+6. Remove bigint support as JS only support valid 53bit precision numbers.
+7. Performance nightmare with multiple for loops for read and writes.

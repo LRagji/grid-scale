@@ -7,5 +7,6 @@ export interface ISample {
 }
 
 export interface IScoredSample extends ISample {
-    score: bigint
+    pageRank: number,
+    writeScore: number
 }

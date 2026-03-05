@@ -41,14 +41,17 @@ export class NodeRedisTestDriver implements IRedisClientPool {
 
     public async run(token: string, commandArgs: string[]): Promise<any> {
         const client = this.getClient(token);
+        console.log(`Running command: ${commandArgs.join(" ")}`);
         return await client.sendCommand(commandArgs);
     }
 
     public async pipeline(token: string, commands: string[][], transaction: boolean): Promise<any> {
         const client = this.getClient(token);
+        console.log(`Running pipeline with ${commands.length} commands, transaction: ${transaction}`);
         if (transaction) {
             const multi = client.multi();
             for (const command of commands) {
+                console.log(`Adding command to transaction: ${command.join(" ")}`);
                 multi.addCommand(command);
             }
             return await multi.exec();
@@ -56,6 +59,7 @@ export class NodeRedisTestDriver implements IRedisClientPool {
 
         const responses: any[] = [];
         for (const command of commands) {
+            console.log(`Running command in pipeline: ${command.join(" ")}`);
             responses.push(await client.sendCommand(command));
         }
         return responses;

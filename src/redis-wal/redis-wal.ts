@@ -32,8 +32,28 @@ export class RedisWAL {
         private readonly writeWindow: bigint = Utilities.u63Max,
         private readonly keyBuilder: IKeyBuilder = new RedisKeyBuilder(),
         private readonly sizeEstimator: (samples: ISample[]) => bigint = Utilities.roughSizeEstimator,
-        private readonly maxPagesInBook: number = 100
-    ) { }
+        private readonly maxPagesInBook: number = 100,
+        private readonly newPageCallback: (pageKey: string) => Promise<void> = async (_pageKey: string) => { }
+    ) {
+        if (this.timeToleranceInMs <= 1000n) {
+            throw new Error("Time tolerance must be greater than 1 second. Currently, it is set to " + this.timeToleranceInMs.toString() + " ms.");
+        }
+        if (this.timeWindowInMs <= 1000n) {
+            throw new Error("Time window must be greater than 1 second. Currently, it is set to " + this.timeWindowInMs.toString() + " ms.");
+        }
+        if (this.sizeWindowInBytes <= 0n) {
+            throw new Error("Size window must be greater than 0. Currently, it is set to " + this.sizeWindowInBytes.toString() + " bytes.");
+        }
+        if (this.writeWindow <= 0n) {
+            throw new Error("Write window must be greater than 0. Currently, it is set to " + this.writeWindow.toString() + " writes.");
+        }
+        if (this.maxPagesInBook <= 0) {
+            throw new Error("Max pages in book must be greater than 0. Currently, it is set to " + this.maxPagesInBook + " pages.");
+        }
+        if (this.timeToleranceInMs >= this.timeWindowInMs) {
+            throw new Error("Time tolerance must be less than time window to ensure proper functioning of the system. Currently, time tolerance is " + this.timeToleranceInMs.toString() + " ms and time window is " + this.timeWindowInMs.toString() + " ms.");
+        }
+    }
 
     public async initialize(): Promise<void> {
 
@@ -73,29 +93,27 @@ export class RedisWAL {
         const pageKey = this.keyBuilder.pageKey(actualPageCounters.timeKey, modSize.toString(), modWrites.toString());
 
         await this.dumpDataToPage(pageKey, samples, currentTimeWithTolerance, actualPageCounters.writes);
+        if (actualPageCounters.newPage) {
+            await this.newPageCallback(pageKey);
+        }
     }
 
-    private async incrementCounter(timeWithTolerance: bigint, sizeInBytes: bigint, writes: bigint): Promise<{ timeKey: string, sizeInBytes: bigint, writes: bigint }> {
+    private async incrementCounter(timeWithTolerance: bigint, sizeInBytes: bigint, writes: bigint): Promise<{ timeKey: string, sizeInBytes: bigint, writes: bigint, newPage: boolean }> {
         const counterKey = this.keyBuilder.counterKey();
-        const returnObject = { timeKey: "", sizeInBytes: 0n, writes: 0n };
-        //This is the number of bytes we need to reserve for encoding the time part in the key. 
-        //This allows us to have a fixed length binary representation for the time part, 
-        //This is max length of 64bit Uint in string length, which is 20 characters, plus some extra padding to be safe.
-        // Also 21 bytes are a multiple of 3 get operations in redis using u56 encoding.
-        const headerBytes = 21;
-        const binaryTimeValue = timeWithTolerance.toString()
-            .padStart(headerBytes, "0")
-            .substring(0, headerBytes);
-        const sizeCounterBitLocation = headerBytes * 8; // Each character is 8 bits.
-        const writeCounterBitLocation = sizeCounterBitLocation + 63; // Size counter takes 63 bits, we start the write counter right after that.
+        const returnObject = { timeKey: "", sizeInBytes: 0n, writes: 0n, newPage: false };
+        // Current js engine v8 only guarantees 53 bit precision for integers, so we use 48 bits for the time header.
+        // We use the same 48 bits for counter sizes etc.
+        const headerBytes = 6;
+        const timeHeaderBuffer = Buffer.alloc(headerBytes);
+        timeHeaderBuffer.writeUintBE(Number(timeWithTolerance), 0, headerBytes);
 
         const commands = [
-            [RedisKeywords.SET, counterKey, binaryTimeValue, RedisKeywords.SET_ONLY_IF_NO_EXPIRY],
+            [RedisKeywords.SET, counterKey, timeHeaderBuffer as any, RedisKeywords.SET_ONLY_IF_NO_EXPIRY],
             [
                 RedisKeywords.BITFIELD, counterKey, RedisKeywords.OVERFLOW, RedisKeywords.FAIL,
-                RedisKeywords.GET, "u56", "#0", RedisKeywords.GET, "u56", "#1", RedisKeywords.GET, "u56", "#2",
-                RedisKeywords.INCRBY, "u63", `${sizeCounterBitLocation}`, `${sizeInBytes}`,
-                RedisKeywords.INCRBY, "u63", `${writeCounterBitLocation}`, `${writes}`
+                RedisKeywords.GET, "u48", "#0",
+                RedisKeywords.INCRBY, "u48", "#1", `${sizeInBytes}`,
+                RedisKeywords.INCRBY, "u48", "#2", `${writes}`
             ],
             [RedisKeywords.PEXPIRE, counterKey, `${this.timeWindowInMs}`, RedisKeywords.SET_ONLY_IF_NO_EXPIRY]
         ];
@@ -103,15 +121,13 @@ export class RedisWAL {
         try {
             await this.redisDriver.acquire(token);
             const response = await this.redisDriver.pipeline(token, commands, false) as string[][];
-            const buff = Buffer.alloc(headerBytes + 1);
-            //Start writing and overwriting from end cause we just have 7 bytes not 8 bytes
-            buff.writeBigUInt64BE(BigInt(response[1][2]), (buff.length - (8 - 0)));
-            buff.writeBigUInt64BE(BigInt(response[1][1]), (buff.length - (16 - 1)));
-            buff.writeBigUInt64BE(BigInt(response[1][0]), (buff.length - (24 - 2)));
-            returnObject.timeKey = buff.toString("ascii", 1, buff.length);
-            //returnObject.timeKey = `${response[1][0]}${response[1][1]}${response[1][2]}`;
-            returnObject.sizeInBytes = BigInt(response[1][3]);
-            returnObject.writes = BigInt(response[1][4]);
+            returnObject.timeKey = response[1][0].toString();
+            returnObject.sizeInBytes = BigInt(parseInt(response[1][1], 10));
+            returnObject.writes = BigInt(parseInt(response[1][2], 10));
+            returnObject.newPage = (response[0] ?? "").toString().toLowerCase() === "ok";
+            if (returnObject.newPage && returnObject.timeKey !== Number(timeWithTolerance).toString()) {
+                throw new Error(`System Error:Time key mismatch when creating new page. Expected: ${Number(timeWithTolerance).toString()}, Actual: ${returnObject.timeKey}. This indicates a potential issue with time alignment between host and Redis server.`);
+            }
         }
         finally {
             await this.redisDriver.release(token);
@@ -125,8 +141,9 @@ export class RedisWAL {
         for (const sample of samples) {
             const tagKey = this.keyBuilder.tagKey(pageKey, sample.tag);
             const existingCommands = pageUpsertCommands.get(tagKey) || [RedisKeywords.ZADD, tagKey];
-            delete sample.tag;
-            existingCommands.push(`${sample.ts.toString()}.${currentWriteCount.toString()}`, JSON.stringify(sample));
+            const clonedSample = structuredClone(sample);
+            delete clonedSample.tag;
+            existingCommands.push(`${sample.ts.toString()}.${currentWriteCount.toString()}`, JSON.stringify(clonedSample));
             pageUpsertCommands.set(tagKey, existingCommands);
         }
 
@@ -197,12 +214,12 @@ export class RedisWAL {
     private async fetchDataForPagesInRange(tagNames: string[], rankedPages: Map<number, string>, startTime: bigint, endTime: bigint, pageSize: number): Promise<ISample[]> {
 
         const commands: string[][] = [];
-        const indexedResponseContext = new Array<{ score: number, tagName: string }>();
-        for (const [score, pageKey] of rankedPages) {
+        const indexedResponseContext = new Array<{ pageRank: number, tagName: string }>();
+        for (const [pageRank, pageKey] of rankedPages) {
             for (const tagName of tagNames) {
                 const finalTagKey = this.keyBuilder.tagKey(pageKey, tagName);
-                commands.push([RedisKeywords.ZRANGE, finalTagKey, startTime.toString(), endTime.toString(), RedisKeywords.BYSCORE, RedisKeywords.LIMIT, "0", pageSize.toString()]);
-                indexedResponseContext.push({ score, tagName });
+                commands.push([RedisKeywords.ZRANGE, finalTagKey, startTime.toString(), endTime.toString(), RedisKeywords.BYSCORE, RedisKeywords.WITHSCORES, RedisKeywords.LIMIT, "0", pageSize.toString()]);
+                indexedResponseContext.push({ pageRank, tagName });
             }
         }
 
@@ -212,17 +229,18 @@ export class RedisWAL {
             const responses = await this.redisDriver.pipeline(token, commands, false) as string[][];
             const result = new Map<string, Map<number, IScoredSample>>();
             for (let i = 0; i < responses.length; i++) {
-                const response = responses[i];
-                const { score, tagName } = indexedResponseContext[i];
+                const response = responses[i] ?? [];
+                const { pageRank, tagName } = indexedResponseContext[i];
                 for (let i = 0; i < response.length; i++) {
                     const sample = JSON.parse(response[i]) as ISample;
+                    const writeScore = parseFloat(response[++i]);
                     sample.tag = tagName;
                     const existingTagSamples = result.get(sample.tag) ?? new Map<number, IScoredSample>();
-                    let existingSample = existingTagSamples.get(sample.ts) ?? { ...sample, score: BigInt(score) };
+                    let existingSample = existingTagSamples.get(sample.ts) ?? { ...sample, pageRank, writeScore };
                     //This is a scenario where updates are spread across multiple pages. 
                     //We need to ensure that we take the latest update for the same timestamp based on the score (which is the insert time of the page).
-                    if (existingSample.score < score) {
-                        existingSample = { ...sample, score: BigInt(score) };
+                    if ((existingSample.pageRank < pageRank) || (existingSample.pageRank === pageRank && existingSample.writeScore < writeScore)) {
+                        existingSample = { ...sample, pageRank, writeScore };
                     }
                     existingTagSamples.set(sample.ts, existingSample);
                     result.set(sample.tag, existingTagSamples);
@@ -239,7 +257,7 @@ export class RedisWAL {
         const result: ISample[] = [];
         for (const [tagName, samplesByTimestamp] of data) {
             for (const [_, sample] of samplesByTimestamp) {
-                const { score, ...originalSample } = sample;
+                const { pageRank: score, ...originalSample } = sample;
                 originalSample.tag = tagName;
                 result.push(originalSample);
             }

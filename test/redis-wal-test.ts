@@ -45,29 +45,29 @@ describe("RedisWAL static tests", () => {
 describe("query validation errors", () => {
 
     it("throws for empty tags", async () => {
-        const wal = new RedisWAL(pool, 1n, 1000n, 100000n, 100000n);
+        const wal = new RedisWAL(pool, 1001n, 2000n, 100000n, 100000n);
         await assert.rejects(wal.queryRange([], 0n, 1n), /At least one tag must be specified/i);
     });
 
     it("throws for negative times", async () => {
-        const wal = new RedisWAL(pool, 1n, 1000n, 100000n, 100000n);
+        const wal = new RedisWAL(pool, 1001n, 2000n, 100000n, 100000n);
         await assert.rejects(wal.queryRange(["a"], -1n, 1n), /must be non-negative/i);
 
         await assert.rejects(wal.queryRange(["a"], 0n, -1n), /must be non-negative/i);
     });
 
     it("throws when end is less than start", async () => {
-        const wal = new RedisWAL(pool, 1n, 1000n, 100000n, 100000n);
+        const wal = new RedisWAL(pool, 1001n, 2000n, 100000n, 100000n);
         await assert.rejects(wal.queryRange(["a"], 10n, 1n), /End time must be greater than or equal to start time/i);
     });
 
     it("throws when range difference is zero", async () => {
-        const wal = new RedisWAL(pool, 1n, 1000n, 100000n, 100000n);
+        const wal = new RedisWAL(pool, 1001n, 2000n, 100000n, 100000n);
         await assert.rejects(wal.queryRange(["a"], 10n, 10n), /difference between end time and start time must be greater than 0/i);
     });
 
     it("throws when more than 10 tags are provided", async () => {
-        const wal = new RedisWAL(pool, 1n, 1000n, 100000n, 100000n);
+        const wal = new RedisWAL(pool, 1001n, 2000n, 100000n, 100000n);
         const tags = Array.from({ length: 11 }, (_, i) => `tag-${i}`);
         await assert.rejects(wal.queryRange(tags, 0n, 1n), /maximum of 10 tags can be specified/i);
     });
