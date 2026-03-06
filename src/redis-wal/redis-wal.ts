@@ -68,17 +68,11 @@ export class RedisWAL {
     private async checkTimeTolerance(): Promise<boolean> {
         const hostTime = Date.now();
         let redisTime = 0;
-        const token = this.redisDriver.generateUniqueToken('TimeToleranceCheck');
-        try {
-            await this.redisDriver.acquire(token);
-            const redisTimeArray = await this.redisDriver.run(token, [RedisKeywords.TIME]) as string[];
-            const redisSeconds = parseInt(redisTimeArray[0], 10);
-            const redisMicroseconds = parseInt(redisTimeArray[1], 10);
-            redisTime = (redisSeconds * 1000) + (redisMicroseconds / 1000);
-        }
-        finally {
-            await this.redisDriver.release(token);
-        }
+        const redisTimeArray = await this.usingRedisDriver<string[]>([[RedisKeywords.TIME]], 'TimeToleranceCheck', 'run');
+        const redisSeconds = parseInt(redisTimeArray[0], 10);
+        const redisMicroseconds = parseInt(redisTimeArray[1], 10);
+        redisTime = (redisSeconds * 1000) + (redisMicroseconds / 1000);
+
         return Utilities.modMinus(hostTime, this.timeToleranceInMs) == Utilities.modMinus(redisTime, this.timeToleranceInMs);
     }
 
@@ -117,22 +111,31 @@ export class RedisWAL {
             ],
             [RedisKeywords.PEXPIRE, counterKey, `${this.timeWindowInMs}`, RedisKeywords.SET_ONLY_IF_NO_EXPIRY]
         ];
-        const token = this.redisDriver.generateUniqueToken('IncrementCounter');
+
+        const response = await this.usingRedisDriver<string[][]>(commands, 'IncrementCounter');
+        returnObject.timeKey = response[1][0].toString();
+        returnObject.sizeInBytes = parseInt(response[1][1], 10);
+        returnObject.writes = parseInt(response[1][2], 10);
+        returnObject.newPage = (response[0] ?? "").toString().toLowerCase() === "ok";
+        if (returnObject.newPage && returnObject.timeKey !== Number(timeWithTolerance).toString()) {
+            throw new Error(`System Error:Time key mismatch when creating new page. Expected: ${Number(timeWithTolerance).toString()}, Actual: ${returnObject.timeKey}. This indicates a potential issue with time alignment between host and Redis server.`);
+        }
+        return returnObject;
+    }
+
+    private async usingRedisDriver<T>(commands: any[][], tokenName: string, type: "run" | "pipeline" = "pipeline"): Promise<T> {
+        const token = this.redisDriver.generateUniqueToken(tokenName);
         try {
             await this.redisDriver.acquire(token);
-            const response = await this.redisDriver.pipeline(token, commands, false) as string[][];
-            returnObject.timeKey = response[1][0].toString();
-            returnObject.sizeInBytes = parseInt(response[1][1], 10);
-            returnObject.writes = parseInt(response[1][2], 10);
-            returnObject.newPage = (response[0] ?? "").toString().toLowerCase() === "ok";
-            if (returnObject.newPage && returnObject.timeKey !== Number(timeWithTolerance).toString()) {
-                throw new Error(`System Error:Time key mismatch when creating new page. Expected: ${Number(timeWithTolerance).toString()}, Actual: ${returnObject.timeKey}. This indicates a potential issue with time alignment between host and Redis server.`);
+            if (type === "pipeline") {
+                return await this.redisDriver.pipeline(token, commands, false) as unknown as T;
+            } else {
+                return await this.redisDriver.run(token, commands[0]) as unknown as T;
             }
         }
         finally {
             await this.redisDriver.release(token);
         }
-        return returnObject;
     }
 
     private async dumpDataToPage(pageKey: string, samples: ISample[], insertTime: number, currentWriteCount: number): Promise<void> {
@@ -147,14 +150,7 @@ export class RedisWAL {
             pageUpsertCommands.set(tagKey, existingCommands);
         }
 
-        const token = this.redisDriver.generateUniqueToken('DumpDataToPage');
-        try {
-            await this.redisDriver.acquire(token);
-            await this.redisDriver.pipeline(token, [...pageUpsertCommands.values(), ...updateBookCommands], false);
-        }
-        finally {
-            await this.redisDriver.release(token);
-        }
+        await this.usingRedisDriver<void>([...pageUpsertCommands.values(), ...updateBookCommands], 'DumpDataToPage')
     }
 
     private generateBookUpdateCommand(pageKey: string, insertTime: number): string[][] {
@@ -172,22 +168,14 @@ export class RedisWAL {
 
     private async fetchAllPagesWithRanks(): Promise<Map<number, string>> {
         const bookKey = this.keyBuilder.bookKey();
-        const token = this.redisDriver.generateUniqueToken('QueryRange');
-        let pageKeys: string[] = [];
-        try {
-            await this.redisDriver.acquire(token);
-            pageKeys = await this.redisDriver.run(token, [RedisKeywords.ZRANGE, bookKey, "0", "-1", RedisKeywords.WITHSCORES]) as string[];
-            const pageKeyMap = new Map<number, string>();
-            for (let i = 0; i < pageKeys.length; i += 2) {
-                const pageKey = pageKeys[i];
-                const score = parseInt(pageKeys[i + 1]);
-                pageKeyMap.set(score, pageKey);
-            }
-            return pageKeyMap;
+        const pageKeys = await this.usingRedisDriver<string[]>([[RedisKeywords.ZRANGE, bookKey, "0", "-1", RedisKeywords.WITHSCORES]], 'FetchAllPagesWithRanks', "run");
+        const pageKeyMap = new Map<number, string>();
+        for (let i = 0; i < pageKeys.length; i += 2) {
+            const pageKey = pageKeys[i];
+            const score = parseInt(pageKeys[i + 1], 10);
+            pageKeyMap.set(score, pageKey);
         }
-        finally {
-            await this.redisDriver.release(token);
-        }
+        return pageKeyMap;
     }
 
     private validateQueryRangeParams(tags: string[], startTime: number, endTime: number): string[] {
@@ -223,34 +211,28 @@ export class RedisWAL {
             }
         }
 
-        const token = this.redisDriver.generateUniqueToken('FetchDataForPagesInRange');
-        try {
-            await this.redisDriver.acquire(token);
-            const responses = await this.redisDriver.pipeline(token, commands, false) as string[][];
-            const result = new Map<string, Map<number, IScoredSample>>();
-            for (let i = 0; i < responses.length; i++) {
-                const response = responses[i] ?? [];
-                const { pageRank, tagName } = indexedResponseContext[i];
-                for (let i = 0; i < response.length; i++) {
-                    const sample = JSON.parse(response[i]) as ISample;
-                    const writeScore = parseFloat(response[++i]);
-                    sample.tag = tagName;
-                    const existingTagSamples = result.get(sample.tag) ?? new Map<number, IScoredSample>();
-                    let existingSample = existingTagSamples.get(sample.ts) ?? { ...sample, pageRank, writeScore };
-                    //This is a scenario where updates are spread across multiple pages. 
-                    //We need to ensure that we take the latest update for the same timestamp based on the score (which is the insert time of the page).
-                    if ((existingSample.pageRank < pageRank) || (existingSample.pageRank === pageRank && existingSample.writeScore < writeScore)) {
-                        existingSample = { ...sample, pageRank, writeScore };
-                    }
-                    existingTagSamples.set(sample.ts, existingSample);
-                    result.set(sample.tag, existingTagSamples);
+        const responses = await this.usingRedisDriver<string[][]>(commands, 'FetchDataForPagesInRange');
+
+        const result = new Map<string, Map<number, IScoredSample>>();
+        for (let i = 0; i < responses.length; i++) {
+            const response = responses[i] ?? [];
+            const { pageRank, tagName } = indexedResponseContext[i];
+            for (let i = 0; i < response.length; i++) {
+                const sample = JSON.parse(response[i]) as ISample;
+                const writeScore = parseFloat(response[++i]);
+                sample.tag = tagName;
+                const existingTagSamples = result.get(sample.tag) ?? new Map<number, IScoredSample>();
+                let existingSample = existingTagSamples.get(sample.ts) ?? { ...sample, pageRank, writeScore };
+                //This is a scenario where updates are spread across multiple pages. 
+                //We need to ensure that we take the latest update for the same timestamp based on the score (which is the insert time of the page).
+                if ((existingSample.pageRank < pageRank) || (existingSample.pageRank === pageRank && existingSample.writeScore < writeScore)) {
+                    existingSample = { ...sample, pageRank, writeScore };
                 }
+                existingTagSamples.set(sample.ts, existingSample);
+                result.set(sample.tag, existingTagSamples);
             }
-            return this.transformScoresToOriginalTimestamps(result);
         }
-        finally {
-            await this.redisDriver.release(token);
-        }
+        return this.transformScoresToOriginalTimestamps(result);
     }
 
     private transformScoresToOriginalTimestamps(data: Map<string, Map<number, IScoredSample>>): ISample[] {
