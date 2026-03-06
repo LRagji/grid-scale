@@ -23,6 +23,11 @@
   "author": "Laukik",
   "license": "Apache-2.0",
   "devDependencies": {
+    "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/auto-instrumentations-node": "^0.71.0",
+    "@opentelemetry/host-metrics": "^0.38.3",
+    "@opentelemetry/instrumentation": "^0.213.0",
+    "@opentelemetry/sdk-node": "^0.213.0",
     "@types/node": "^25.3.3",
     "@types/sinon": "^21.0.0",
     "c8": "^11.0.0",

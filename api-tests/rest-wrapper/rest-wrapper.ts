@@ -15,10 +15,10 @@ const defaultRedisConnectionString = "redis://localhost:6379";
 async function initializeGridScale(DIContainer: DisposableSingletonContainer) {
     const env = DIContainer.createInstance<EnvironmentVariables>(DIConstants.EnvVars, EnvironmentVariables, []);
     const redisConnectionString = env.getStringOrDefault(EnvironmentVariableConstants.RedisConnectionString, defaultRedisConnectionString);
-    const timeToleranceInMs = BigInt(env.getStringOrDefault(EnvironmentVariableConstants.TimeToleranceInMs, PageWindowDefaults.timeToleranceInMs));
-    const timeWindowInMs = BigInt(env.getStringOrDefault(EnvironmentVariableConstants.TimeWindowInMs, PageWindowDefaults.timeWindowInMs));
-    const sizeWindowInBytes = BigInt(env.getStringOrDefault(EnvironmentVariableConstants.SizeWindowInBytes, PageWindowDefaults.sizeWindowInBytes));
-    const writeWindow = BigInt(env.getStringOrDefault(EnvironmentVariableConstants.WriteWindow, PageWindowDefaults.writeWindow));
+    const timeToleranceInMs = parseInt(env.getStringOrDefault(EnvironmentVariableConstants.TimeToleranceInMs, PageWindowDefaults.timeToleranceInMs), 10);
+    const timeWindowInMs = parseInt(env.getStringOrDefault(EnvironmentVariableConstants.TimeWindowInMs, PageWindowDefaults.timeWindowInMs), 10);
+    const sizeWindowInBytes = parseInt(env.getStringOrDefault(EnvironmentVariableConstants.SizeWindowInBytes, PageWindowDefaults.sizeWindowInBytes), 10);
+    const writeWindow = parseInt(env.getStringOrDefault(EnvironmentVariableConstants.WriteWindow, PageWindowDefaults.writeWindow), 10);
     const maxPagesInBook = parseInt(env.getStringOrDefault(EnvironmentVariableConstants.MaxPagesInBook, PageWindowDefaults.maxPagesInBook), 10);
     const parseRedisConnectionString = (connectionString: string) => parseURL(connectionString);
     const connectionInjector = () => IORedisClientPool.IORedisClientClusterFactory([redisConnectionString], Redis as any, Cluster as any, parseRedisConnectionString);

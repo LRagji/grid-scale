@@ -38,7 +38,6 @@ fastify.post('/write', async (req, reply) => {
 
 fastify.listen({ port: process.env.PORT || 3000, host: '0.0.0.0' });
 ```
-2. Add OTEL support
 3. Add K6 support.
 4. Add multiple integration test files for partitioning on time, size and writes.
 5. Add validations for maximum 48bit integer or uint. 

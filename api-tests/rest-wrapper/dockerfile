@@ -2,10 +2,11 @@ FROM node:lts-slim
 RUN apt-get update && apt-get install -y curl
 WORKDIR /app
 COPY dist ./dist
-RUN cd ./dist && npm install
+WORKDIR /app/dist
+RUN npm install
 #Application listens on 8080 for API requests
 EXPOSE 8080
 #Application listens on 8081 for diagnostics/health requests
 EXPOSE 8081
 USER node
-CMD ["node", "dist/api-tests/rest-wrapper/rest-wrapper.js"]
+CMD ["node", "--loader=@opentelemetry/instrumentation/hook.mjs", "--import", "./api-tests/rest-wrapper/otel-instrumentation.js", "./api-tests/rest-wrapper/rest-wrapper.js"]
