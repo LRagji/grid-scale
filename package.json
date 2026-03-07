@@ -17,7 +17,8 @@
     "coverage:integration": "c8 --config ./coverage-config.json npm run integration-test",
     "docker-api": "docker build -f ./api-tests/rest-wrapper/dockerfile -t rest-wrapper-svc:local .",
     "api": "npm run build-test && node ./dist/api-tests/rest-wrapper/rest-wrapper.js",
-    "docker-api:run": "npm run docker-api && docker run -p 8080:8080 -p 8081:8081 rest-wrapper-svc:local"
+    "docker-api:run": "npm run docker-api && docker run -p 8080:8080 -p 8081:8081 rest-wrapper-svc:local",
+    "k6": "npm run build-test && K6_OTEL_GRPC_EXPORTER_INSECURE=true K6_OTEL_METRIC_PREFIX=k6_ K6_OTEL_GRPC_EXPORTER_ENDPOINT=localhost:4317 k6 run --tag test-id=123 -o opentelemetry ./dist/api-tests/perf-read-write-tests.js"
   },
   "keywords": [],
   "author": "Laukik",
@@ -28,6 +29,7 @@
     "@opentelemetry/host-metrics": "^0.38.3",
     "@opentelemetry/instrumentation": "^0.213.0",
     "@opentelemetry/sdk-node": "^0.213.0",
+    "@types/k6": "^1.6.0",
     "@types/node": "^25.3.3",
     "@types/sinon": "^21.0.0",
     "c8": "^11.0.0",
