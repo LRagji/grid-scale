@@ -18,17 +18,19 @@ export const options = {
 
 export function setup(): [string, unknown][] {
     const identity = `${Date.now()}-${Math.random()}`;
+    const tagName = `${identity}-tag-perf-test-`;
     console.log(`Setup called for ${identity}`);
     return [
         ["id", identity],
         ["baseURL", __ENV.TEST_URL ?? 'http://localhost:8080'],
         ["startTime", 0],
-        ["tagName", `${identity}-tag-perf-test-${__VU}`]
+        ["tagName", tagName]
     ];
 }
 
 export default function (setupData: [string, unknown][]) {
     const context = new Map<string, unknown>(setupData);
+    context.set("tagName", context.get("tagName") as string + __VU);
     const upsertURL = context.get("baseURL") + "/v1/series/upsert";
     const tagName = context.get("tagName");
     const startTime = context.get("startTime") as number;

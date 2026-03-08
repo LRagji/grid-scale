@@ -81,7 +81,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "${DS_PROMETHEUS}"
       },
       "fieldConfig": {
         "defaults": {
@@ -137,7 +137,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
           "expr": "system_cpu_utilization{service_name=\"rest-wrapper\", system_cpu_state=\"system\"} + on(\"system_cpu_logical_number\")+system_cpu_utilization{service_name=\"rest-wrapper\", system_cpu_state=\"user\"}",
@@ -154,7 +154,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "${DS_PROMETHEUS}"
       },
       "fieldConfig": {
         "defaults": {
@@ -208,7 +208,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "${DS_PROMETHEUS}"
           },
           "disableTextWrap": false,
           "editorMode": "builder",
@@ -224,7 +224,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
           "expr": "system_memory_usage{service_name=\"rest-wrapper\",system_memory_state=\"used\"}",
@@ -255,7 +255,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "${DS_PROMETHEUS}"
       },
       "fieldConfig": {
         "defaults": {
@@ -338,7 +338,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "${DS_PROMETHEUS}"
           },
           "disableTextWrap": false,
           "editorMode": "code",
@@ -355,7 +355,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
           "expr": "rate(k6_data_received_bytes_total{service_name=\"k6\",scenario=\"default\"}[5m])",
@@ -368,7 +368,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
           "expr": "rate(k6_data_sent_bytes_total{service_name=\"k6\",scenario=\"default\"}[5m])",
@@ -385,7 +385,7 @@
     {
       "datasource": {
         "type": "redis-datasource",
-        "uid": "redis-wal"
+        "uid": "${DS_REDIS-WAL}"
       },
       "fieldConfig": {
         "defaults": {
@@ -437,15 +437,15 @@
       "targets": [
         {
           "command": "info",
+          "datasource": {
+            "type": "redis-datasource",
+            "uid": "${DS_REDIS-WAL}"
+          },
           "hide": false,
           "query": "",
           "refId": "A",
           "section": "memory",
-          "type": "command",
-          "datasource": {
-            "type": "redis-datasource",
-            "uid": "redis-wal"
-          }
+          "type": "command"
         }
       ],
       "title": "Redis Mem",
@@ -454,7 +454,7 @@
     {
       "datasource": {
         "type": "redis-datasource",
-        "uid": "redis-wal"
+        "uid": "${DS_REDIS-WAL}"
       },
       "fieldConfig": {
         "defaults": {
@@ -506,15 +506,15 @@
       "targets": [
         {
           "command": "info",
+          "datasource": {
+            "type": "redis-datasource",
+            "uid": "${DS_REDIS-WAL}"
+          },
           "hide": false,
           "query": "",
           "refId": "A",
           "section": "clients",
-          "type": "command",
-          "datasource": {
-            "type": "redis-datasource",
-            "uid": "redis-wal"
-          }
+          "type": "command"
         }
       ],
       "title": "Redis Clients",
@@ -523,7 +523,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "${DS_PROMETHEUS}"
       },
       "fieldConfig": {
         "defaults": {
@@ -622,7 +622,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "${DS_PROMETHEUS}"
           },
           "disableTextWrap": false,
           "editorMode": "code",
@@ -639,7 +639,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "${DS_PROMETHEUS}"
           },
           "disableTextWrap": false,
           "editorMode": "code",
@@ -656,7 +656,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "${DS_PROMETHEUS}"
           },
           "disableTextWrap": false,
           "editorMode": "builder",
@@ -677,7 +677,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "${DS_PROMETHEUS}"
       },
       "fieldConfig": {
         "defaults": {
@@ -741,7 +741,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "${DS_PROMETHEUS}"
           },
           "disableTextWrap": false,
           "editorMode": "builder",
@@ -762,7 +762,7 @@
     {
       "datasource": {
         "type": "redis-datasource",
-        "uid": "redis-wal"
+        "uid": "${DS_REDIS-WAL}"
       },
       "fieldConfig": {
         "defaults": {
@@ -778,8 +778,7 @@
                 "value": 0
               }
             ]
-          },
-          "unit": "decbytes"
+          }
         },
         "overrides": []
       },
@@ -800,7 +799,7 @@
           "calcs": [
             "lastNotNull"
           ],
-          "fields": "/^mem_fragmentation_bytes$/",
+          "fields": "/^instantaneous_ops_per_sec$/",
           "values": false
         },
         "showPercentChange": false,
@@ -811,24 +810,24 @@
       "targets": [
         {
           "command": "info",
+          "datasource": {
+            "type": "redis-datasource",
+            "uid": "${DS_REDIS-WAL}"
+          },
           "hide": false,
           "query": "",
           "refId": "A",
-          "section": "memory",
-          "type": "command",
-          "datasource": {
-            "type": "redis-datasource",
-            "uid": "redis-wal"
-          }
+          "section": "stats",
+          "type": "command"
         }
       ],
-      "title": "Redis Mem Frag",
+      "title": "Redis Ops/Sec",
       "type": "stat"
     },
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "${DS_PROMETHEUS}"
       },
       "fieldConfig": {
         "defaults": {
@@ -912,7 +911,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "${DS_PROMETHEUS}"
           },
           "disableTextWrap": false,
           "editorMode": "code",
@@ -929,7 +928,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
           "expr": "(process_cpu_utilization{service_name=\"rest-wrapper\",process_cpu_state=\"system\"})",
@@ -946,7 +945,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "${DS_PROMETHEUS}"
       },
       "fieldConfig": {
         "defaults": {
@@ -1029,7 +1028,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "${DS_PROMETHEUS}"
           },
           "disableTextWrap": false,
           "editorMode": "builder",
@@ -1049,7 +1048,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "${DS_PROMETHEUS}"
       },
       "fieldConfig": {
         "defaults": {
@@ -1103,7 +1102,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "${DS_PROMETHEUS}"
           },
           "disableTextWrap": false,
           "editorMode": "builder",
@@ -1123,7 +1122,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "${DS_PROMETHEUS}"
       },
       "fieldConfig": {
         "defaults": {
@@ -1206,7 +1205,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "${DS_PROMETHEUS}"
           },
           "disableTextWrap": false,
           "editorMode": "builder",
@@ -1226,7 +1225,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "${DS_PROMETHEUS}"
       },
       "fieldConfig": {
         "defaults": {
@@ -1276,7 +1275,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "${DS_PROMETHEUS}"
           },
           "disableTextWrap": false,
           "editorMode": "builder",
@@ -1293,7 +1292,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "${DS_PROMETHEUS}"
           },
           "disableTextWrap": false,
           "editorMode": "code",
@@ -1309,7 +1308,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "${DS_PROMETHEUS}"
           },
           "disableTextWrap": false,
           "editorMode": "builder",
@@ -1328,7 +1327,7 @@
       "type": "stat"
     }
   ],
-  "refresh": "",
+  "refresh": "auto",
   "schemaVersion": 41,
   "tags": [],
   "templating": {
@@ -1340,8 +1339,8 @@
   },
   "timepicker": {},
   "timezone": "browser",
-  "title": "grid-scale",
-  "uid": "299734d8-3d52-478c-9eca-22a83f0cb57e",
-  "version": 19,
+  "title": "grid-scale 2",
+  "uid": "84ef9624-c015-4a22-9b09-b3bdf6b121b9",
+  "version": 1,
   "weekStart": ""
 }
