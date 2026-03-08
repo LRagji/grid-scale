@@ -12,9 +12,13 @@ services:
       - GF_AUTH_ANONYMOUS_ENABLED=false
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/etc/grafana/provisioning/dashboards/grid-scale.json
       - ENABLE_LOGS_TEMPO=true
     volumes:
       - ./data/otel/:/data/ # attach the PV here (paths inside docker)
+      - ./config/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards
+      - ./config/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
+      - ./config/grafana/grid-scale-1772977878374.json:/etc/grafana/provisioning/dashboards/grid-scale.json
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:3000/api/health" ]
       interval: 10s
