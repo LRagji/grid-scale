@@ -1,0 +1,11 @@
+.DS_Store
+__pycache__
+.ipynb_checkpoints
+node_modules
+data
+*.cpuprofile
+*.heapsnapshot
+*.heapprofile
+coverage
+data
+node_modules

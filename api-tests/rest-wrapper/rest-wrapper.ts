@@ -31,41 +31,53 @@ async function initializeGridScale(DIContainer: DisposableSingletonContainer) {
 function setupRoutes(rootRouter: IRouter) {
     //Upsert Samples API
     rootRouter.put("/v1/series/upsert", async (req: Request, res: Response) => {
-        const diagnostics = new Map<string, any>();
-        let startTime = Date.now();
-        diagnostics.set("timestamp", startTime);
-        const DIContainer = req["DIProp"] as DisposableSingletonContainer;
-        const redisWal = DIContainer.fetchInstance<RedisWAL>(DIConstants.RedisWAL) as RedisWAL;
-        //TODO: Validate only certain number of samples to come be allowed 10 tags and 1000 samples per request, configure through env vars if needed.
-        const samples = req.body as ISample[];
-        diagnostics.set("numberOfSamples", samples.length);
-        await redisWal.upsertBulkSamples(samples);
-        let endTime = Date.now();
-        diagnostics.set("durationMs", endTime - startTime);
-        res.status(201) //Created
-            .json(Object.fromEntries(diagnostics.entries()));
+        try {
+            const diagnostics = new Map<string, any>();
+            let startTime = Date.now();
+            diagnostics.set("timestamp", startTime);
+            const DIContainer = req["DIProp"] as DisposableSingletonContainer;
+            const redisWal = DIContainer.fetchInstance<RedisWAL>(DIConstants.RedisWAL) as RedisWAL;
+            //TODO: Validate only certain number of samples to come be allowed 10 tags and 1000 samples per request, configure through env vars if needed.
+            const samples = req.body as ISample[];
+            diagnostics.set("numberOfSamples", samples.length);
+            await redisWal.upsertBulkSamples(samples);
+            let endTime = Date.now();
+            diagnostics.set("durationMs", endTime - startTime);
+            res.status(201) //Created
+                .json(Object.fromEntries(diagnostics.entries()));
+        } catch (error) {
+            console.error("Error in upsert API:", error);
+            res.status(500) //Internal Server Error
+                .json({ message: (error as Error).message })
+        }
     });
 
     //Read Samples API
     rootRouter.post("/v1/series/fetch", async (req: Request, res: Response) => {
-        const diagnostics = new Map<string, any>();
-        let startTime = Date.now();
-        diagnostics.set("timestamp", startTime);
-        const DIContainer = req["DIProp"] as DisposableSingletonContainer;
-        const redisWal = DIContainer.fetchInstance<RedisWAL>(DIConstants.RedisWAL) as RedisWAL;
-        const samplesPerPage = 1000; //TODO: Make this configurable through env vars if needed.
-        const fetchRequest = req.body as IFetchRequest;
-        const samples = await redisWal.queryRange(fetchRequest.tagsFilter.in, fetchRequest.timeFilter.startInclusiveTime, fetchRequest.timeFilter.endExclusiveTime, samplesPerPage + 1);
-        diagnostics.set("numberOfSamples", samples.length);
-        let endTime = Date.now();
-        diagnostics.set("durationMs", endTime - startTime);
-        if (samples.length > samplesPerPage) {
-            res.status(206) //Partial Content
-                .json({ "samples": samples, "diagnostics": Object.fromEntries(diagnostics.entries()) });
-        }
-        else {
-            res.status(200) //OK
-                .json({ "samples": samples, "diagnostics": Object.fromEntries(diagnostics.entries()) });
+        try {
+            const diagnostics = new Map<string, any>();
+            let startTime = Date.now();
+            diagnostics.set("timestamp", startTime);
+            const DIContainer = req["DIProp"] as DisposableSingletonContainer;
+            const redisWal = DIContainer.fetchInstance<RedisWAL>(DIConstants.RedisWAL) as RedisWAL;
+            const samplesPerPage = 1000; //TODO: Make this configurable through env vars if needed.
+            const fetchRequest = req.body as IFetchRequest;
+            const samples = await redisWal.queryRange(fetchRequest.tagsFilter.in, fetchRequest.timeFilter.startInclusiveTime, fetchRequest.timeFilter.endExclusiveTime, samplesPerPage + 1);
+            diagnostics.set("numberOfSamples", samples.length);
+            let endTime = Date.now();
+            diagnostics.set("durationMs", endTime - startTime);
+            if (samples.length > samplesPerPage) {
+                res.status(206) //Partial Content
+                    .json({ "samples": samples, "diagnostics": Object.fromEntries(diagnostics.entries()) });
+            }
+            else {
+                res.status(200) //OK
+                    .json({ "samples": samples, "diagnostics": Object.fromEntries(diagnostics.entries()) });
+            }
+        } catch (error) {
+            console.error("Error in fetch API:", error);
+            res.status(500) //Internal Server Error
+                .json({ message: (error as Error).message })
         }
     });
 }

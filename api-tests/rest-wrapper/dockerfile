@@ -1,9 +1,9 @@
 FROM node:lts-slim
 RUN apt-get update && apt-get install -y curl
-WORKDIR /app
-COPY dist ./dist
 WORKDIR /app/dist
+COPY dist/package.json ./package.json
 RUN npm install
+COPY dist /app/dist/
 #Application listens on 8080 for API requests
 EXPOSE 8080
 #Application listens on 8081 for diagnostics/health requests
