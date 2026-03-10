@@ -11,20 +11,34 @@ interface IQueryResponse {
     diagnostics: { [key: string]: unknown }
 }
 
+function fromEnvOrDefault(value: string | undefined, fallback: string): string {
+    if (!value) {
+        return fallback;
+    }
+    return value;
+}
+
 export const options = {
-    vus: 10,
-    duration: "30m",
+    scenarios: {
+        sequential_scenario: {
+            executor: 'per-vu-iterations',
+            vus: Number(fromEnvOrDefault(__ENV.K6_VUS, '100')),
+            iterations: Number(fromEnvOrDefault(__ENV.K6_ITERATIONS, '1000')),
+            maxDuration: fromEnvOrDefault(__ENV.K6_MAX_DURATION, '30m')
+        }
+    }
 };
 
 export function setup(): [string, unknown][] {
-    const identity = `${Date.now()}-${Math.random()}`;
+    const identity = `${fromEnvOrDefault(__ENV.IDENTITY_PREFIX, 'single')}-${Date.now()}-${Math.random()}`;
     const tagName = `${identity}-tag-perf-test-`;
     console.log(`Setup called for ${identity}`);
     return [
         ["id", identity],
-        ["baseURL", __ENV.TEST_URL ?? 'http://localhost:8080'],
+        ["baseURL", fromEnvOrDefault(__ENV.TEST_URL, 'http://localhost:8080')],
         ["startTime", 0],
-        ["tagName", tagName]
+        ["tagName", tagName],
+        ["sleepDuration", fromEnvOrDefault(__ENV.SLEEP_DURATION, '1')]
     ];
 }
 
@@ -72,7 +86,7 @@ export default function (setupData: [string, unknown][]) {
         "Query should return correct nV value in data points": (res) => queryResponseBody.samples.every(sample => sample.pld.nV <= computedTime)
     });
 
-    sleep(1);
+    sleep(Number(context.get("sleepDuration") as string));
 }
 
 export function teardown(setupData: [string, unknown][]) {
