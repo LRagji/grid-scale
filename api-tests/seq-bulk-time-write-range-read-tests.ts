@@ -22,15 +22,15 @@ export const options = {
     scenarios: {
         sequential_scenario: {
             executor: 'per-vu-iterations',
-            vus: Number(fromEnvOrDefault(__ENV.K6_VUS, '100')),
-            iterations: Number(fromEnvOrDefault(__ENV.K6_ITERATIONS, '1000')),
+            vus: Number(fromEnvOrDefault(__ENV.K6_VUS, '5')),
+            iterations: Number(fromEnvOrDefault(__ENV.K6_ITERATIONS, '5')),
             maxDuration: fromEnvOrDefault(__ENV.K6_MAX_DURATION, '30m')
         }
     }
 };
 
 export function setup(): [string, unknown][] {
-    const identity = `${fromEnvOrDefault(__ENV.IDENTITY_PREFIX, 'single')}-${Date.now()}-${Math.random()}`;
+    const identity = `${fromEnvOrDefault(__ENV.IDENTITY_PREFIX, 'bulk-time')}-${Date.now()}-${Math.random()}`;
     const tagName = `${identity}-tag-perf-test-`;
     console.log(`Setup called for ${identity}`);
     return [
@@ -38,7 +38,8 @@ export function setup(): [string, unknown][] {
         ["baseURL", fromEnvOrDefault(__ENV.TEST_URL, 'http://localhost:8080')],
         ["startTime", 0],
         ["tagName", tagName],
-        ["sleepDuration", fromEnvOrDefault(__ENV.SLEEP_DURATION, '1')]
+        ["sleepDuration", fromEnvOrDefault(__ENV.SLEEP_DURATION, '1')],
+        ["bulk", fromEnvOrDefault(__ENV.BULK, '100')]
     ];
 }
 
@@ -49,23 +50,28 @@ export default function (setupData: [string, unknown][]) {
     const tagName = context.get("tagName");
     const startTime = context.get("startTime") as number;
     const currentIteration = __ITER;
-    const computedTime = startTime + currentIteration;
-    const computedCurrentValue = Math.min(Math.random() * 100, computedTime);
+    const bulkSize = Number(context.get("bulk") as string);
+    const baseComputedTime = startTime + (currentIteration * bulkSize);
     const headers = { 'Content-Type': 'application/json' };
-    const upsertPayload = [
-        {
+    const upsertPayload = [];
+
+    for (let i = 0; i < bulkSize; i++) {
+        const computedTime = baseComputedTime + i;
+        const computedCurrentValue = Math.min(Math.random() * 100, computedTime);
+        upsertPayload.push({
             "tag": tagName,
             "ts": computedTime,
             "pld": {
                 "nV": computedCurrentValue
             }
-        }
-    ]
+        });
+    }
     //Write & Check status
     const upsertResponse = http.put(upsertURL, JSON.stringify(upsertPayload), { headers }) as unknown as IUpsertResponse;
     check(upsertResponse, { "Upsert should return status is 201": (res) => res.status === 201 });
 
     //Read Cumulative & Check length and random sample value
+    const computedEndTime = baseComputedTime + bulkSize;
     const queryURL = context.get("baseURL") + "/v1/series/fetch";
     const queryResponse = http.post(queryURL, JSON.stringify({
         "tagsFilter": {
@@ -73,17 +79,17 @@ export default function (setupData: [string, unknown][]) {
         },
         "timeFilter": {
             "startInclusiveTime": startTime,
-            "endExclusiveTime": computedTime + 1
+            "endExclusiveTime": computedEndTime
         }
     }), { headers });
     const queryResponseBody = queryResponse.json() as unknown as IQueryResponse;
     const maxSamplesPerRequest = 1000;
     check(queryResponse, {
         "Query should return status is 200 or 206": (res) => (res.status === 200 || res.status === 206),
-        "Query should return elapsed time data points": (res) => queryResponseBody.samples.length === Math.min(currentIteration + 1, maxSamplesPerRequest),
+        "Query should return elapsed time data points": (res) => queryResponseBody.samples.length === Math.min(computedEndTime - startTime, maxSamplesPerRequest),
         "Query should return correct tag in data points": (res) => queryResponseBody.samples.every(sample => sample.tag === tagName),
-        "Query should return correct time range in data points": (res) => queryResponseBody.samples.every(sample => sample.ts >= startTime && sample.ts <= computedTime),
-        "Query should return correct nV value in data points": (res) => queryResponseBody.samples.every(sample => sample.pld.nV <= computedTime && sample.pld.nV >= 0)
+        "Query should return correct time range in data points": (res) => queryResponseBody.samples.every(sample => sample.ts >= startTime && sample.ts <= computedEndTime),
+        "Query should return correct nV value in data points": (res) => queryResponseBody.samples.every(sample => sample.pld.nV <= computedEndTime && sample.pld.nV >= 0)
     });
 
     sleep(Number(context.get("sleepDuration") as string));
