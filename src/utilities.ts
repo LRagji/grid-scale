@@ -5,6 +5,8 @@ export class Utilities {
 
     public static readonly u48Max = Number("0xFFFFFFFFFFFF"); // 48-bit max value for time header and counters.
 
+    public static readonly u48In3 = Utilities.u48Max / 3; // Used for calculating time windows and tolerances to ensure we don't exceed redis sorted set score limits.
+
 
     public static modMinus(value: number, divisor: number): number {
         return value - (value % divisor);

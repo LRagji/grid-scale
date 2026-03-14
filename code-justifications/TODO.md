@@ -42,3 +42,8 @@ fastify.listen({ port: process.env.PORT || 3000, host: '0.0.0.0' });
 4. Add multiple integration test files for partitioning on time, size and writes.
 5. Add validations for maximum 48bit integer or uint. 
 6. Performance nightmare with multiple for loops for read and writes.
+
+2 big problems to think of 
+1. If the page turns within the tolerance time then the book simply has 2 different pages but with same score which needs to be ranked while reading to understand which page takes precedent.
+2. Within a page when we have 2 samples of the same sample time we need to understand how do we rank them.
+3. While reading the enforced limit of 1000 samples per page per tag doens't work if we have multiple pages thus throwing off the data to be returned more.
