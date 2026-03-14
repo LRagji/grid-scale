@@ -23,7 +23,8 @@ async function initializeGridScale(DIContainer: DisposableSingletonContainer) {
     const parseRedisConnectionString = (connectionString: string) => parseURL(connectionString);
     const connectionInjector = () => IORedisClientPool.IORedisClientClusterFactory([redisConnectionString], Redis as any, Cluster as any, parseRedisConnectionString);
     const redisPoolDriver = DIContainer.createInstance<IRedisClientPool>(DIConstants.RedisClientPool, IORedisClientPool, [connectionInjector]);
-    const redisWalInvokeArguments = [redisPoolDriver, timeToleranceInMs, timeWindowInMs, sizeWindowInBytes, writeWindow, undefined, undefined, maxPagesInBook];
+    const turnOverCallback = (newPageKey: string) => console.log(`Fresh page ${newPageKey} started.`);
+    const redisWalInvokeArguments = [redisPoolDriver, timeToleranceInMs, timeWindowInMs, sizeWindowInBytes, writeWindow, undefined, undefined, maxPagesInBook, turnOverCallback];
     const redisWal = DIContainer.createInstance<RedisWAL>(DIConstants.RedisWAL, RedisWAL, redisWalInvokeArguments);
     await redisWal.initialize();
 }

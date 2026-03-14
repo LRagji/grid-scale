@@ -1,6 +1,11 @@
 import http from 'k6/http';
 import { sleep, check } from 'k6';
 import { ISample } from '../src';
+import { Counter } from 'k6/metrics';
+
+const gsWrittenSampleCounter = new Counter('gs_samples_written');
+const gsReadSampleCounter = new Counter('gs_samples_read');
+const gsTagIngestionCounter = new Counter('gs_tags_ingested');
 
 interface IUpsertResponse {
     [key: string]: unknown;
@@ -22,9 +27,9 @@ export const options = {
     scenarios: {
         sequential_scenario: {
             executor: 'per-vu-iterations',
-            vus: Number(fromEnvOrDefault(__ENV.K6_VUS, '1')),
-            iterations: Number(fromEnvOrDefault(__ENV.K6_ITERATIONS, '5')),
-            maxDuration: fromEnvOrDefault(__ENV.K6_MAX_DURATION, '30m')
+            vus: Number(fromEnvOrDefault(__ENV.SCRIPT_VUS, '1')),
+            iterations: Number(fromEnvOrDefault(__ENV.SCRIPT_ITERATIONS, '5')),
+            maxDuration: fromEnvOrDefault(__ENV.SCRIPT_MAX_DURATION, '30m')
         }
     }
 };
@@ -87,13 +92,21 @@ export default function (setupData: [string, unknown][]) {
     const queryResponse = http.post(queryURL, JSON.stringify(requestPayload), { headers });
     const queryResponseBody = queryResponse.json() as unknown as IQueryResponse;
     const maxSamplesPerRequest = 1000;
+    if (queryResponseBody.samples.length !== Math.min((requestPayload.timeFilter.endExclusiveTime - requestPayload.timeFilter.startInclusiveTime) * tagNameSet.size, (maxSamplesPerRequest * tagNameSet.size) + tagNameSet.size)) {
+        console.error(`Unexpected number of samples returned. Expected: ${Math.min((requestPayload.timeFilter.endExclusiveTime - requestPayload.timeFilter.startInclusiveTime) * tagNameSet.size, (maxSamplesPerRequest * tagNameSet.size) + tagNameSet.size)}, Actual: ${queryResponseBody.samples.length}`);
+        console.error(JSON.stringify(requestPayload));
+    }
     check(queryResponse, {
         "Query should return status is 200 or 206": (res) => (res.status === 200 || res.status === 206),
-        "Query should return elapsed time data points": (res) => queryResponseBody.samples.length === Math.min((requestPayload.timeFilter.endExclusiveTime - requestPayload.timeFilter.startInclusiveTime) * tagNameSet.size, maxSamplesPerRequest),
+        "Query should return elapsed time data points": (res) => queryResponseBody.samples.length === Math.min((requestPayload.timeFilter.endExclusiveTime - requestPayload.timeFilter.startInclusiveTime) * tagNameSet.size, (maxSamplesPerRequest * tagNameSet.size) + tagNameSet.size),
         "Query should return correct tag in data points": (res) => queryResponseBody.samples.every(sample => tagNameSet.has(sample.tag)),
         "Query should return correct time range in data points": (res) => queryResponseBody.samples.every(sample => sample.ts >= startTime && sample.ts <= computedTime),
         "Query should return correct nV value in data points": (res) => queryResponseBody.samples.every(sample => sample.pld.nV <= computedTime && sample.pld.nV >= 0)
     });
+
+    gsWrittenSampleCounter.add(upsertPayload.length);
+    gsReadSampleCounter.add(queryResponseBody.samples.length);
+    gsTagIngestionCounter.add(tagNames.length);
 
     sleep(Number(context.get("sleepDuration") as string));
 }

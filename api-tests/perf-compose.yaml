@@ -6,9 +6,9 @@ services:
       - ../dist/api-tests/seq-single-write-range-read-tests.js:/scripts/seq-single-write-range-read-tests.js:ro
     environment:
       TEST_URL: http://rest-wrapper:8080
-      K6_VUS: "100"
-      K6_ITERATIONS: "10000"
-      K6_MAX_DURATION: 30m
+      SCRIPT_VUS: "100"
+      SCRIPT_ITERATIONS: "50000"
+      SCRIPT_MAX_DURATION: 30m
       SLEEP_DURATION: "1"
       K6_OTEL_GRPC_EXPORTER_INSECURE: "true"
       K6_OTEL_METRIC_PREFIX: "k6_"
@@ -25,9 +25,9 @@ services:
       - ../dist/api-tests/seq-bulk-time-write-range-read-tests.js:/scripts/seq-bulk-time-write-range-read-tests.js:ro
     environment:
       TEST_URL: http://rest-wrapper:8080
-      K6_VUS: "100"
-      K6_ITERATIONS: "10000"
-      K6_MAX_DURATION: 30m
+      SCRIPT_VUS: "100"
+      SCRIPT_ITERATIONS: "50000"
+      SCRIPT_MAX_DURATION: 30m
       SLEEP_DURATION: "1"
       BULK: "100"
       K6_OTEL_GRPC_EXPORTER_INSECURE: "true"
@@ -45,9 +45,9 @@ services:
       - ../dist/api-tests/seq-bulk-tag-write-range-read-tests.js:/scripts/seq-bulk-tag-write-range-read-tests.js:ro
     environment:
       TEST_URL: http://rest-wrapper:8080
-      K6_VUS: "100"
-      K6_ITERATIONS: "10000"
-      K6_MAX_DURATION: 30m
+      SCRIPT_VUS: "100"
+      SCRIPT_ITERATIONS: "50000"
+      SCRIPT_MAX_DURATION: 30m
       SLEEP_DURATION: "1"
       BULK: "100"
       K6_OTEL_GRPC_EXPORTER_INSECURE: "true"
