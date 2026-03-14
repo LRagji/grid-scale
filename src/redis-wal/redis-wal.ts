@@ -1,6 +1,6 @@
 import { IRedisClientPool } from "redis-abstraction";
 import { IKeyBuilder, RedisKeyBuilder } from "./redis-key-builder.js";
-import { ISample, IScoredSample } from "../interfaces/i-sample.js";
+import { ISample, ISampleSet, IScoredSample } from "../interfaces/i-sample.js";
 import { Utilities } from "../utilities.js";
 
 class RedisKeywords {
@@ -160,7 +160,7 @@ export class RedisWAL {
         ];
     }
 
-    public async queryRange(tags: string[], startTime: number, endTime: number, pageSize = 100): Promise<ISample[]> {
+    public async queryRange(tags: string[], startTime: number, endTime: number, pageSize = 100): Promise<ISampleSet[]> {
         const deDuplicatedTags = this.validateQueryRangeParams(tags, startTime, endTime);
         const rankedPages = await this.fetchAllPagesWithRanks();
         return await this.fetchDataForPagesInRange(deDuplicatedTags, rankedPages, startTime, endTime, pageSize);
@@ -199,7 +199,7 @@ export class RedisWAL {
         return [...(new Set(tags)).values()]
     }
 
-    private async fetchDataForPagesInRange(tagNames: string[], rankedPages: Map<number, string>, startTime: number, endTime: number, pageSize: number): Promise<ISample[]> {
+    private async fetchDataForPagesInRange(tagNames: string[], rankedPages: Map<number, string>, startTime: number, endTime: number, pageSize: number): Promise<ISampleSet[]> {
 
         const commands: string[][] = [];
         const indexedResponseContext = new Array<{ pageRank: number, tagName: string }>();
@@ -235,15 +235,20 @@ export class RedisWAL {
         return this.transformScoresToOriginalTimestamps(result);
     }
 
-    private transformScoresToOriginalTimestamps(data: Map<string, Map<number, IScoredSample>>): ISample[] {
-        const result: ISample[] = [];
+    private transformScoresToOriginalTimestamps(data: Map<string, Map<number, IScoredSample>>): ISampleSet[] {
+        const result = new Map<string, ISampleSet>();
         for (const [tagName, samplesByTimestamp] of data) {
             for (const [_, sample] of samplesByTimestamp) {
                 const { pageRank: score, ...originalSample } = sample;
                 originalSample.tag = tagName;
-                result.push(originalSample);
+                const existingSampleSet = result.get(tagName) ?? { tag: tagName, samples: [], minTs: Number.MAX_SAFE_INTEGER, maxTs: Number.MIN_SAFE_INTEGER, count: 0 };
+                existingSampleSet.samples.push(originalSample);
+                existingSampleSet.minTs = Math.min(existingSampleSet.minTs, originalSample.ts);
+                existingSampleSet.maxTs = Math.max(existingSampleSet.maxTs, originalSample.ts);
+                existingSampleSet.count += 1;
+                result.set(tagName, existingSampleSet);
             }
         }
-        return result;
+        return Array.from(result.values());
     }
 }

@@ -62,17 +62,26 @@ function setupRoutes(rootRouter: IRouter) {
             const redisWal = DIContainer.fetchInstance<RedisWAL>(DIConstants.RedisWAL) as RedisWAL;
             const samplesPerPage = 1000; //TODO: Make this configurable through env vars if needed.
             const fetchRequest = req.body as IFetchRequest;
-            const samples = await redisWal.queryRange(fetchRequest.tagsFilter.in, fetchRequest.timeFilter.startInclusiveTime, fetchRequest.timeFilter.endExclusiveTime, samplesPerPage + 1);
-            diagnostics.set("numberOfSamples", samples.length);
+            const sampleSets = await redisWal.queryRange(fetchRequest.tagsFilter.in, fetchRequest.timeFilter.startInclusiveTime, fetchRequest.timeFilter.endExclusiveTime, samplesPerPage + 1);
+            let morePages = false;
+            const allSamples = new Array<ISample>();
+            for (const set of sampleSets) {
+                morePages = set.count > samplesPerPage || morePages;
+                allSamples.push(...set.samples);
+                diagnostics.set(`info_count${set.tag}`, set.count);
+                diagnostics.set(`info_min_ts${set.tag}`, set.minTs);
+                diagnostics.set(`info_max_ts${set.tag}`, set.maxTs);
+            }
+            diagnostics.set("numberOfSamples", allSamples.length);
             let endTime = Date.now();
             diagnostics.set("durationMs", endTime - startTime);
-            if (samples.length > samplesPerPage) {
+            if (morePages === true) {
                 res.status(206) //Partial Content
-                    .json({ "samples": samples, "diagnostics": Object.fromEntries(diagnostics.entries()) });
+                    .json({ "samples": allSamples, "diagnostics": Object.fromEntries(diagnostics.entries()) });
             }
             else {
                 res.status(200) //OK
-                    .json({ "samples": samples, "diagnostics": Object.fromEntries(diagnostics.entries()) });
+                    .json({ "samples": allSamples, "diagnostics": Object.fromEntries(diagnostics.entries()) });
             }
         } catch (error) {
             console.error("Error in fetch API:", error);
