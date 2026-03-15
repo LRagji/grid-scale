@@ -20,7 +20,8 @@ export class Utilities {
 
         let total = 2 + (samples.length - 1);
         for (const sample of samples) {
-            total += 94 + (6 * sample.tag.length);
+            const groupKey = sample?.gk ?? sample?.tag ?? "";
+            total += 94 + (6 * String(groupKey).length);
         }
 
         return total;

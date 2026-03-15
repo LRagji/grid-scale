@@ -1,6 +1,5 @@
 import http from 'k6/http';
 import { sleep, check } from 'k6';
-import { ISample } from '../src';
 import { Counter } from 'k6/metrics';
 
 const gsWrittenSampleCounter = new Counter('gs_samples_written');
@@ -11,8 +10,17 @@ interface IUpsertResponse {
     [key: string]: unknown;
 }
 
+interface IApiSample {
+    tag: string;
+    ts: number;
+    pld: {
+        nV: number;
+        [key: string]: unknown;
+    };
+}
+
 interface IQueryResponse {
-    samples: ISample[],
+    samples: IApiSample[],
     diagnostics: { [key: string]: unknown }
 }
 

@@ -3,9 +3,18 @@ import { IORedisClientPool, type IRedisClientPool } from "redis-abstraction";
 import Redis, { Cluster } from "ioredis";
 import { parseURL } from "ioredis/built/utils/index.js";
 
-import { type ISample, RedisWAL } from "../../src/index.js";
+import { ISortedElement, RBook, RDriver, RWal } from "../../src/index.js";
 import { DIConstants, EnvironmentVariableConstants, PageWindowDefaults } from "./constants.js";
 import { type IFetchRequest } from "./interfaces.js";
+
+interface IApiSample {
+    tag: string;
+    ts: number;
+    pld: {
+        nV: number;
+        [key: string]: any;
+    };
+}
 
 const applicationName = "RestWrapper";
 const app = new ApplicationBuilder(applicationName);
@@ -23,10 +32,14 @@ async function initializeGridScale(DIContainer: DisposableSingletonContainer) {
     const parseRedisConnectionString = (connectionString: string) => parseURL(connectionString);
     const connectionInjector = () => IORedisClientPool.IORedisClientClusterFactory([redisConnectionString], Redis as any, Cluster as any, parseRedisConnectionString);
     const redisPoolDriver = DIContainer.createInstance<IRedisClientPool>(DIConstants.RedisClientPool, IORedisClientPool, [connectionInjector]);
-    const turnOverCallback = (newPageKey: string) => console.log(`Fresh page ${newPageKey} started.`);
-    const redisWalInvokeArguments = [redisPoolDriver, timeToleranceInMs, timeWindowInMs, sizeWindowInBytes, writeWindow, undefined, undefined, maxPagesInBook, turnOverCallback];
-    const redisWal = DIContainer.createInstance<RedisWAL>(DIConstants.RedisWAL, RedisWAL, redisWalInvokeArguments);
-    await redisWal.initialize();
+    const turnOverCallback = async (newPageKey: string) => {
+        console.log(`Fresh page ${newPageKey} started.`);
+    };
+
+    const redisDriver = new RDriver(redisPoolDriver, timeToleranceInMs);
+    await redisDriver.initialize();
+    const book = new RBook(redisDriver, timeWindowInMs, sizeWindowInBytes, writeWindow, maxPagesInBook, undefined, turnOverCallback);
+    DIContainer.createInstance<RWal>(DIConstants.RWal, RWal, [book]);
 }
 
 function setupRoutes(rootRouter: IRouter) {
@@ -37,11 +50,17 @@ function setupRoutes(rootRouter: IRouter) {
             let startTime = Date.now();
             diagnostics.set("timestamp", startTime);
             const DIContainer = req["DIProp"] as DisposableSingletonContainer;
-            const redisWal = DIContainer.fetchInstance<RedisWAL>(DIConstants.RedisWAL) as RedisWAL;
+            const wal = DIContainer.fetchInstance<RWal>(DIConstants.RWal) as RWal;
             //TODO: Validate only certain number of samples to come be allowed 10 tags and 1000 samples per request, configure through env vars if needed.
-            const samples = req.body as ISample[];
-            diagnostics.set("numberOfSamples", samples.length);
-            await redisWal.upsertBulkSamples(samples);
+            const samples = req.body as IApiSample[];
+            const sortedElements = samples.map((sample) => ({
+                gk: sample.tag,
+                elementRank: sample.ts,
+                sn: 0,
+                pld: sample.pld
+            } as ISortedElement));
+            diagnostics.set("numberOfSamples", sortedElements.length);
+            await wal.append(sortedElements);
             let endTime = Date.now();
             diagnostics.set("durationMs", endTime - startTime);
             res.status(201) //Created
@@ -60,18 +79,33 @@ function setupRoutes(rootRouter: IRouter) {
             let startTime = Date.now();
             diagnostics.set("timestamp", startTime);
             const DIContainer = req["DIProp"] as DisposableSingletonContainer;
-            const redisWal = DIContainer.fetchInstance<RedisWAL>(DIConstants.RedisWAL) as RedisWAL;
+            const wal = DIContainer.fetchInstance<RWal>(DIConstants.RWal) as RWal;
             const samplesPerPage = 1000; //TODO: Make this configurable through env vars if needed.
             const fetchRequest = req.body as IFetchRequest;
-            const sampleSets = await redisWal.queryRange(fetchRequest.tagsFilter.in, fetchRequest.timeFilter.startInclusiveTime, fetchRequest.timeFilter.endExclusiveTime, samplesPerPage + 1);
+            const elements = await wal.queryByRank(fetchRequest.tagsFilter.in, fetchRequest.timeFilter.startInclusiveTime, fetchRequest.timeFilter.endExclusiveTime, samplesPerPage + 1);
             let morePages = false;
-            const allSamples = new Array<ISample>();
-            for (const set of sampleSets) {
-                morePages = set.count > samplesPerPage || morePages;
-                allSamples.push(...set.samples);
-                diagnostics.set(`info_count${set.tag}`, set.count);
-                diagnostics.set(`info_min_ts${set.tag}`, set.minTs);
-                diagnostics.set(`info_max_ts${set.tag}`, set.maxTs);
+            const groupedElements = new Map<string, ISortedElement[]>();
+            for (const element of elements) {
+                const current = groupedElements.get(element.gk) ?? [];
+                current.push(element);
+                groupedElements.set(element.gk, current);
+            }
+
+            const allSamples = new Array<IApiSample>();
+            for (const [groupKey, grouped] of groupedElements) {
+                morePages = grouped.length > samplesPerPage || morePages;
+                const minTs = grouped.reduce((acc, value) => Math.min(acc, value.elementRank), Number.MAX_SAFE_INTEGER);
+                const maxTs = grouped.reduce((acc, value) => Math.max(acc, value.elementRank), Number.MIN_SAFE_INTEGER);
+
+                diagnostics.set(`info_count${groupKey}`, grouped.length);
+                diagnostics.set(`info_min_ts${groupKey}`, minTs);
+                diagnostics.set(`info_max_ts${groupKey}`, maxTs);
+
+                allSamples.push(...grouped.map((element) => ({
+                    tag: element.gk,
+                    ts: element.elementRank,
+                    pld: element.pld
+                })));
             }
             diagnostics.set("numberOfSamples", allSamples.length);
             let endTime = Date.now();

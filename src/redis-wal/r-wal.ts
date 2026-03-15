@@ -1,7 +1,7 @@
-import { ISortedElement } from "../interfaces/i-sorted-element";
-import { Utilities } from "../utilities";
-import { RBook } from "./r-book";
-import { PageRankedElement, RPage } from "./r-page";
+import { ISortedElement } from "../interfaces/i-sorted-element.js";
+import { Utilities } from "../utilities.js";
+import { RBook } from "./r-book.js";
+import { PageRankedElement, RPage } from "./r-page.js";
 
 export class RWal {
 

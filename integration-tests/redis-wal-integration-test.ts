@@ -5,14 +5,11 @@ import { GenericContainer, StartedTestContainer } from "testcontainers";
 import { createClient } from "redis";
 import Redis, { Cluster } from "ioredis";
 import { IRedisClientPool, IORedisClientPool, RedisClientPool } from "redis-abstraction";
-import { setTimeout as delay } from 'node:timers/promises';
 
-import { RedisWAL, RedisKeyBuilder } from "../src/index.js";
-import { ISample } from "../src/interfaces/i-sample.js";
-import { Utilities } from "../src/utilities.js";
+import { ISortedElement, RBook, RDriver, RKeyBuilder, RWal } from "../src/index.js";
 import { NodeRedisTestDriver } from "./node-redis-test-driver.js";
 
-describe(`RedisWAL Integration with ${process.env.REDIS_DRIVER}`, () => {
+describe(`RWal Integration with ${process.env.REDIS_DRIVER}`, () => {
     let container: StartedTestContainer;
     let pool: IRedisClientPool;
 
@@ -70,6 +67,18 @@ describe(`RedisWAL Integration with ${process.env.REDIS_DRIVER}`, () => {
         await flushAllData();
     });
 
+    async function createWal(
+        timeToleranceInMs = 60_000,
+        timeWindowInMs = 24 * 60 * 60 * 1000,
+        sizeWindowInBytes = 300 * 1024 * 1024,
+        writeWindow = 1_000_000
+    ): Promise<RWal> {
+        const driver = new RDriver(pool, timeToleranceInMs);
+        await driver.initialize();
+        const book = new RBook(driver, timeWindowInMs, sizeWindowInBytes, writeWindow, 100, new RKeyBuilder());
+        return new RWal(book);
+    }
+
     after(async () => {
         await pool.shutdown();
         await container.stop();
@@ -78,92 +87,87 @@ describe(`RedisWAL Integration with ${process.env.REDIS_DRIVER}`, () => {
     describe("initialization", () => {
 
         it("passes initialize when host and redis times are tolerance aligned", async () => {
-            const wal = new RedisWAL(pool);
-            await assert.doesNotReject(wal.initialize());
+            await assert.doesNotReject(createWal());
         });
     });
 
     describe("upsert and query behavior", () => {
 
         it("writes and queries sorted timestamp single-tag samples", async () => {
-            const wal = new RedisWAL(pool);
+            const wal = await createWal();
 
-            const input: ISample[] = [
-                { tag: "alpha", ts: 2, pld: { nV: 22 } },
-                { tag: "alpha", ts: 1, pld: { nV: 11 } }
+            const input: ISortedElement[] = [
+                { gk: "alpha", elementRank: 2, sn: 0, pld: { nV: 22 } },
+                { gk: "alpha", elementRank: 1, sn: 0, pld: { nV: 11 } }
             ];
 
-            await wal.upsertBulkSamples(input.map((_) => structuredClone(_)));
+            await wal.append(input.map((_) => structuredClone(_)));
 
-            const result = await wal.queryRange(["alpha"], 0, 10, 100);
+            const result = await wal.queryByRank(["alpha"], 0, 10, 100);
             const simplified = result
-                .map(sampleSet => sampleSet.samples)
-                .flat()
-                .map((sample) => ({ tag: sample.tag, ts: sample.ts, nV: sample.pld.nV }));
+                .map((sample) => ({ gk: sample.gk, elementRank: sample.elementRank, nV: sample.pld.nV }));
 
             assert.deepEqual(simplified, [
-                { tag: "alpha", ts: 1, nV: 11 },
-                { tag: "alpha", ts: 2, nV: 22 }
+                { gk: "alpha", elementRank: 1, nV: 11 },
+                { gk: "alpha", elementRank: 2, nV: 22 }
             ]);
         });
 
         it("updates a tag with the same timestamp and returns the latest value on query", async () => {
-            const wal = new RedisWAL(pool);
+            const wal = await createWal();
 
-            await wal.upsertBulkSamples([
-                { tag: "sensor-1", ts: 100, pld: { nV: 50 } }
+            await wal.append([
+                { gk: "sensor-1", elementRank: 100, sn: 0, pld: { nV: 50 } }
             ]);
 
-            let result = await wal.queryRange(["sensor-1"], 0, 500, 100);
+            let result = await wal.queryByRank(["sensor-1"], 0, 500, 100);
             assert.equal(result.length, 1);
-            assert.equal(result[0].samples[0].pld.nV, 50);
+            assert.equal(result[0].pld.nV, 50);
 
-            await wal.upsertBulkSamples([
-                { tag: "sensor-1", ts: 100, pld: { nV: 75 } }
+            await wal.append([
+                { gk: "sensor-1", elementRank: 100, sn: 0, pld: { nV: 75 } }
             ]);
 
-            result = await wal.queryRange(["sensor-1"], 0, 500, 100);
+            result = await wal.queryByRank(["sensor-1"], 0, 500, 100);
             assert.equal(result.length, 1);
-            assert.equal(result[0].samples[0].tag, "sensor-1");
-            assert.equal(result[0].samples[0].ts, 100);
-            assert.equal(result[0].samples[0].pld.nV, 75);
+            assert.equal(result[0].gk, "sensor-1");
+            assert.equal(result[0].elementRank, 100);
+            assert.equal(result[0].pld.nV, 75);
         });
 
         it("handles multiple sequential updates on same tag and timestamp", async () => {
-            const wal = new RedisWAL(pool);
+            const wal = await createWal();
 
             const updates = [10, 25, 50, 100];
 
             for (const value of updates) {
-                await wal.upsertBulkSamples([
-                    { tag: "counter", ts: 99, pld: { nV: value } }
+                await wal.append([
+                    { gk: "counter", elementRank: 99, sn: 0, pld: { nV: value } }
                 ]);
             }
 
-            const result = await wal.queryRange(["counter"], 0, 500, 100);
+            const result = await wal.queryByRank(["counter"], 0, 500, 100);
             assert.equal(result.length, 1);
-            assert.equal(result[0].samples[0].pld.nV, 100);
+            assert.equal(result[0].pld.nV, 100);
         });
 
         it("updates multiple tags with same timestamp and verifies latest values", async () => {
-            const wal = new RedisWAL(pool);
+            const wal = await createWal();
 
-            await wal.upsertBulkSamples([
-                { tag: "A", ts: 50, pld: { nV: 1 } },
-                { tag: "B", ts: 50, pld: { nV: 2 } }
+            await wal.append([
+                { gk: "A", elementRank: 50, sn: 0, pld: { nV: 1 } },
+                { gk: "B", elementRank: 50, sn: 0, pld: { nV: 2 } }
             ]);
 
-            await wal.upsertBulkSamples([
-                { tag: "A", ts: 50, pld: { nV: 10 } },
-                { tag: "B", ts: 50, pld: { nV: 20 } }
+            await wal.append([
+                { gk: "A", elementRank: 50, sn: 0, pld: { nV: 10 } },
+                { gk: "B", elementRank: 50, sn: 0, pld: { nV: 20 } }
             ]);
 
-            const result = await wal.queryRange(["A", "B"], 0, 500, 100);
+            const result = await wal.queryByRank(["A", "B"], 0, 500, 100);
             const resultMap = result
-                .map(sampleSet => sampleSet.samples)
-                .flat()
-                .reduce((acc, sample) => {
-                    acc[sample.tag] = sample.pld.nV;
+                .reduce((acc, element) => {
+                    acc[element.gk] = element.pld.nV;
                     return acc;
                 }, {} as Record<string, number>);
 
@@ -172,44 +176,42 @@ describe(`RedisWAL Integration with ${process.env.REDIS_DRIVER}`, () => {
         });
 
         it("deduplicates duplicate tag names in query input", async () => {
-            const wal = new RedisWAL(pool);
+            const wal = await createWal();
 
-            await wal.upsertBulkSamples([{ tag: "dupTag", ts: 1, pld: { nV: 7 } }]);
+            await wal.append([{ gk: "dupTag", elementRank: 1, sn: 0, pld: { nV: 7 } }]);
 
-            const result = await wal.queryRange(["dupTag", "dupTag", "dupTag"], 0, 10, 100);
+            const result = await wal.queryByRank(["dupTag", "dupTag", "dupTag"], 0, 10, 100);
             assert.equal(result.length, 1);
-            assert.equal(result[0].samples[0].tag, "dupTag");
-            assert.equal(result[0].samples[0].pld.nV, 7);
+            assert.equal(result[0].gk, "dupTag");
+            assert.equal(result[0].pld.nV, 7);
         });
 
         it("returns combined results for multiple tags", async () => {
-            const wal = new RedisWAL(pool);
+            const wal = await createWal();
 
-            await wal.upsertBulkSamples([
-                { tag: "A", ts: 1, pld: { nV: 101 } },
-                { tag: "B", ts: 2, pld: { nV: 202 } },
-                { tag: "A", ts: 3, pld: { nV: 303 } }
+            await wal.append([
+                { gk: "A", elementRank: 1, sn: 0, pld: { nV: 101 } },
+                { gk: "B", elementRank: 2, sn: 0, pld: { nV: 202 } },
+                { gk: "A", elementRank: 3, sn: 0, pld: { nV: 303 } }
             ]);
 
-            const result = await wal.queryRange(["A", "B"], 0, 10, 100);
+            const result = await wal.queryByRank(["A", "B"], 0, 10, 100);
             const view = result
-                .map(sampleSet => sampleSet.samples)
-                .flat()
-                .map((_) => `${_.tag}:${_.ts}:${_.pld.nV}`)
+                .map((_) => `${_.gk}:${_.elementRank}:${_.pld.nV}`)
                 .sort();
 
             assert.deepEqual(view, ["A:1:101", "A:3:303", "B:2:202"]);
         });
 
         it("picks latest update for same tag and timestamp across pages", async () => {
-            const wal = new RedisWAL(pool, 10001, 20000, 1, 100000);
+            const wal = await createWal(10001, 20000, 1, 100000);
 
-            await wal.upsertBulkSamples([{ tag: "same", ts: 5, pld: { nV: 1 } }]);
-            await wal.upsertBulkSamples([{ tag: "same", ts: 5, pld: { nV: 999 } }]);
+            await wal.append([{ gk: "same", elementRank: 5, sn: 0, pld: { nV: 1 } }]);
+            await wal.append([{ gk: "same", elementRank: 5, sn: 0, pld: { nV: 999 } }]);
 
-            const result = await wal.queryRange(["same"], 0, 10, 100);
+            const result = await wal.queryByRank(["same"], 0, 10, 1);
             assert.equal(result.length, 1);
-            assert.equal(result[0].samples[0].pld.nV, 999);
+            assert.equal(result[0].pld.nV, 999);
         });
 
         // it("enforces max pages in book by evicting oldest pages", async () => {

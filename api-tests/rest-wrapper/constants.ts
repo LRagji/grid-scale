@@ -2,7 +2,7 @@
 export class DIConstants {
     public static readonly EnvVars = "EnvVars";
     public static readonly RedisClientPool = "RedisClientPool";
-    public static readonly RedisWAL = "RedisWAL";
+    public static readonly RWal = "RWal";
 }
 
 export class EnvironmentVariableConstants {

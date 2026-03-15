@@ -1,6 +1,6 @@
-import { IRDriver, RedisKeywords } from "../interfaces/i-r-driver";
-import { ISortedElement } from "../interfaces/i-sorted-element";
-import { IKeyBuilder, RKeyBuilder } from "./r-key-builder";
+import { IRDriver, RedisKeywords } from "../interfaces/i-r-driver.js";
+import { ISortedElement } from "../interfaces/i-sorted-element.js";
+import { IKeyBuilder, RKeyBuilder } from "./r-key-builder.js";
 
 export type PageRankedElement = ISortedElement & { pageRank: number };
 

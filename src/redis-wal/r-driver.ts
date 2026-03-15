@@ -1,6 +1,6 @@
 import { IRedisClientPool } from "redis-abstraction";
-import { IRDriver, RedisKeywords } from "../interfaces/i-r-driver";
-import { Utilities } from "../utilities";
+import { IRDriver, RedisKeywords } from "../interfaces/i-r-driver.js";
+import { Utilities } from "../utilities.js";
 
 
 export class RDriver implements IRDriver {
@@ -21,6 +21,8 @@ export class RDriver implements IRDriver {
 
     public async initialize(): Promise<void> {
         await this.redisDriver.initialize();
+        // Mark initialized before tolerance check because checkTimeTolerance uses usingRedisDriver.
+        this.initialized = 0;
 
         const timeAligned = await this.checkTimeTolerance();
         if (!timeAligned) {

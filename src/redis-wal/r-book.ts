@@ -1,7 +1,7 @@
-import { IRDriver, RedisKeywords } from "../interfaces/i-r-driver";
-import { Utilities } from "../utilities";
-import { RPage } from "./r-page";
-import { IKeyBuilder, RKeyBuilder } from "./r-key-builder";
+import { IRDriver, RedisKeywords } from "../interfaces/i-r-driver.js";
+import { Utilities } from "../utilities.js";
+import { RPage } from "./r-page.js";
+import { IKeyBuilder, RKeyBuilder } from "./r-key-builder.js";
 
 interface IPageInfo {
     pageKey: string;
@@ -78,9 +78,10 @@ export class RBook {
             throw new Error(`System Error:Time key mismatch when creating new page. Expected: ${Number(insertTimeWithTolerance).toString()}, Actual: ${receivedTime}. This indicates a potential issue with time alignment between host and Redis server.`);
         }
 
+        const updateBookCommands = this.generateBookUpdateCommand(pageKey, insertTimeWithTolerance, receivedTime, modSize, modWrites);
+        await this.redisDriver.usingRedisDriver<void>(updateBookCommands, 'UpdateBookForNewPage', 'pipeline');
+
         if (newPage === true) {
-            const updateBookCommands = this.generateBookUpdateCommand(pageKey, insertTimeWithTolerance, receivedTime, modSize, modWrites);
-            await this.redisDriver.usingRedisDriver<void>(updateBookCommands, 'UpdateBookForNewPage', 'pipeline');
             await this.newPageCallback(pageKey);
         }
 
