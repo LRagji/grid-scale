@@ -2,10 +2,10 @@ export interface IKeyBuilder {
     counterKey(): string;
     pageKey(timeKeyPart: string, sizeKeyPart: string, writeKeyPart: string): string;
     bookKey(): string;
-    tagKey(pageKey: string, tagName: string): string;
+    groupKey(pageKey: string, tagName: string): string;
 }
 
-export class RedisKeyBuilder implements IKeyBuilder {
+export class RKeyBuilder implements IKeyBuilder {
     constructor(
         private readonly keyPrefix: string = "wal",
         private readonly keySeparator: string = ":",
@@ -28,7 +28,7 @@ export class RedisKeyBuilder implements IKeyBuilder {
         return `${this.keyPrefix}${this.keySeparator}${this.bookKeyName}`;
     }
 
-    public tagKey(pageKey: string, tagName: string): string {
+    public groupKey(pageKey: string, tagName: string): string {
         return `${pageKey}${this.keySeparator}${tagName}`;
     }
 }

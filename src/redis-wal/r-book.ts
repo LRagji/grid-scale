@@ -1,20 +1,25 @@
 import { IRDriver, RedisKeywords } from "../interfaces/i-r-driver";
 import { Utilities } from "../utilities";
 import { RPage } from "./r-page";
-import { IKeyBuilder, RedisKeyBuilder } from "./redis-key-builder";
+import { IKeyBuilder, RKeyBuilder } from "./r-key-builder";
 
-
+interface IPageInfo {
+    pageKey: string;
+    modSize: number;
+    modWrites: number;
+    modTime: number;
+}
 
 export class RBook {
 
     constructor(
-        private readonly redisDriver: IRDriver,
+        public readonly redisDriver: IRDriver,
         //Defaults.
         private readonly timeWindowInMs: number = 24 * 60 * 60 * 1000, // 24 hours
         private readonly sizeWindowInBytes: number = Utilities.u48In3,
         private readonly writeWindow: number = Utilities.u48In3,
         private readonly maxPagesInBook: number = 100,
-        private readonly keyBuilder: IKeyBuilder = new RedisKeyBuilder(),
+        public readonly keyBuilder: IKeyBuilder = new RKeyBuilder(),
         private readonly newPageCallback: (pageKey: string) => Promise<void> = async (_pageKey: string) => { }
     ) {
         if (this.timeWindowInMs <= 1000 || this.timeWindowInMs > Utilities.u48In3) {
@@ -34,27 +39,16 @@ export class RBook {
         }
     }
 
-    public async openPageForWrites(estimatedSize: number): Promise<void> {
-        if (estimatedSize <= 0 || estimatedSize > Utilities.u48In3) {
-            throw new Error("Estimated size must be between 0 and " + Utilities.u48In3 + ". Currently, it is set to " + estimatedSize.toString() + " bytes.");
-        }
-
-        const currentTimeWithTolerance = Utilities.modMinus(Date.now(), this.redisDriver.timeToleranceInMs);
-        const writeablePage = await this.incrementCounter(currentTimeWithTolerance, estimatedSize, 1);
-
-        if (writeablePage.newPage) {
-            await this.newPageCallback(writeablePage.pageKey);
-        }
-    }
-
-    private async incrementCounter(timeWithTolerance: number, sizeInBytes: number, writes: number): Promise<RPage> {
+    public async fetchWriteablePage(timeInMs: number, sizeInBytes: number, count: number): Promise<{ page: RPage, sequenceStartNumber: number }> {
+        const insertTimeWithTolerance = Utilities.modMinus(timeInMs, this.redisDriver.timeToleranceInMs);
         const counterKey = this.keyBuilder.counterKey();
-        // const returnObject = { timeKey: "", sizeInBytes: 0, writes: 0, newPage: false };
         // Current js engine v8 only guarantees 53 bit precision for integers, so we use 48 bits for the time header.
         // We use the same 48 bits for counter sizes etc.
+        // Redis is the ultimate decider of when page turns cause of time by using redis server time via key expiry.
+        // Rest 2 counters are expected no to overflow within this time window and will be use to determine the page name.
         const headerBytes = 6;
         const timeHeaderBuffer = Buffer.alloc(headerBytes);
-        timeHeaderBuffer.writeUintBE(Number(timeWithTolerance), 0, headerBytes);
+        timeHeaderBuffer.writeUintBE(insertTimeWithTolerance, 0, headerBytes);
 
         const commands = [
             [RedisKeywords.SET, counterKey, timeHeaderBuffer as any, RedisKeywords.SET_ONLY_IF_NO_EXPIRY],
@@ -62,28 +56,61 @@ export class RBook {
                 RedisKeywords.BITFIELD, counterKey, RedisKeywords.OVERFLOW, RedisKeywords.FAIL,
                 RedisKeywords.GET, "u48", "#0",
                 RedisKeywords.INCRBY, "u48", "#1", `${sizeInBytes}`,
-                RedisKeywords.INCRBY, "u48", "#2", `${writes}`
+                RedisKeywords.INCRBY, "u48", "#2", `${count}`
             ],
             [RedisKeywords.PEXPIRE, counterKey, `${this.timeWindowInMs}`, RedisKeywords.SET_ONLY_IF_NO_EXPIRY]
         ];
 
         const response = await this.redisDriver.usingRedisDriver<string[][]>(commands, 'IncrementCounter', 'pipeline');
-        const returnPage = new RPage(
-            parseInt(response[1][0].toString(), 10),
-            parseInt(response[1][1], 10),
-            parseInt(response[1][2], 10),
-            (response[0] ?? "").toString().toLowerCase() === "ok",
-            this.redisDriver,
-            this.timeWindowInMs,
-            this.sizeWindowInBytes,
-            this.writeWindow,
-            this.maxPagesInBook,
-            this.keyBuilder
-        );
-        if (returnPage.newPage && returnPage.timeKeyPart !== timeWithTolerance) {
-            throw new Error(`System Error:Time key mismatch when creating new page. Expected: ${Number(timeWithTolerance).toString()}, Actual: ${returnPage.timeKeyPart}. This indicates a potential issue with time alignment between host and Redis server.`);
+
+        const receivedTime = parseInt(response[1][0].toString(), 10);// Time counter is modded by redis server time via key expiry, so no need to mode it.
+        const sizeCounter = parseInt(response[1][1].toString(), 10);// This counter is always increasing so needs to be modded to determine page key.
+        const writeCounter = parseInt(response[1][2].toString(), 10);// This counter is always increasing so needs to be modded to determine page key.
+
+        const modSize = Utilities.modMinus(sizeCounter, this.sizeWindowInBytes);
+        const modWrites = Utilities.modMinus(writeCounter, this.writeWindow);
+        const newPage = (response[0] ?? "").toString().toLowerCase() === "ok";
+        const pageKey = this.keyBuilder.pageKey(receivedTime.toString(), modSize.toString(), modWrites.toString());
+        const sequenceStartNumber = writeCounter - count;
+
+
+        if (newPage === true && receivedTime !== insertTimeWithTolerance) {
+            throw new Error(`System Error:Time key mismatch when creating new page. Expected: ${Number(insertTimeWithTolerance).toString()}, Actual: ${receivedTime}. This indicates a potential issue with time alignment between host and Redis server.`);
         }
-        return returnPage;
+
+        if (newPage === true) {
+            const updateBookCommands = this.generateBookUpdateCommand(pageKey, insertTimeWithTolerance, receivedTime, modSize, modWrites);
+            await this.redisDriver.usingRedisDriver<void>(updateBookCommands, 'UpdateBookForNewPage', 'pipeline');
+            await this.newPageCallback(pageKey);
+        }
+
+        const page = new RPage(this.redisDriver, pageKey, this.keyBuilder);
+
+        return { page, sequenceStartNumber };
     }
 
+    private generateBookUpdateCommand(pageKey: string, insertTime: number, modTime: number, modSize: number, modWrites: number): string[][] {
+        return [
+            [RedisKeywords.ZADD, this.keyBuilder.bookKey(), insertTime.toString(), JSON.stringify({ pageKey, modSize, modWrites, modTime } as IPageInfo)],
+            [RedisKeywords.ZREMRANGEBYRANK, this.keyBuilder.bookKey(), "0", `-${this.maxPagesInBook + 1}`]
+        ];
+    }
+
+    public async fetchAvailablePagesWithRanks(): Promise<Map<RPage, number>> {
+        const bookKey = this.keyBuilder.bookKey();
+        const pageKeys = await this.redisDriver.usingRedisDriver<string[]>([[RedisKeywords.ZRANGE, bookKey, "0", "-1"]], 'FetchAllPagesWithRanks', "run");
+        const sortedPageInfo = pageKeys
+            .map(serializedPageInfo => JSON.parse(serializedPageInfo) as IPageInfo)
+            .sort((aObj: IPageInfo, bObj: IPageInfo) => {
+                if (aObj.modTime !== bObj.modTime) {
+                    return aObj.modTime - bObj.modTime;
+                }
+                if (aObj.modSize !== bObj.modSize) {
+                    return aObj.modSize - bObj.modSize;
+                }
+                return aObj.modWrites - bObj.modWrites;
+            })
+            .map((pageInfo, index) => ([new RPage(this.redisDriver, pageInfo.pageKey, this.keyBuilder), index] as [RPage, number]));
+        return new Map<RPage, number>(sortedPageInfo);
+    }
 }

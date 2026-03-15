@@ -1,12 +1,12 @@
 
-import { RedisWAL } from './redis-wal/redis-wal.js';
-import { type IKeyBuilder, RedisKeyBuilder } from './redis-wal/redis-key-builder.js';
+import { RWal } from './redis-wal/r-wal.js';
+import { type IKeyBuilder, RKeyBuilder } from './redis-wal/r-key-builder.js';
 import { type ISampleSet, type ISample } from './interfaces/i-sample.js';
 
 //Implementation to export
 export {
-    RedisWAL,
-    RedisKeyBuilder
+    RWal,
+    RKeyBuilder as RedisKeyBuilder
 };
 
 //Types to export

@@ -4,6 +4,7 @@
         "BYSCORE",
         "healthcheck",
         "INCRBY",
+        "mvcc",
         "PEXPIRE",
         "WITHSCORES",
         "ZADD",

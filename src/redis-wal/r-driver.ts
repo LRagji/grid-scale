@@ -5,12 +5,15 @@ import { Utilities } from "../utilities";
 
 export class RDriver implements IRDriver {
 
+    public initialized = -1;
+
     constructor(
         private readonly redisDriver: IRedisClientPool,
         //Defaults.
         public readonly timeToleranceInMs: number = 1 * 60 * 1000, // 1 minute
     ) {
         if (this.timeToleranceInMs <= 1000 || this.timeToleranceInMs > Utilities.u48In3) {
+            this.initialized = -2;
             throw new Error("Time tolerance must be between 1 second and " + Utilities.u48In3 + " ms. Currently, it is set to " + this.timeToleranceInMs.toString() + " ms.");
         }
 
@@ -21,7 +24,11 @@ export class RDriver implements IRDriver {
 
         const timeAligned = await this.checkTimeTolerance();
         if (!timeAligned) {
+            this.initialized = -3;
             throw new Error("Time tolerance check failed. Host and Redis server times are not aligned, Cannot proceed with operations.");
+        }
+        else {
+            this.initialized = 0;
         }
     }
 
@@ -36,6 +43,11 @@ export class RDriver implements IRDriver {
     }
 
     public async usingRedisDriver<T>(commands: any[][], tokenName: string, type: "run" | "pipeline" = "pipeline"): Promise<T> {
+
+        if (this.initialized !== 0) {
+            throw new Error("Redis driver is not initialized. Current state: " + this.initialized.toString());
+        }
+
         const token = this.redisDriver.generateUniqueToken(tokenName);
         try {
             await this.redisDriver.acquire(token);
