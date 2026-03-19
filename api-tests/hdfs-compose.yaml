@@ -88,7 +88,24 @@ services:
       retries: 5
       start_period: 30s
 
+  webhdfs-cli:
+    image: node:20-alpine
+    container_name: webhdfs-cli
+    working_dir: /app
+    environment:
+      - WEBHDFS_BASE_URL=http://hdfs-name-node:9870
+      - WEBHDFS_USER=hadoop
+    volumes:
+      - ./webhdfs-cli.js:/app/webhdfs-cli.js:ro
+    entrypoint: [ "node", "/app/webhdfs-cli.js" ]
+    depends_on:
+      hdfs-name-node:
+        condition: service_healthy
+    profiles: [ "tools" ]
+
 networks:
   default:
     name: grid-store-network
     driver: bridge
+
+#docker compose -f api-tests/hdfs-compose.yaml --profile tools run --rm --entrypoint sh webhdfs-cli
