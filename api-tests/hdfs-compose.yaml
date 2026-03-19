@@ -1,0 +1,94 @@
+services:
+  hdfs-name-node:
+    #This guy is RAM Heavy
+    # image: apache/hadoop:3.4.2-lean Cause there is not arm64(Apple Silicon) image provided by Apache :(
+    image: sbloodys/hadoop:3.3.6
+    container_name: hdfs-name-node
+    hostname: hdfs-name-node
+    ports:
+      - "9870:9870" # NameNode Web UI (HTTP)
+      - "9000:9000" # NameNode IPC Port
+      - "50070:50070" # Legacy NameNode Web UI (for compatibility)
+    environment:
+      - HADOOP_CONF_DIR=/etc/hadoop
+      - HDFS_NAMENODE_USER=hadoop
+      - HDFS_DATANODE_USER=hadoop
+      - HDFS_SECONDARYNAMENODE_USER=hadoop
+      - YARN_RESOURCEMANAGER_USER=hadoop
+      - YARN_NODEMANAGER_USER=hadoop
+    volumes:
+      - ./data/hdfs/name-node:/hadoop/dfs/name
+      - ./config/hdfs-config/core-site.xml:/etc/hadoop/core-site.xml:ro
+      - ./config/hdfs-config/hdfs-site.xml:/etc/hadoop/hdfs-site.xml:ro
+    command: >
+      bash -c "
+       if [ ! -f /hadoop/dfs/name/current/VERSION ]; then
+         hdfs namenode -format -force -nonInteractive;
+       fi;
+       exec hdfs namenode
+       "
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:9870" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  hdfs-datanode1:
+    image: sbloodys/hadoop:3.3.6
+    container_name: hdfs-datanode1
+    hostname: hdfs-datanode1
+    ports:
+      - "9864:9864" # DataNode Web UI
+      - "9866:9867" # DataNode IPC Port
+    environment:
+      - HADOOP_CONF_DIR=/etc/hadoop
+      - HDFS_NAMENODE_USER=hadoop
+      - HDFS_DATANODE_USER=hadoop
+      - HDFS_SECONDARYNAMENODE_USER=hadoop
+    volumes:
+      - ./data/hdfs/datanode1:/hadoop/dfs/data
+      - ./config/hdfs-config/core-site.xml:/etc/hadoop/core-site.xml:ro
+      - ./config/hdfs-config/hdfs-site.xml:/etc/hadoop/hdfs-site.xml:ro
+    command: hdfs datanode
+    depends_on:
+      hdfs-name-node:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:9864" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  hdfs-datanode2:
+    image: sbloodys/hadoop:3.3.6
+    container_name: hdfs-datanode2
+    hostname: hdfs-datanode2
+    ports:
+      - "9865:9864" # DataNode Web UI (mapped to avoid port conflict)
+      - "9867:9867" # DataNode IPC Port (mapped to avoid port conflict)
+    environment:
+      - HADOOP_CONF_DIR=/etc/hadoop
+      - HDFS_NAMENODE_USER=hadoop
+      - HDFS_DATANODE_USER=hadoop
+      - HDFS_SECONDARYNAMENODE_USER=hadoop
+    volumes:
+      - ./data/hdfs/datanode2:/hadoop/dfs/data
+      - ./config/hdfs-config/core-site.xml:/etc/hadoop/core-site.xml:ro
+      - ./config/hdfs-config/hdfs-site.xml:/etc/hadoop/hdfs-site.xml:ro
+    command: hdfs datanode
+    depends_on:
+      hdfs-name-node:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:9864" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+networks:
+  default:
+    name: grid-store-network
+    driver: bridge
