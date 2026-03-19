@@ -60,4 +60,23 @@ export class RPage {
 
         return rankedResults;
     }
+
+    public async dumpPageData(): Promise<Map<string, Map<number, PageRankedElement>>> {
+        throw new Error("Method not implemented. This is a placeholder for future implementation if needed.");
+    }
+
+    public async purgePage(expireAfterInMilliseconds: number = 60 * 1000): Promise<void> {
+        const expireCommands: string[][] = [];
+        for (const group of await this.groupsInPage()) {
+            expireCommands.push([RedisKeywords.PEXPIRE, this.keyBuilder.groupKey(this.pageBaseKey, group), expireAfterInMilliseconds.toString()]);//Expire in specified time, this is to avoid blocking calls to redis and also give some buffer time for any ongoing fetches to complete.
+        }
+        this.redisDriver.usingRedisDriver<void>(expireCommands, 'PurgePage', 'run');
+    }
+
+    public async groupsInPage(): Promise<string[]> {
+        // const pattern = this.keyBuilder.groupKey(this.pageBaseKey, '*');
+        // const groupKeys = await this.redisDriver.usingRedisDriver<string[]>([[RedisKeywords.KEYS, pattern]], 'GroupsInPage', 'run');
+        // return groupKeys.map(k => k.replace(this.pageBaseKey + ':', ''));
+        return [];
+    }
 }
