@@ -3,6 +3,7 @@ import { IORedisClientPool, type IRedisClientPool } from "redis-abstraction";
 import IORedis, { Cluster } from "ioredis";
 import { JobsOptions, Queue } from 'bullmq';
 import { parseURL } from "ioredis/built/utils/index.js";
+import { BullMQOtel } from "bullmq-otel";
 
 import { IPageInfo, ISortedElement, RBook, RDriver, RWal } from "../../src/index.js";
 import { DIConstants, EnvironmentVariableConstants, PageWindowDefaults } from "./constants.js";
@@ -17,10 +18,23 @@ interface IApiSample {
     };
 }
 
-const applicationName = "RestWrapper";
+class DisposableQue implements AsyncDisposable {
+    public readonly queue: Queue<IPageInfo>;
+
+    constructor(queueName: string, options: any) {
+        this.queue = new Queue<IPageInfo>(queueName, options);
+    }
+
+    public async [Symbol.asyncDispose](): Promise<void> {
+        await this.queue.close();
+    }
+}
+
+const applicationName = process.env.OTEL_SERVICE_NAME || "RestWrapper";
 const app = new ApplicationBuilder(applicationName);
 const utilities = new Convenience();
 const defaultRedisConnectionString = "redis://localhost:6379";
+
 
 async function initializeGridScale(DIContainer: DisposableSingletonContainer) {
     const env = DIContainer.createInstance<EnvironmentVariables>(DIConstants.EnvVars, EnvironmentVariables, []);
@@ -35,8 +49,14 @@ async function initializeGridScale(DIContainer: DisposableSingletonContainer) {
     const redisPoolDriver = DIContainer.createInstance<IRedisClientPool>(DIConstants.RedisClientPool, IORedisClientPool, [connectionInjector]);
     const queName = env.getStringOrDefault(EnvironmentVariableConstants.DistributionQueueName, "distribution_queue");
     const queConnectionParams = parseRedisConnectionString(redisConnectionString);
-    const checkpointQueue = new Queue<IPageInfo>(queName, { connection: queConnectionParams });
-
+    const checkpointQueue = DIContainer.createInstance<DisposableQue>(DIConstants.CheckpointQueue, DisposableQue, [queName, {
+        connection: queConnectionParams,
+        telemetry: new BullMQOtel({
+            tracerName: applicationName,
+            meterName: `${applicationName}-BULLMQ`,
+            enableMetrics: true
+        })
+    }]);
     const turnOverCallback = async (newPageKey: string | undefined, trimmedPages: IPageInfo[]) => {
         const jobsToPublish = trimmedPages.map((pageInfo) => ({
             name: pageInfo.pageKey,
@@ -48,7 +68,7 @@ async function initializeGridScale(DIContainer: DisposableSingletonContainer) {
                 delay: 10000 // Adding a delay to ensure that the page turnover process is completed before the job is picked up by any worker. This is to avoid potential race conditions.
             } as JobsOptions
         }));
-        await checkpointQueue.addBulk(jobsToPublish);
+        await checkpointQueue.queue.addBulk(jobsToPublish);
         console.log(`Turnover callback executed. New page: ${newPageKey}, Trimmed pages[${trimmedPages.length}]: ${trimmedPages.map(p => p.pageKey).join(", ")}`);
     };
 
