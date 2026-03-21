@@ -43,6 +43,19 @@ export class RBook {
 
     public async fetchWriteablePage(timeInMs: number, sizeInBytes: number, count: number): Promise<{ page: RPage, sequenceStartNumber: number }> {
 
+        if (sizeInBytes > this.sizeWindowInBytes) {
+            //This is required to prevent overflow of the counter, which can lead to empty gaps on page or worse overflows.
+            throw new Error("Size in bytes must be less than or equal to size window. Currently, it is set to " + sizeInBytes.toString() + " bytes and size window is " + this.sizeWindowInBytes.toString() + " bytes.");
+        }
+        if (count > this.writeWindow) {
+            //This is required to prevent overflow of the counter, which can lead to empty gaps on page or worse overflows.
+            throw new Error("Count must be less than or equal to write window. Currently, it is set to " + count.toString() + " and write window is " + this.writeWindow.toString() + ".");
+        }
+        if (timeInMs <= 0) {
+            //Negative or zero time doesn't make sense for our use case and can lead to unexpected behavior, so we throw an error.
+            throw new Error("Time in ms must be greater than 0. Currently, it is set to " + timeInMs.toString() + " ms.");
+        }
+
         const insertTimeWithTolerance = Utilities.modMinus(timeInMs, this.redisDriver.timeToleranceInMs);
 
         const { pageKey, modeTime, modSize, modWrites, sequenceStartNumber } = await this.incrementAndGenerateKey(insertTimeWithTolerance, sizeInBytes, count);

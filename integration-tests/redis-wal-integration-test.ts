@@ -8,6 +8,7 @@ import { IRedisClientPool, IORedisClientPool, RedisClientPool } from "redis-abst
 
 import { ISortedElement, RBook, RDriver, RKeyBuilder, RWal } from "../src/index.js";
 import { NodeRedisTestDriver } from "./node-redis-test-driver.js";
+import { Utilities } from "../src/utilities.js";
 
 describe(`RWal Integration with ${process.env.REDIS_DRIVER}`, () => {
     let container: StartedTestContainer;
@@ -71,12 +72,13 @@ describe(`RWal Integration with ${process.env.REDIS_DRIVER}`, () => {
         timeToleranceInMs = 60_000,
         timeWindowInMs = 24 * 60 * 60 * 1000,
         sizeWindowInBytes = 300 * 1024 * 1024,
-        writeWindow = 1_000_000
+        writeWindow = 1_000_000,
+        sizeEstimator: (elements: ISortedElement[]) => number = Utilities.roughSizeEstimator
     ): Promise<RWal> {
         const driver = new RDriver(pool, timeToleranceInMs);
         await driver.initialize();
         const book = new RBook(driver, timeWindowInMs, sizeWindowInBytes, writeWindow, 100, new RKeyBuilder());
-        return new RWal(book);
+        return new RWal(book, sizeEstimator);
     }
 
     after(async () => {
@@ -204,7 +206,7 @@ describe(`RWal Integration with ${process.env.REDIS_DRIVER}`, () => {
         });
 
         it("picks latest update for same tag and timestamp across pages", async () => {
-            const wal = await createWal(10001, 20000, 1, 100000);
+            const wal = await createWal(10001, 20000, 1, 100000, (_) => 1);
 
             await wal.append([{ gk: "same", elementRank: 5, sn: 0, pld: { nV: 1 } }]);
             await wal.append([{ gk: "same", elementRank: 5, sn: 0, pld: { nV: 999 } }]);
