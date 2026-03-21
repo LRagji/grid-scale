@@ -63,7 +63,7 @@ async function initializeGridScale(DIContainer: DisposableSingletonContainer) {
             data: pageInfo,
             opts: {
                 lifo: false,
-                jobId: pageInfo.pageKey,
+                jobId: Buffer.from(pageInfo.pageKey, "utf8").toString("base64url"), // no colon,
                 removeOnComplete: true,
                 delay: 10000 // Adding a delay to ensure that the page turnover process is completed before the job is picked up by any worker. This is to avoid potential race conditions.
             } as JobsOptions

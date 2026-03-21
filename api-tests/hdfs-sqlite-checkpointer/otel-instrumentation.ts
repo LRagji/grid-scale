@@ -6,7 +6,7 @@ import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } from '@opentelemetry/semantic
 // Start OpenTelemetry SDK before anything else so auto-instrumentation can hook into libs
 const sdk = new NodeSDK({
     resource: resourceFromAttributes({
-        [ATTR_SERVICE_NAME]: process.env.OTEL_SERVICE_NAME || "REST-Wrapper-API",
+        [ATTR_SERVICE_NAME]: process.env.OTEL_SERVICE_NAME || "HDFS-SQLite-Checkpoint-Worker",
         [ATTR_SERVICE_VERSION]: '1.0',
     }),
     instrumentations: [getNodeAutoInstrumentations()],

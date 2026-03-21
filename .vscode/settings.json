@@ -2,6 +2,8 @@
     "cSpell.words": [
         "BITFIELD",
         "BYSCORE",
+        "checkpointer",
+        "HDFS",
         "healthcheck",
         "INCRBY",
         "mvcc",

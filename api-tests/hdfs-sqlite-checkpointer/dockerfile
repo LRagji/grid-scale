@@ -10,4 +10,4 @@ EXPOSE 8080
 #Application listens on 8081 for diagnostics/health requests
 EXPOSE 8081
 USER node
-CMD ["node", "--loader=@opentelemetry/instrumentation/hook.mjs", "--import", "./api-tests/rest-wrapper/otel-instrumentation.js", "./api-tests/rest-wrapper/rest-wrapper.js"]
+CMD ["node", "--loader=@opentelemetry/instrumentation/hook.mjs", "--import", "./api-tests/hdfs-sqlite-checkpointer/otel-instrumentation.js", "./api-tests/hdfs-sqlite-checkpointer/hdfs-sqlite-checkpointer.js"]
