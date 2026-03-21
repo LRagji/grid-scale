@@ -107,7 +107,7 @@ export class RPage {
         this.redisDriver.usingRedisDriver<void>(expireCommands, 'PurgePage', 'run');
     }
 
-    public async groupsInPage(): Promise<string[]> {
+    private async groupsInPage(): Promise<string[]> {
         const groupListKey = this.keyBuilder.groupListKey(this.pageBaseKey);
         const groups = await this.redisDriver.usingRedisDriver<string[]>([[RedisKeywords.SMEMBERS, groupListKey]], 'FetchGroupsForPage', 'run');
         return groups;

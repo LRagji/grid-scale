@@ -3,7 +3,7 @@ import { Utilities } from "../utilities.js";
 import { RPage } from "./r-page.js";
 import { IKeyBuilder, RKeyBuilder } from "./r-key-builder.js";
 
-interface IPageInfo {
+export interface IPageInfo {
     pageKey: string;
     modSize: number;
     modWrites: number;
@@ -22,7 +22,7 @@ export class RBook {
         private readonly writeWindow: number = Utilities.u48In3,
         private readonly maxPagesInBook: number = 100,
         public readonly keyBuilder: IKeyBuilder = new RKeyBuilder(),
-        private readonly newPageCallback: (pageKey: string) => Promise<void> = async (_pageKey: string) => { }
+        private readonly newPageCallback: (pageKey: string | undefined, trimmedPages: IPageInfo[]) => Promise<void> = async (_pageKey: string) => { }
     ) {
         if (this.timeWindowInMs <= 1000 || this.timeWindowInMs > Utilities.u48In3) {
             throw new Error("Time window must be between 1 second and " + Utilities.u48In3 + " ms. Currently, it is set to " + this.timeWindowInMs.toString() + " ms.");
@@ -60,10 +60,10 @@ export class RBook {
 
         const { pageKey, modeTime, modSize, modWrites, sequenceStartNumber } = await this.incrementAndGenerateKey(insertTimeWithTolerance, sizeInBytes, count);
 
-        const newPage = await this.upsertPageInfo(pageKey, insertTimeWithTolerance, modeTime, modSize, modWrites);
+        const pageInfo = await this.upsertPageInfo(pageKey, insertTimeWithTolerance, modeTime, modSize, modWrites);
 
-        if (newPage === true) {
-            await this.newPageCallback(pageKey);
+        if (pageInfo.newPage === true || pageInfo.trimmedPages.length > 0) {
+            await this.newPageCallback(pageInfo.newPage ? pageKey : undefined, pageInfo.trimmedPages);
         }
 
         const page = new RPage(this.redisDriver, pageKey, this.keyBuilder);
@@ -104,13 +104,17 @@ export class RBook {
         return { pageKey, modeTime: receivedTime, modSize, modWrites, sequenceStartNumber };
     }
 
-    private async upsertPageInfo(pageKey: string, insertTime: number, modTime: number, modSize: number, modWrites: number): Promise<boolean> {
+    private async upsertPageInfo(pageKey: string, insertTime: number, modTime: number, modSize: number, modWrites: number): Promise<{ newPage: boolean, trimmedPages: IPageInfo[] }> {
+        const redisKey = this.keyBuilder.bookKey();
         const upsertTrimCommands = [
-            [RedisKeywords.ZADD, this.keyBuilder.bookKey(), insertTime.toString(), JSON.stringify({ pageKey, modSize, modWrites, modTime } as IPageInfo)],
-            [RedisKeywords.ZREMRANGEBYRANK, this.keyBuilder.bookKey(), "0", `-${this.maxPagesInBook + 1}`]
+            [RedisKeywords.ZADD, redisKey, insertTime.toString(), JSON.stringify({ pageKey, modSize, modWrites, modTime } as IPageInfo)],
+            [RedisKeywords.ZRANGE, redisKey, "0", `-${this.maxPagesInBook + 1}`],
+            [RedisKeywords.ZREMRANGEBYRANK, redisKey, "0", `-${this.maxPagesInBook + 1}`]
         ];
         const response = await this.redisDriver.usingRedisDriver<void>(upsertTrimCommands, 'UpdateBookForNewPage', 'pipeline');
-        return response[0] === "OK" || response[0] === 1; // This means a new page was added.
+        const newPage = Array.isArray(response) && parseInt(response[0] ?? "0", 10) === 1; // This means a new page was added.
+        const trimmedPages = (response[1] ?? []).map(serializedPageInfo => JSON.parse(serializedPageInfo) as IPageInfo)
+        return { newPage, trimmedPages };
     }
 
     public async fetchAvailablePagesWithRanks(): Promise<Map<RPage, number>> {

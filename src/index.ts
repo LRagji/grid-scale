@@ -2,7 +2,7 @@
 import { RWal } from './redis-wal/r-wal.js';
 import { type IKeyBuilder, RKeyBuilder } from './redis-wal/r-key-builder.js';
 import { ISortedElement } from './interfaces/i-sorted-element.js';
-import { RBook } from './redis-wal/r-book.js';
+import { IPageInfo, RBook } from './redis-wal/r-book.js';
 import { RPage } from './redis-wal/r-page.js';
 import { RDriver } from './redis-wal/r-driver.js';
 import { IRDriver } from './interfaces/i-r-driver.js';
@@ -20,5 +20,6 @@ export {
 export type {
     ISortedElement,
     IKeyBuilder,
-    IRDriver
+    IRDriver,
+    IPageInfo
 };
