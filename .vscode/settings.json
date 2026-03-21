@@ -6,6 +6,8 @@
         "INCRBY",
         "mvcc",
         "PEXPIRE",
+        "SADD",
+        "SMEMBERS",
         "WITHSCORES",
         "ZADD",
         "ZRANGE",

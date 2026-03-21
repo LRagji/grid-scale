@@ -1,5 +1,6 @@
 import { IRDriver, RedisKeywords } from "../interfaces/i-r-driver.js";
 import { ISortedElement } from "../interfaces/i-sorted-element.js";
+import { Utilities } from "../utilities.js";
 import { IKeyBuilder, RKeyBuilder } from "./r-key-builder.js";
 
 export type PageRankedElement = ISortedElement & { pageRank: number };
@@ -9,7 +10,8 @@ export class RPage {
         private readonly redisDriver: IRDriver,
         public readonly pageBaseKey: string,
         //Defaults.
-        private readonly keyBuilder: IKeyBuilder = new RKeyBuilder()
+        private readonly keyBuilder: IKeyBuilder = new RKeyBuilder(),
+        private readonly groupListTTLInMs: number = 24 * 60 * 60 * 1000 // 24 hours, This is to ensure that even if there are some issues with page purging, we won't have stale data hanging around indefinitely.
     ) { }
 
     public async dumpDataToPage(mutableElements: ISortedElement[], mvccCounterStart: number): Promise<void> {
@@ -25,29 +27,60 @@ export class RPage {
             pageUpsertCommands.set(elementGroupKey, existingCommands);
             elementCounter++;
         }
+        const groupListKey = this.keyBuilder.groupListKey(this.pageBaseKey);
+        const commands = [...pageUpsertCommands.values()];
+        commands.push([RedisKeywords.SADD, groupListKey, ...[...pageUpsertCommands.keys()]]);//Add all groups to group list for the page, this will help us in fetching and purging data for the page.
+        commands.push([RedisKeywords.PEXPIRE, groupListKey, `${this.groupListTTLInMs}`]);
 
-        await this.redisDriver.usingRedisDriver<void>([...pageUpsertCommands.values()], 'DumpDataToPage', 'pipeline')
+        await this.redisDriver.usingRedisDriver<void>(commands, 'DumpDataToPage', 'pipeline')
     }
 
     public async fetchElementsByRange(groupKeys: string[], pageRank: number, startInclusiveRank: number, endExclusiveRank: number, maxElementsPerGroup: number): Promise<Map<string, Map<number, PageRankedElement>>> {
 
-        const commands: string[][] = [];
-        for (const groupKey of groupKeys) {
-            const finalKey = this.keyBuilder.groupKey(this.pageBaseKey, groupKey);
-            commands.push([RedisKeywords.ZRANGE, finalKey, startInclusiveRank.toString(), endExclusiveRank.toString(), RedisKeywords.BYSCORE, RedisKeywords.LIMIT, "0", maxElementsPerGroup.toString()]);
+        if (groupKeys.length === 0 || startInclusiveRank === endExclusiveRank) {
+            return new Map<string, Map<number, PageRankedElement>>();
         }
+
+        if (startInclusiveRank < 0 || endExclusiveRank <= startInclusiveRank) {
+            throw new Error("Invalid rank range. Start rank must be non-negative and less than end rank. Currently, start rank is " + startInclusiveRank.toString() + " and end rank is " + endExclusiveRank.toString() + ".");
+        }
+
+        if (maxElementsPerGroup <= 0) {
+            throw new Error("Max elements per group must be greater than 0. Currently, it is set to " + maxElementsPerGroup.toString() + ".");
+        }
+
+        if (startInclusiveRank >= Utilities.u48In3 || endExclusiveRank > Utilities.u48In3) {
+            throw new Error("Rank values must be less than " + Utilities.u48In3.toString() + ". Currently, start rank is " + startInclusiveRank.toString() + " and end rank is " + endExclusiveRank.toString() + ".");
+        }
+
+        if (endExclusiveRank <= 0) {
+            throw new Error("End rank must be greater than 0. Currently, it is set to " + endExclusiveRank.toString() + ".");
+        }
+
+        if (endExclusiveRank <= startInclusiveRank) {
+            throw new Error("End rank must be greater than start rank. Currently, start rank is " + startInclusiveRank.toString() + " and end rank is " + endExclusiveRank.toString() + ".");
+        }
+
+        const finalGroupKeys = groupKeys.map(gk => this.keyBuilder.groupKey(this.pageBaseKey, gk));
+
+        return await this.fetchElementsFromRedis(finalGroupKeys, startInclusiveRank, endExclusiveRank, maxElementsPerGroup, pageRank);
+    }
+
+    private async fetchElementsFromRedis(redisKeys: string[], startInclusiveRank: number, endExclusiveRank: number, maxElementsPerGroup: number, pageRank: number) {
+        const commands = redisKeys
+            .map(redisKey => [RedisKeywords.ZRANGE, redisKey, startInclusiveRank.toString(), endExclusiveRank.toString(), RedisKeywords.BYSCORE,
+            ...(maxElementsPerGroup <= 0 ? [] : [RedisKeywords.LIMIT, "0", maxElementsPerGroup.toString()])]);
 
         const responses = await this.redisDriver.usingRedisDriver<string[][]>(commands, 'FetchElementsForPagesInRange', "pipeline");
 
         const rankedResults = new Map<string, Map<number, PageRankedElement>>();
         for (let i = 0; i < responses.length; i++) {
             const elements = responses[i] ?? [];
-            //const pageRank = indexedResponseContext[i];
             for (let i = 0; i < elements.length; i++) {
                 const element = JSON.parse(elements[i]) as ISortedElement;
                 const existingGroupedElements = rankedResults.get(element.gk) ?? new Map<number, PageRankedElement>();
                 const existingElement = existingGroupedElements.get(element.elementRank);
-                const newElementAddition = existingElement === undefined && existingGroupedElements.size < maxElementsPerGroup;
+                const newElementAddition = existingElement === undefined && (existingGroupedElements.size < maxElementsPerGroup || maxElementsPerGroup <= 0); //New element addition, we can add if we have not reached the max elements per group limit.
                 const existingElementWithinPageUpdate = existingElement !== undefined && existingElement.sn < element.sn; //Update within same page, This may also mean we may have less samples as they were updated of the same timestamp.
 
                 if (newElementAddition || existingElementWithinPageUpdate) {
@@ -61,8 +94,9 @@ export class RPage {
         return rankedResults;
     }
 
-    public async dumpPageData(): Promise<Map<string, Map<number, PageRankedElement>>> {
-        throw new Error("Method not implemented. This is a placeholder for future implementation if needed.");
+    public async dumpDataFromPage(): Promise<Map<string, Map<number, PageRankedElement>>> {
+        const redisKeys = await this.groupsInPage();
+        return this.fetchElementsByRange(redisKeys, 0, 0, -1, -1);
     }
 
     public async purgePage(expireAfterInMilliseconds: number = 60 * 1000): Promise<void> {
@@ -74,9 +108,8 @@ export class RPage {
     }
 
     public async groupsInPage(): Promise<string[]> {
-        // const pattern = this.keyBuilder.groupKey(this.pageBaseKey, '*');
-        // const groupKeys = await this.redisDriver.usingRedisDriver<string[]>([[RedisKeywords.KEYS, pattern]], 'GroupsInPage', 'run');
-        // return groupKeys.map(k => k.replace(this.pageBaseKey + ':', ''));
-        return [];
+        const groupListKey = this.keyBuilder.groupListKey(this.pageBaseKey);
+        const groups = await this.redisDriver.usingRedisDriver<string[]>([[RedisKeywords.SMEMBERS, groupListKey]], 'FetchGroupsForPage', 'run');
+        return groups;
     }
 }

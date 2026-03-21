@@ -23,4 +23,6 @@ export class RedisKeywords {
     static SET_ONLY_IF_NO_EXPIRY = "nx";
     static SET = "set";
     static GET = "get";
+    static SADD = "sadd";
+    static SMEMBERS = "smembers";
 }
