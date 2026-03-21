@@ -1,9 +1,10 @@
 import { ApplicationBuilder, ApplicationStartupStatus, ApplicationTypes, Convenience, DisposableSingletonContainer, EnvironmentVariables, IRouter, Request, Response } from "express-service-bootstrap";
 import { IORedisClientPool, type IRedisClientPool } from "redis-abstraction";
-import Redis, { Cluster } from "ioredis";
+import IORedis, { Cluster } from "ioredis";
+import { JobsOptions, Queue } from 'bullmq';
 import { parseURL } from "ioredis/built/utils/index.js";
 
-import { ISortedElement, RBook, RDriver, RWal } from "../../src/index.js";
+import { IPageInfo, ISortedElement, RBook, RDriver, RWal } from "../../src/index.js";
 import { DIConstants, EnvironmentVariableConstants, PageWindowDefaults } from "./constants.js";
 import { type IFetchRequest } from "./interfaces.js";
 
@@ -30,10 +31,25 @@ async function initializeGridScale(DIContainer: DisposableSingletonContainer) {
     const writeWindow = parseInt(env.getStringOrDefault(EnvironmentVariableConstants.WriteWindow, PageWindowDefaults.writeWindow), 10);
     const maxPagesInBook = parseInt(env.getStringOrDefault(EnvironmentVariableConstants.MaxPagesInBook, PageWindowDefaults.maxPagesInBook), 10);
     const parseRedisConnectionString = (connectionString: string) => parseURL(connectionString);
-    const connectionInjector = () => IORedisClientPool.IORedisClientClusterFactory([redisConnectionString], Redis as any, Cluster as any, parseRedisConnectionString);
+    const connectionInjector = () => IORedisClientPool.IORedisClientClusterFactory([redisConnectionString], IORedis as any, Cluster as any, parseRedisConnectionString);
     const redisPoolDriver = DIContainer.createInstance<IRedisClientPool>(DIConstants.RedisClientPool, IORedisClientPool, [connectionInjector]);
-    const turnOverCallback = async (newPageKey: string) => {
-        console.log(`Fresh page ${newPageKey} started.`);
+    const queName = env.getStringOrDefault(EnvironmentVariableConstants.DistributionQueueName, "distribution_queue");
+    const queConnectionParams = parseRedisConnectionString(redisConnectionString);
+    const checkpointQueue = new Queue<IPageInfo>(queName, { connection: queConnectionParams });
+
+    const turnOverCallback = async (newPageKey: string | undefined, trimmedPages: IPageInfo[]) => {
+        const jobsToPublish = trimmedPages.map((pageInfo) => ({
+            name: pageInfo.pageKey,
+            data: pageInfo,
+            opts: {
+                lifo: false,
+                jobId: pageInfo.pageKey,
+                removeOnComplete: true,
+                delay: 10000 // Adding a delay to ensure that the page turnover process is completed before the job is picked up by any worker. This is to avoid potential race conditions.
+            } as JobsOptions
+        }));
+        await checkpointQueue.addBulk(jobsToPublish);
+        console.log(`Turnover callback executed. New page: ${newPageKey}, Trimmed pages[${trimmedPages.length}]: ${trimmedPages.map(p => p.pageKey).join(", ")}`);
     };
 
     const redisDriver = new RDriver(redisPoolDriver, timeToleranceInMs);

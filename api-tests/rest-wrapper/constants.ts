@@ -12,6 +12,7 @@ export class EnvironmentVariableConstants {
     public static readonly SizeWindowInBytes = "SIZE_WINDOW_IN_BYTES";
     public static readonly WriteWindow = "WRITE_WINDOW";
     public static readonly MaxPagesInBook = "MAX_PAGES_IN_BOOK";
+    public static readonly DistributionQueueName = "DISTRIBUTION_QUEUE_NAME";
 }
 
 export class PageWindowDefaults {
