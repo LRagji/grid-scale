@@ -4,6 +4,8 @@ export class DIConstants {
     public static readonly RedisClientPool = "RedisClientPool";
     public static readonly RWal = "RWal";
     public static readonly CheckpointQueue = "CheckpointQueue";
+    public static readonly RBook = "RBook";
+    public static readonly RDriver = "RDriver";
 }
 
 export class EnvironmentVariableConstants {

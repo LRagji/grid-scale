@@ -46,11 +46,11 @@ services:
       - "8081:8081"
     environment:
       REDIS_CONNECTION_STRING: redis://redis:6379
-      TIME_TOLERANCE_IN_MS: "60000"
-      TIME_WINDOW_IN_MS: "1200000"
-      SIZE_WINDOW_IN_BYTES: "1048576"
-      WRITE_WINDOW: "1000000"
-      MAX_PAGES_IN_BOOK: "10"
+      TIME_TOLERANCE_IN_MS: "60000" # 1 minute
+      TIME_WINDOW_IN_MS: "1200000" # 20 minutes
+      SIZE_WINDOW_IN_BYTES: "314572800" # 300mb
+      WRITE_WINDOW: "10000000" # 10 million operations
+      MAX_PAGES_IN_BOOK: "3"
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel:4318
       OTEL_TRACES_EXPORTER: otlp
       OTEL_METRICS_EXPORTER: otlp
@@ -81,8 +81,11 @@ services:
       OTEL_TRACES_EXPORTER: otlp
       OTEL_METRICS_EXPORTER: otlp
       OTEL_SERVICE_NAME: hdfs-sqlite-checkpointer
+      TEMP_CHECKPOINTING_PATH: /checkpoints
+    volumes:
+      - ./data/checkpoints:/checkpoints
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8083/health/liveliness" ]
+      test: [ "CMD", "curl", "-f", "http://localhost:8081/health/liveliness" ]
       interval: 5s
       timeout: 3s
       retries: 5

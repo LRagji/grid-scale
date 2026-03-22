@@ -3,6 +3,7 @@
         "BITFIELD",
         "BYSCORE",
         "checkpointer",
+        "CHECKPOINTING",
         "HDFS",
         "healthcheck",
         "INCRBY",

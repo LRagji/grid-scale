@@ -47,6 +47,8 @@ async function initializeGridScale(DIContainer: DisposableSingletonContainer) {
     const parseRedisConnectionString = (connectionString: string) => parseURL(connectionString);
     const connectionInjector = () => IORedisClientPool.IORedisClientClusterFactory([redisConnectionString], IORedis as any, Cluster as any, parseRedisConnectionString);
     const redisPoolDriver = DIContainer.createInstance<IRedisClientPool>(DIConstants.RedisClientPool, IORedisClientPool, [connectionInjector]);
+    const redisDriver = DIContainer.createInstance<RDriver>(DIConstants.RDriver, RDriver, [redisPoolDriver, timeToleranceInMs]);
+    await redisDriver.initialize();
     const queName = env.getStringOrDefault(EnvironmentVariableConstants.DistributionQueueName, "distribution_queue");
     const queConnectionParams = parseRedisConnectionString(redisConnectionString);
     const checkpointQueue = DIContainer.createInstance<DisposableQue>(DIConstants.CheckpointQueue, DisposableQue, [queName, {
@@ -71,10 +73,7 @@ async function initializeGridScale(DIContainer: DisposableSingletonContainer) {
         await checkpointQueue.queue.addBulk(jobsToPublish);
         console.log(`Turnover callback executed. New page: ${newPageKey}, Trimmed pages[${trimmedPages.length}]: ${trimmedPages.map(p => p.pageKey).join(", ")}`);
     };
-
-    const redisDriver = new RDriver(redisPoolDriver, timeToleranceInMs);
-    await redisDriver.initialize();
-    const book = new RBook(redisDriver, timeWindowInMs, sizeWindowInBytes, writeWindow, maxPagesInBook, undefined, turnOverCallback);
+    const book = DIContainer.createInstance<RBook>(DIConstants.RBook, RBook, [redisDriver, timeWindowInMs, sizeWindowInBytes, writeWindow, maxPagesInBook, undefined, turnOverCallback]);
     DIContainer.createInstance<RWal>(DIConstants.RWal, RWal, [book]);
 }
 
