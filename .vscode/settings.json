@@ -11,6 +11,7 @@
         "PEXPIRE",
         "SADD",
         "SMEMBERS",
+        "upserts",
         "WITHSCORES",
         "ZADD",
         "ZRANGE",
