@@ -287,6 +287,82 @@ describe("RedisCascadingBook.upsertElements", () => {
         assert.equal(page.upsertElements.calledOnceWithExactly(elements, 5), true);
     });
 
+    it("throws when IncrementCounter pipeline response shape is invalid", async () => {
+        const page = makePage();
+        const { book, redisDriver } = makeBook({ page });
+        sinon.stub(Date, "now").returns(HOST_TIME);
+
+        // Missing BITFIELD payload array at response[1]
+        redisDriver.usingRedisDriver.onFirstCall().resolves(["OK"] as any);
+
+        await assert.rejects(
+            book.upsertElements(makeElements()),
+            /Invalid IncrementCounter response shape/i
+        );
+        assert.equal(page.upsertElements.called, false);
+    });
+
+    it("throws when IncrementCounter returns non-numeric counter values", async () => {
+        const page = makePage();
+        const { book, redisDriver } = makeBook({ page });
+        sinon.stub(Date, "now").returns(HOST_TIME);
+
+        // null in counter slots should fail integer parsing
+        redisDriver.usingRedisDriver.onFirstCall().resolves(["OK", ["10000", null, "7"], 1] as any);
+
+        await assert.rejects(
+            book.upsertElements(makeElements()),
+            /Invalid redis integer response for IncrementCounter\.size/i
+        );
+        assert.equal(page.upsertElements.called, false);
+    });
+
+    it("throws when UpdateBookForNewPage response shape is invalid", async () => {
+        const page = makePage();
+        const { book, redisDriver } = makeBook({ page });
+        sinon.stub(Date, "now").returns(HOST_TIME);
+
+        redisDriver.usingRedisDriver.onFirstCall().resolves(["OK", ["10000", "250", "7"], 1]);
+        redisDriver.usingRedisDriver.onSecondCall().resolves("not-an-array" as any);
+
+        await assert.rejects(
+            book.upsertElements(makeElements()),
+            /Invalid UpdateBookForNewPage response shape/i
+        );
+        assert.equal(page.upsertElements.called, false);
+    });
+
+    it("accepts string numeric new-page flags from UpdateBookForNewPage", async () => {
+        const page = makePage();
+        const { book, redisDriver, pagesReconcileCallback } = makeBook({ page });
+        const elements = makeElements();
+        sinon.stub(Date, "now").returns(HOST_TIME);
+
+        redisDriver.usingRedisDriver.onFirstCall().resolves(["OK", ["10000", "250", "7"], 1]);
+        redisDriver.usingRedisDriver.onSecondCall().resolves(["1", []]);
+
+        await book.upsertElements(elements);
+
+        assert.equal((pagesReconcileCallback as sinon.SinonStub).calledOnce, true);
+        assert.equal(page.upsertElements.calledOnce, true);
+    });
+
+    it("treats non-array trimmed page payloads as empty list", async () => {
+        const page = makePage();
+        const { book, redisDriver, pagesReconcileCallback } = makeBook({ page });
+        const elements = makeElements();
+        sinon.stub(Date, "now").returns(HOST_TIME);
+
+        redisDriver.usingRedisDriver.onFirstCall().resolves(["OK", ["10000", "250", "7"], 1]);
+        // new page flag false, but trimmed payload malformed; code should coerce to []
+        redisDriver.usingRedisDriver.onSecondCall().resolves([0, "malformed-trimmed-payload"] as any);
+
+        await book.upsertElements(elements);
+
+        assert.equal((pagesReconcileCallback as sinon.SinonStub).called, false);
+        assert.equal(page.upsertElements.calledOnce, true);
+    });
+
     // ── UPDATE SCENARIOS ──────────────────────────────────────────────────────
 
     it("second upsert (update) on the same page uses the incremented sequence number", async () => {

@@ -13,6 +13,14 @@ export class RedisCascadingBook<PT extends IPage> implements IBook<PT> {
     private readonly counterBytes = 6;//Only u48 so its 6 bytes
     private timeCounterBuffer = Buffer.alloc(this.counterBytes);
 
+    private static parseRedisInteger(value: unknown, label: string): number {
+        const parsed = typeof value === "number" ? value : parseInt(String(value), 10);
+        if (!Number.isFinite(parsed) || Number.isNaN(parsed)) {
+            throw new Error(`Invalid redis integer response for ${label}: ${String(value)}`);
+        }
+        return parsed;
+    }
+
     constructor(
         public readonly totalPageCapacity: number,
         public readonly pageSizeLimitInBytes: number,
@@ -74,7 +82,7 @@ export class RedisCascadingBook<PT extends IPage> implements IBook<PT> {
     public async removePage(pageKey: IPageInfo, invokeReconcileCallback = true): Promise<void> {
         const redisKey = this.keyBuilder.bookKey();
         const result = await this.redisDriver.usingRedisDriver<number>([[RedisKeywords.ZREM, redisKey, JSON.stringify(pageKey)]], 'RemovePageFromBook', 'run');
-        if (invokeReconcileCallback === true && result === 1) {
+        if (invokeReconcileCallback === true && RedisCascadingBook.parseRedisInteger(result, "RemovePageFromBook") === 1) {
             await this.pagesReconcileCallback(undefined, [pageKey]);
         }
     }
@@ -158,9 +166,13 @@ export class RedisCascadingBook<PT extends IPage> implements IBook<PT> {
 
         const response = await this.redisDriver.usingRedisDriver<string[][]>(commands, 'IncrementCounter', 'pipeline');
 
-        const receivedTime = parseInt(response[1][0].toString(), 10);
-        const sizeCounter = parseInt(response[1][1].toString(), 10); // This counter is always increasing so needs to be modded to determine page key.
-        const writeCounter = parseInt(response[1][2].toString(), 10); // This counter is always increasing so needs to be modded to determine page key.
+        if (!Array.isArray(response) || !Array.isArray(response[1]) || response[1].length < 3) {
+            throw new Error("Invalid IncrementCounter response shape from redis pipeline.");
+        }
+
+        const receivedTime = RedisCascadingBook.parseRedisInteger(response[1][0], "IncrementCounter.time");
+        const sizeCounter = RedisCascadingBook.parseRedisInteger(response[1][1], "IncrementCounter.size"); // This counter is always increasing so needs to be modded to determine page key.
+        const writeCounter = RedisCascadingBook.parseRedisInteger(response[1][2], "IncrementCounter.write"); // This counter is always increasing so needs to be modded to determine page key.
 
         const pageStartTime = Utilities.modMinus(receivedTime, this.pageActiveTimeLimitInMs);
         const previousSize = sizeCounter - sizeInBytes;
@@ -179,35 +191,42 @@ export class RedisCascadingBook<PT extends IPage> implements IBook<PT> {
             [RedisKeywords.ZRANGE, redisKey, "0", `-${this.totalPageCapacity + 1}`],
             [RedisKeywords.ZREMRANGEBYRANK, redisKey, "0", `-${this.totalPageCapacity + 1}`]
         ];
-        const response = await this.redisDriver.usingRedisDriver<void>(upsertTrimCommands, 'UpdateBookForNewPage', 'pipeline');
-        const newPage = Array.isArray(response) && parseInt(response[0] ?? "0", 10) === 1; // This means a new page was added.
-        const trimmedPages = (response[1] ?? []).map(serializedPageInfo => JSON.parse(serializedPageInfo) as IPageInfo)
+        const response = await this.redisDriver.usingRedisDriver<(number | string | string[])[]>(upsertTrimCommands, 'UpdateBookForNewPage', 'pipeline');
+        if (!Array.isArray(response)) {
+            throw new Error("Invalid UpdateBookForNewPage response shape from redis pipeline.");
+        }
+        const newPage = RedisCascadingBook.parseRedisInteger(response[0] ?? 0, "UpdateBookForNewPage.newPage") === 1; // This means a new page was added.
+        const trimmedPagePayload = Array.isArray(response[1]) ? response[1] : [];
+        const trimmedPages = trimmedPagePayload.map(serializedPageInfo => JSON.parse(serializedPageInfo) as IPageInfo)
         return { newPage, trimmedPages };
     }
 
     private async parallelQueryPages(rankedPages: IPageInfo[], deDuplicatedGroupKeys: string[], startInclusiveRank: number, endExclusiveRank: number, maxElementsPerGroup: number): Promise<Map<number, Map<string, IDimensionalElement[]>>> {
-        const pageQueriesHandles = new Array<Promise<IDimensionalElement[]>>();
-        for (const [pageRank, pageInfo] of rankedPages.entries()) {
+        const pageQueriesHandles: Array<Promise<IDimensionalElement[]>> = rankedPages.map(async (pageInfo) => {
             const page = await this.fetchPageByKey(pageInfo);
             if (page === null) {
+                return [];
+            }
+            return await page.fetchElementsByRange(deDuplicatedGroupKeys, startInclusiveRank, endExclusiveRank, maxElementsPerGroup);
+        });
+
+        const pageResults = await Promise.all(pageQueriesHandles);
+        const returnObject = new Map<number, Map<string, IDimensionalElement[]>>();
+
+        for (const [index, pageResult] of pageResults.entries()) {
+            if (pageResult.length === 0) {
                 continue;
             }
-            const promiseHandleForParallelQuery = page.fetchElementsByRange(deDuplicatedGroupKeys, startInclusiveRank, endExclusiveRank, maxElementsPerGroup);
-            pageQueriesHandles.push(promiseHandleForParallelQuery);
+            const hashedElements = new Map<string, IDimensionalElement[]>();
+            for (const element of pageResult) {
+                const hash = this.hashFunction(element);
+                const clashingElement = hashedElements.get(hash) ?? [];
+                clashingElement.push(element);
+                hashedElements.set(hash, clashingElement);
+            }
+            returnObject.set(index, hashedElements);
         }
-        const pageResults = await Promise.all(pageQueriesHandles);
-        const returnObject = new Map<number, Map<string, IDimensionalElement[]>>(
-            pageResults.map((result, index) => {
-                const hashedElements = new Map<string, IDimensionalElement[]>();
-                for (const element of result) {
-                    const hash = this.hashFunction(element);
-                    const clashingElement = hashedElements.get(hash) ?? [];
-                    clashingElement.push(element);
-                    hashedElements.set(hash, clashingElement);
-                }
-                return [index, hashedElements];
-            })
-        );
+
         return returnObject;
     }
 

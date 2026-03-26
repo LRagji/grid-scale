@@ -178,6 +178,28 @@ describe("RedisCascadingBook.removePage", () => {
         assert.equal((pagesReconcileCallback as sinon.SinonStub).called, true);
     });
 
+    it("invokes reconcile when RemovePageFromBook returns string numeric '1'", async () => {
+        const { book, redisDriver, pagesReconcileCallback } = makeBook();
+        const pageToRemove = makePageInfo("pk-string-1", 5100);
+
+        redisDriver.usingRedisDriver.resolves("1" as any);
+
+        await book.removePage(pageToRemove, true);
+
+        assert.equal((pagesReconcileCallback as sinon.SinonStub).calledOnceWithExactly(undefined, [pageToRemove]), true);
+    });
+
+    it("does not invoke reconcile when RemovePageFromBook returns string numeric '0'", async () => {
+        const { book, redisDriver, pagesReconcileCallback } = makeBook();
+        const pageToRemove = makePageInfo("pk-string-0", 5200);
+
+        redisDriver.usingRedisDriver.resolves("0" as any);
+
+        await book.removePage(pageToRemove, true);
+
+        assert.equal((pagesReconcileCallback as sinon.SinonStub).called, false);
+    });
+
     it("does not invoke reconcile when invokeReconcileCallback is false, even if page exists", async () => {
         const { book, redisDriver, pagesReconcileCallback } = makeBook();
         const pageToRemove = makePageInfo("pk1", 5000);
@@ -277,6 +299,20 @@ describe("RedisCascadingBook.removePage", () => {
         await assert.rejects(
             book.removePage(pageToRemove),
             /zrem failed/i
+        );
+
+        assert.equal((pagesReconcileCallback as sinon.SinonStub).called, false);
+    });
+
+    it("throws when RemovePageFromBook returns a non-numeric value", async () => {
+        const { book, redisDriver, pagesReconcileCallback } = makeBook();
+        const pageToRemove = makePageInfo("pk-bad", 5300);
+
+        redisDriver.usingRedisDriver.resolves("not-a-number" as any);
+
+        await assert.rejects(
+            book.removePage(pageToRemove),
+            /Invalid redis integer response for RemovePageFromBook/i
         );
 
         assert.equal((pagesReconcileCallback as sinon.SinonStub).called, false);
