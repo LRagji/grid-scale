@@ -2,7 +2,7 @@ import { IDimensionalElement } from "./cascading-data-containers/interfaces/i-di
 
 export class Utilities {
 
-    public static readonly u63Max = BigInt("0x7FFFFFFFFFFFFFFF"); // 63-bit max value redis counter will only go upto this.
+    private static readonly utf8Encoder = new TextEncoder();
 
     public static readonly u48Max = Number("0xFFFFFFFFFFFF"); // 48-bit max value for time header and counters.
 
@@ -14,18 +14,7 @@ export class Utilities {
     }
 
     public static roughSizeEstimator(samples: any[]): number {
-        //This needs to be tweaked later based on actual encoding and Redis storage overhead, but this is a starting point for estimation.
-        if (samples.length === 0) {
-            return 2;
-        }
-
-        let total = 2 + (samples.length - 1);
-        for (const sample of samples) {
-            const groupKey = sample?.gk ?? sample?.tag ?? "";
-            total += 94 + (6 * String(groupKey).length);
-        }
-
-        return total;
+        return Utilities.utf8Encoder.encode(JSON.stringify(samples)).byteLength;
     }
 
     public static hashElement(data: IDimensionalElement): string {

@@ -6,21 +6,150 @@ import { Utilities } from "../src/utilities.js";
 
 describe("Utilities static tests", () => {
 
-    it("modMinus floors numbers to the nearest divisor block", () => {
-        assert.equal(Utilities.modMinus(1234, 10), 1230);
-        assert.equal(Utilities.modMinus(1234, 100), 1200);
+    describe("static constants", () => {
+
+        it("u48Max matches the expected 48-bit maximum", () => {
+            assert.equal(Utilities.u48Max, Number("0xFFFFFFFFFFFF"));
+        });
+
+        it("u48In3 stays derived from u48Max", () => {
+            assert.equal(Utilities.u48In3, Utilities.u48Max / 3);
+        });
     });
 
-    //TODO: Fix this estimation logic
-    // it("estimateBulkSamplesBytesUpper handles empty and populated arrays", () => {
-    //     assert.equal(Utilities.estimateBulkSamplesBytesUpper([]), 2n);
+    describe("modMinus", () => {
 
-    //     const samples: ISample[] = [
-    //         { tag: "A", ts: 1, pld: { nV: 1 } },
-    //         { tag: "AB", ts: 2, pld: { nV: 2 } }
-    //     ];
-    //     const correctSize = new TextEncoder().encode(JSON.stringify(samples)).byteLength;
-    //     const actualSize = Number(Utilities.estimateBulkSamplesBytesUpper(samples));
-    //     assert.equal(Math.abs(actualSize - correctSize) < (0.1 * correctSize), true, `Expected size to be within 10% of actual size. Actual: ${actualSize}, Correct: ${correctSize}`);
-    // });
+        it("floors numbers to the nearest divisor block", () => {
+            assert.equal(Utilities.modMinus(1234, 10), 1230);
+            assert.equal(Utilities.modMinus(1234, 100), 1200);
+        });
+
+        it("returns the same value when already aligned to the divisor", () => {
+            assert.equal(Utilities.modMinus(1200, 100), 1200);
+            assert.equal(Utilities.modMinus(48, 12), 48);
+        });
+
+        it("returns zero when the input value is zero", () => {
+            assert.equal(Utilities.modMinus(0, 7), 0);
+        });
+
+        it("handles divisors larger than the value by returning zero", () => {
+            assert.equal(Utilities.modMinus(12, 100), 0);
+        });
+    });
+
+    describe("roughSizeEstimator", () => {
+
+        it("returns the exact UTF-8 byte size for an empty array", () => {
+            assert.equal(Utilities.roughSizeEstimator([]), 2);
+        });
+
+        it("returns a positive byte size for null input", () => {
+            assert.equal(Utilities.roughSizeEstimator(null as any) > 0, true);
+        });
+
+        it("matches the serialized byte size for legacy WAL samples", () => {
+            const samples = [
+                { gk: "A", elementRank: 1, sn: 10, pld: { nV: 1 } },
+                { gk: "AB", elementRank: 2, sn: 11, pld: { nV: 2, extra: "ok" } }
+            ];
+
+            const expectedSize = new TextEncoder().encode(JSON.stringify(samples)).byteLength;
+
+            assert.equal(Utilities.roughSizeEstimator(samples), expectedSize);
+        });
+
+        it("matches the serialized byte size for dimensional elements", () => {
+            const elements = [
+                { dim: { sensor: "A", region: "west", rank: 1 }, pld: { nV: 10, state: true } },
+                { dim: { sensor: "B", region: "east", rank: 2 }, pld: { nV: 12, tags: ["x", "y"] } }
+            ];
+
+            const expectedSize = new TextEncoder().encode(JSON.stringify(elements)).byteLength;
+
+            assert.equal(Utilities.roughSizeEstimator(elements), expectedSize);
+        });
+
+        it("matches the serialized byte size for mixed primitives and nested payloads", () => {
+            const elements = [
+                { dim: { enabled: true, retries: 3, name: "alpha" }, pld: { value: null, list: [1, "two", false] } },
+                { dim: { enabled: false, retries: 0, name: "beta" }, pld: { nested: { ok: true }, amount: 10.5 } }
+            ];
+
+            const expectedSize = new TextEncoder().encode(JSON.stringify(elements)).byteLength;
+
+            assert.equal(Utilities.roughSizeEstimator(elements), expectedSize);
+        });
+
+        it("counts multibyte UTF-8 characters correctly", () => {
+            const unicodeElements = [
+                { dim: { city: "São Paulo", label: "café" }, pld: { text: "naïve" } },
+                { dim: { city: "東京", label: "雪" }, pld: { text: "😊" } }
+            ];
+
+            const serialized = JSON.stringify(unicodeElements);
+            const unicodeExpectedSize = new TextEncoder().encode(serialized).byteLength;
+
+            assert.equal(Utilities.roughSizeEstimator(unicodeElements), unicodeExpectedSize);
+            assert.equal(unicodeExpectedSize > serialized.length, true);
+        });
+
+    });
+
+    describe("hashElement", () => {
+
+        it("returns a deterministic hash for the same element", () => {
+            const element = { dim: { sensor: "A", region: "west", rank: 1 }, pld: { nV: 1 } };
+
+            assert.equal(Utilities.hashElement(element), Utilities.hashElement(element));
+        });
+
+        it("returns the same hash regardless of dimension key order", () => {
+            const first = { dim: { sensor: "A", region: "west", rank: 1 }, pld: { nV: 1 } };
+            const second = { dim: { rank: 1, region: "west", sensor: "A" }, pld: { nV: 999 } };
+
+            assert.equal(Utilities.hashElement(first), Utilities.hashElement(second));
+        });
+
+        it("returns the same hash for text dimension keys inserted in different orders", () => {
+            const first = { dim: { beta: "two", alpha: "one", gamma: "three" }, pld: { nV: 1 } };
+            const second = { dim: { gamma: "three", beta: "two", alpha: "one" }, pld: { nV: 999 } };
+
+            assert.equal(Utilities.hashElement(first), Utilities.hashElement(second));
+        });
+
+        it("returns the same hash for numeric-like dimension keys inserted in different orders", () => {
+            const first = { dim: { "10": "ten", "2": "two", "1": "one" }, pld: { nV: 1 } };
+            const second = { dim: { "2": "two", "1": "one", "10": "ten" }, pld: { nV: 999 } };
+
+            assert.equal(Utilities.hashElement(first), Utilities.hashElement(second));
+        });
+
+        it("ignores payload changes and hashes only dimensions", () => {
+            const first = { dim: { metric: "temp", node: "n1" }, pld: { nV: 10, status: "ok" } };
+            const second = { dim: { metric: "temp", node: "n1" }, pld: { nV: 99, status: "failed", detail: { retry: true } } };
+
+            assert.equal(Utilities.hashElement(first), Utilities.hashElement(second));
+        });
+
+        it("returns different hashes for different dimensions", () => {
+            const first = { dim: { metric: "temp", node: "n1" }, pld: { nV: 10 } };
+            const second = { dim: { metric: "temp", node: "n2" }, pld: { nV: 10 } };
+
+            assert.notEqual(Utilities.hashElement(first), Utilities.hashElement(second));
+        });
+
+        it("returns 0 for an element with no dimensions", () => {
+            const element = { dim: {}, pld: { nV: 1 } };
+
+            assert.equal(Utilities.hashElement(element), "0");
+        });
+
+        it("normalizes numeric and string dimension values through string conversion", () => {
+            const numericValue = { dim: { rank: 1 }, pld: { nV: 1 } };
+            const stringValue = { dim: { rank: "1" }, pld: { nV: 1 } };
+
+            assert.equal(Utilities.hashElement(numericValue), Utilities.hashElement(stringValue));
+        });
+    });
 });
