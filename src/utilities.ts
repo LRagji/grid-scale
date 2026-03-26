@@ -1,3 +1,4 @@
+import { IDimensionalElement } from "./cascading-data-containers/interfaces/i-dimensional-element";
 
 export class Utilities {
 
@@ -25,5 +26,20 @@ export class Utilities {
         }
 
         return total;
+    }
+
+    public static hashElement(data: IDimensionalElement): string {
+        //This is a placeholder hash function. In production, you would want to use a proper hashing library like crypto or a third-party library for better performance and collision resistance.
+        let hash = 0;
+        const dimensionString = Object.entries(data.dim)
+            .sort()//TODO: This has to be stable sort else results will vary across runs.
+            .map(([key, value]) => `${key}:${value}`).join("|");
+
+        for (let i = 0; i < dimensionString.length; i++) {
+            const char = dimensionString.charCodeAt(i);
+            hash = ((hash << 5) - hash) + char;
+            hash |= 0; // Convert to 32bit integer
+        }
+        return hash.toString();
     }
 }

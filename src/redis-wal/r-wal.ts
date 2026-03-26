@@ -22,14 +22,14 @@ export class RWal {
             throw new Error("Estimated size must be between 1 and " + Utilities.u48In3 + ". Currently, it is set to " + totalElementSizeInBytes.toString() + " bytes.");
         }
 
-        const pagInfo = await this.book.fetchWriteablePage(insertTimestamp, totalElementSizeInBytes, numberOfElements);
+        const pagInfo = await this.book.navigateWriteablePage(insertTimestamp, totalElementSizeInBytes, numberOfElements);
         await pagInfo.page.dumpDataToPage(mutableElements, pagInfo.sequenceStartNumber);
     }
 
     public async queryByRank(groupKeys: string[], startInclusiveRank: number, endExclusiveRank: number, maxElementsPerGroup = 100): Promise<ISortedElement[]> {
 
         const deDuplicatedGroupKeys = this.validateQueryRangeParams(groupKeys, startInclusiveRank, endExclusiveRank, maxElementsPerGroup);
-        const rankedPages = await this.book.fetchAvailablePagesWithRanks();
+        const rankedPages = await this.book.fetchAllPagesWithRanks();
         const pageResults = await this.parallelQueryPages(rankedPages, deDuplicatedGroupKeys, startInclusiveRank, endExclusiveRank, maxElementsPerGroup);
         const result: ISortedElement[] = this.aggregateRankedElements(deDuplicatedGroupKeys, pageResults, maxElementsPerGroup);
 

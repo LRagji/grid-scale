@@ -64,4 +64,8 @@ export class RDriver implements IRDriver {
         }
     }
 
+    public harmonizedTimeInMs(timeInMs: number = Date.now()): number {
+        const currentTimeWithTolerance = Utilities.modMinus(timeInMs, this.timeToleranceInMs);
+        return currentTimeWithTolerance;
+    }
 }

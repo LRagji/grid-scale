@@ -5,6 +5,8 @@ export interface IRDriver {
     initialize(): Promise<void>
 
     usingRedisDriver<T>(commands: any[][], tokenName: string, type: "run" | "pipeline"): Promise<T>
+
+    harmonizedTimeInMs(timeInMs: number): number;
 }
 
 export class RedisKeywords {
@@ -25,4 +27,5 @@ export class RedisKeywords {
     static GET = "get";
     static SADD = "sadd";
     static SMEMBERS = "smembers";
+    static ZREM = "zrem";
 }

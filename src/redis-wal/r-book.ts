@@ -20,7 +20,7 @@ export class RBook {
         private readonly timeWindowInMs: number = 24 * 60 * 60 * 1000, // 24 hours
         private readonly sizeWindowInBytes: number = Utilities.u48In3,
         private readonly writeWindow: number = Utilities.u48In3,
-        private readonly maxPagesInBook: number = 100,
+        private readonly bookCapacityInPages: number = 100,
         public readonly keyBuilder: IKeyBuilder = new RKeyBuilder(),
         private readonly newPageCallback: (pageKey: string | undefined, trimmedPages: IPageInfo[]) => Promise<void> = async (_pageKey: string) => { }
     ) {
@@ -33,15 +33,15 @@ export class RBook {
         if (this.writeWindow <= 0 || this.writeWindow > Utilities.u48In3) {
             throw new Error("Write window must be between 0 and " + Utilities.u48In3 + ". Currently, it is set to " + this.writeWindow.toString() + " writes.");
         }
-        if (this.maxPagesInBook <= 0 || this.maxPagesInBook > 1000) {
-            throw new Error("Max pages in book must be between 1 and 1000. Currently, it is set to " + this.maxPagesInBook + " pages.");
+        if (this.bookCapacityInPages <= 0 || this.bookCapacityInPages > 1000) {
+            throw new Error("Book capacity in pages must be between 1 and 1000. Currently, it is set to " + this.bookCapacityInPages + " pages.");
         }
         if (this.redisDriver.timeToleranceInMs >= this.timeWindowInMs) {
             throw new Error("Time tolerance must be less than time window to ensure proper functioning of the system. Currently, time tolerance is " + this.redisDriver.timeToleranceInMs.toString() + " ms and time window is " + this.timeWindowInMs.toString() + " ms.");
         }
     }
 
-    public async fetchWriteablePage(timeInMs: number, sizeInBytes: number, count: number): Promise<{ page: RPage, sequenceStartNumber: number }> {
+    public async navigateWriteablePage(timeInMs: number, sizeInBytes: number, count: number): Promise<{ page: RPage, sequenceStartNumber: number }> {
 
         if (sizeInBytes > this.sizeWindowInBytes) {
             //This is required to prevent overflow of the counter, which can lead to empty gaps on page or worse overflows.
@@ -108,8 +108,8 @@ export class RBook {
         const redisKey = this.keyBuilder.bookKey();
         const upsertTrimCommands = [
             [RedisKeywords.ZADD, redisKey, insertTime.toString(), JSON.stringify({ pageKey, modSize, modWrites, modTime } as IPageInfo)],
-            [RedisKeywords.ZRANGE, redisKey, "0", `-${this.maxPagesInBook + 1}`],
-            [RedisKeywords.ZREMRANGEBYRANK, redisKey, "0", `-${this.maxPagesInBook + 1}`]
+            [RedisKeywords.ZRANGE, redisKey, "0", `-${this.bookCapacityInPages + 1}`],
+            [RedisKeywords.ZREMRANGEBYRANK, redisKey, "0", `-${this.bookCapacityInPages + 1}`]
         ];
         const response = await this.redisDriver.usingRedisDriver<void>(upsertTrimCommands, 'UpdateBookForNewPage', 'pipeline');
         const newPage = Array.isArray(response) && parseInt(response[0] ?? "0", 10) === 1; // This means a new page was added.
@@ -117,7 +117,7 @@ export class RBook {
         return { newPage, trimmedPages };
     }
 
-    public async fetchAvailablePagesWithRanks(): Promise<Map<RPage, number>> {
+    public async fetchAllPagesWithRanks(): Promise<Map<RPage, number>> {
         const bookKey = this.keyBuilder.bookKey();
         const pageKeys = await this.redisDriver.usingRedisDriver<string[]>([[RedisKeywords.ZRANGE, bookKey, "0", "-1"]], 'FetchAllPagesWithRanks', "run");
         const sortedPageInfo = pageKeys
