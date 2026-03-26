@@ -1,11 +1,11 @@
-import { IRDriver, RedisKeywords } from "../interfaces/i-r-driver";
-import { IKeyBuilder, RKeyBuilder } from "../redis-wal/r-key-builder";
-import { Utilities } from "../utilities";
-import { IBook } from "./interfaces/i-book";
-import { IDimensionalElement } from "./interfaces/i-dimensional-element";
-import { IDimensionalQuery } from "./interfaces/i-dimensional-query";
-import { IPage } from "./interfaces/i-page";
-import { IPageInfo } from "./interfaces/i-page-info";
+import { IRDriver, RedisKeywords } from "../interfaces/i-r-driver.js";
+import { IKeyBuilder, RKeyBuilder } from "../redis-wal/r-key-builder.js";
+import { Utilities } from "../utilities.js";
+import { IBook } from "./interfaces/i-book.js";
+import { IDimensionalElement } from "./interfaces/i-dimensional-element.js";
+import { IDimensionalQuery } from "./interfaces/i-dimensional-query.js";
+import { IPage } from "./interfaces/i-page.js";
+import { IPageInfo } from "./interfaces/i-page-info.js";
 
 export class RedisCascadingBook<PT extends IPage> implements IBook<PT> {
 
