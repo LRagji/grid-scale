@@ -2,6 +2,7 @@ import { IRDriver, RedisKeywords } from "../interfaces/i-r-driver.js";
 import { IKeyBuilder, RKeyBuilder } from "../redis-wal/r-key-builder.js";
 import { Utilities } from "../utilities.js";
 import { IBook } from "./interfaces/i-book.js";
+import { filterByDimensionalQuery } from "./dimensional-query-parser.js";
 import { IDimensionalElement } from "./interfaces/i-dimensional-element.js";
 import { IDimensionalQuery } from "./interfaces/i-dimensional-query.js";
 import { IPage } from "./interfaces/i-page.js";
@@ -104,7 +105,39 @@ export class RedisCascadingBook<PT extends IPage> implements IBook<PT> {
     }
 
     public async queryElementsByDimensions(query: IDimensionalQuery, maxElementsCount: number = 1000): Promise<IDimensionalElement[]> {
-        throw new Error("Not implemented yet. This method will be implemented once the query parser is implemented to allow querying by dimensions. For now, you can use queryByRank as a shortcut for testing purposes, which allows querying by rank within groups defined by group keys.");
+        if (maxElementsCount <= 0 || maxElementsCount > 10000) {
+            throw new Error("Max elements count must be between 1 and 10000. Currently, it is set to " + maxElementsCount.toString() + ".");
+        }
+
+        const rankedPages = await this.listPages();
+        const pageQueriesHandles: Array<Promise<IDimensionalElement[]>> = rankedPages.map(async (pageInfo) => {
+            const page = await this.fetchPageByKey(pageInfo);
+            if (page === null) {
+                return [];
+            }
+            return await page.dumpPage();
+        });
+
+        const pageResults = await Promise.all(pageQueriesHandles);
+        const returnObject = new Map<number, Map<string, IDimensionalElement[]>>();
+
+        for (const [index, pageResult] of pageResults.entries()) {
+            if (pageResult.length === 0) {
+                continue;
+            }
+
+            const hashedElements = new Map<string, IDimensionalElement[]>();
+            for (const element of pageResult) {
+                const hash = this.hashFunction(element);
+                const clashingElements = hashedElements.get(hash) ?? [];
+                clashingElements.push(element);
+                hashedElements.set(hash, clashingElements);
+            }
+            returnObject.set(index, hashedElements);
+        }
+
+        const deDuplicatedElements = this.aggregateRankedElements(returnObject);
+        return filterByDimensionalQuery(deDuplicatedElements, query, maxElementsCount);
     }
 
     public async queryByRank(groupKeys: string[], startInclusiveRank: number, endExclusiveRank: number, maxElementsPerGroup: number = 1000): Promise<IDimensionalElement[]> {

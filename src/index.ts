@@ -12,6 +12,7 @@ import { IDimensionalElement } from './cascading-data-containers/interfaces/i-di
 import { IDimensionalQuery } from './cascading-data-containers/interfaces/i-dimensional-query.js';
 import { RedisCascadingBook } from './cascading-data-containers/redis-cascading-book.js';
 import { IPageInfo } from './cascading-data-containers/interfaces/i-page-info.js';
+import { evaluateDimensionalQuery, filterByDimensionalQuery } from './cascading-data-containers/dimensional-query-parser.js';
 
 //Implementation to export
 export {
@@ -20,7 +21,9 @@ export {
     RPage,
     RDriver,
     RKeyBuilder,
-    RedisCascadingBook
+    RedisCascadingBook,
+    evaluateDimensionalQuery,
+    filterByDimensionalQuery
 };
 
 //Types to export
