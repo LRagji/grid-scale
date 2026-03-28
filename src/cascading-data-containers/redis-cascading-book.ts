@@ -105,6 +105,7 @@ export class RedisCascadingBook<PT extends IPage> implements IBook<PT> {
     }
 
     public async queryElementsByDimensions(query: IDimensionalQuery, maxElementsCount: number = 1000): Promise<IDimensionalElement[]> {
+        throw new Error("This code path needs to be tested, Not implemented yet.");
         if (maxElementsCount <= 0 || maxElementsCount > 10000) {
             throw new Error("Max elements count must be between 1 and 10000. Currently, it is set to " + maxElementsCount.toString() + ".");
         }

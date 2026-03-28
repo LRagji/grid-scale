@@ -20,7 +20,9 @@ export class Utilities {
     public static hashElement(data: IDimensionalElement): string {
         //This is a placeholder hash function. In production, you would want to use a proper hashing library like crypto or a third-party library for better performance and collision resistance.
         let hash = 0;
+        const identityDim = new Set<string>(data.identityDim ?? Object.keys(data.dim)); // Use identityDim if provided, otherwise use all dimensions.
         const dimensionString = Object.entries(data.dim)
+            .filter(([key]) => identityDim.has(key))
             .sort()//TODO: This has to be stable sort else results will vary across runs.
             .map(([key, value]) => `${key}:${value}`).join("|");
 
