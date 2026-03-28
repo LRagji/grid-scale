@@ -27,7 +27,7 @@ export class RedisCascadingBook<PT extends IPage> implements IBook<PT> {
         public readonly pageSizeLimitInBytes: number,
         public readonly pageActiveTimeLimitInMs: number,
         public readonly pageType: string,
-        public readonly pageFactory: (pageInfo: IPageInfo, pageType: string) => Promise<PT>,
+        public readonly pageFactory: (pageInfo: IPageInfo, pageType: string) => Promise<IPage>,
         public readonly pagesReconcileCallback: (newPageInfo: IPageInfo | undefined, evictedPageInfo: IPageInfo[]) => Promise<void>,
         //Private members
         private readonly redisDriver: IRDriver,
@@ -77,7 +77,7 @@ export class RedisCascadingBook<PT extends IPage> implements IBook<PT> {
 
     public async fetchPageByKey(pageKey: IPageInfo): Promise<PT> {
         const page = await this.pageFactory(pageKey, this.pageType);
-        return page;
+        return page as PT;
     }
 
     public async removePage(pageKey: IPageInfo, invokeReconcileCallback = true): Promise<void> {
@@ -168,7 +168,7 @@ export class RedisCascadingBook<PT extends IPage> implements IBook<PT> {
             await this.pagesReconcileCallback(bookkeepingResults.newPage ? pageInfo : undefined, bookkeepingResults.trimmedPages);
         }
 
-        const page = await this.pageFactory(pageInfo, this.pageType);
+        const page = await this.pageFactory(pageInfo, this.pageType) as PT;
 
         return { page, sequenceStartNumber };
     }

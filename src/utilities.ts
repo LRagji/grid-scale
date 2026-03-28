@@ -17,12 +17,11 @@ export class Utilities {
         return Utilities.utf8Encoder.encode(JSON.stringify(samples)).byteLength;
     }
 
-    public static hashElement(data: IDimensionalElement): string {
+    public static hashElement(data: IDimensionalElement, identityDimSet = new Set<string>(Object.keys(data.dim))): string {
         //This is a placeholder hash function. In production, you would want to use a proper hashing library like crypto or a third-party library for better performance and collision resistance.
         let hash = 0;
-        const identityDim = new Set<string>(data.identityDim ?? Object.keys(data.dim)); // Use identityDim if provided, otherwise use all dimensions.
         const dimensionString = Object.entries(data.dim)
-            .filter(([key]) => identityDim.has(key))
+            .filter(([key]) => identityDimSet.has(key))
             .sort()//TODO: This has to be stable sort else results will vary across runs.
             .map(([key, value]) => `${key}:${value}`).join("|");
 

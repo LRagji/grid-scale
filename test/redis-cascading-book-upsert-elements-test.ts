@@ -55,8 +55,8 @@ function makeKeyBuilder(): IKeyBuilder {
         counterKey: sinon.stub().returns("counter-key"),
         pageKey: sinon.stub().callsFake((timeKeyPart: string, sizeKeyPart: string, writeKeyPart: string) => `page:${timeKeyPart}:${sizeKeyPart}:${writeKeyPart}`),
         bookKey: sinon.stub().returns("book-key"),
-        groupKey: sinon.stub().callsFake((pageKey: string, tagName: string) => `${pageKey}:${tagName}`),
-        groupListKey: sinon.stub().callsFake((pageKey: string) => `${pageKey}:groups`)
+        dimensionKey: sinon.stub().callsFake((pageKey: string, tagName: string) => `${pageKey}:${tagName}`),
+        pageDimensionsDict: sinon.stub().callsFake((pageKey: string) => `${pageKey}:groups`)
     };
 }
 

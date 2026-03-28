@@ -20,14 +20,14 @@ export class RPage {
         let elementCounter = mvccCounterStart;
 
         for (const element of mutableElements) {
-            const elementGroupKey = this.keyBuilder.groupKey(this.pageBaseKey, element.gk);
+            const elementGroupKey = this.keyBuilder.dimensionKey(this.pageBaseKey, element.gk);
             const existingCommands = pageUpsertCommands.get(elementGroupKey) || [RedisKeywords.ZADD, elementGroupKey];
             element.sn = elementCounter;// We can do a structure clone here, but to avoid perf overhead we will mutate the original element.
             existingCommands.push(element.elementRank.toString(), JSON.stringify(element));
             pageUpsertCommands.set(elementGroupKey, existingCommands);
             elementCounter++;
         }
-        const groupListKey = this.keyBuilder.groupListKey(this.pageBaseKey);
+        const groupListKey = this.keyBuilder.pageDimensionsDict(this.pageBaseKey, ""); // You might want to pass a specific dimension name here
         const commands = [...pageUpsertCommands.values()];
         commands.push([RedisKeywords.SADD, groupListKey, ...[...pageUpsertCommands.keys()]]);//Add all groups to group list for the page, this will help us in fetching and purging data for the page.
         commands.push([RedisKeywords.PEXPIRE, groupListKey, `${this.groupListTTLInMs}`]);
@@ -61,7 +61,7 @@ export class RPage {
             throw new Error("End rank must be greater than start rank. Currently, start rank is " + startInclusiveRank.toString() + " and end rank is " + endExclusiveRank.toString() + ".");
         }
 
-        const finalGroupKeys = groupKeys.map(gk => this.keyBuilder.groupKey(this.pageBaseKey, gk));
+        const finalGroupKeys = groupKeys.map(gk => this.keyBuilder.dimensionKey(this.pageBaseKey, gk));
 
         return await this.fetchElementsFromRedis(finalGroupKeys, startInclusiveRank, endExclusiveRank, maxElementsPerGroup, pageRank);
     }
@@ -102,13 +102,13 @@ export class RPage {
     public async purgePage(expireAfterInMilliseconds: number = 60 * 1000): Promise<void> {
         const expireCommands: string[][] = [];
         for (const group of await this.groupsInPage()) {
-            expireCommands.push([RedisKeywords.PEXPIRE, this.keyBuilder.groupKey(this.pageBaseKey, group), expireAfterInMilliseconds.toString()]);//Expire in specified time, this is to avoid blocking calls to redis and also give some buffer time for any ongoing fetches to complete.
+            expireCommands.push([RedisKeywords.PEXPIRE, this.keyBuilder.dimensionKey(this.pageBaseKey, group), expireAfterInMilliseconds.toString()]);//Expire in specified time, this is to avoid blocking calls to redis and also give some buffer time for any ongoing fetches to complete.
         }
         this.redisDriver.usingRedisDriver<void>(expireCommands, 'PurgePage', 'run');
     }
 
     private async groupsInPage(): Promise<string[]> {
-        const groupListKey = this.keyBuilder.groupListKey(this.pageBaseKey);
+        const groupListKey = this.keyBuilder.pageDimensionsDict(this.pageBaseKey, "");
         const groups = await this.redisDriver.usingRedisDriver<string[]>([[RedisKeywords.SMEMBERS, groupListKey]], 'FetchGroupsForPage', 'run');
         return groups;
     }

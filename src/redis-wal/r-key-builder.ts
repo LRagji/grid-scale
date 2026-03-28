@@ -2,8 +2,8 @@ export interface IKeyBuilder {
     counterKey(): string;
     pageKey(timeKeyPart: string, sizeKeyPart: string, writeKeyPart: string): string;
     bookKey(): string;
-    groupKey(pageKey: string, tagName: string): string;
-    groupListKey(pageKey: string): string;
+    dimensionKey(pageKey: string, tagName: string): string;
+    pageDimensionsDict(pageKey: string, dimensionName: string): string;
 }
 
 export class RKeyBuilder implements IKeyBuilder {
@@ -13,7 +13,7 @@ export class RKeyBuilder implements IKeyBuilder {
         private readonly counterKeyName: string = "counter",
         private readonly pageKeyName: string = "page",
         private readonly bookKeyName: string = "book",
-        private readonly groupKeyName: string = "group"
+        private readonly groupKeyName: string = "pageDims"
     ) { }
 
 
@@ -29,11 +29,11 @@ export class RKeyBuilder implements IKeyBuilder {
         return `${this.keyPrefix}${this.keySeparator}${this.bookKeyName}`;
     }
 
-    public groupKey(pageKey: string, tagName: string): string {
-        return `${pageKey}${this.keySeparator}${tagName}`;
+    public dimensionKey(pageKey: string, dimensionName: string): string {
+        return `${pageKey}${this.keySeparator}${dimensionName}`;
     }
 
-    public groupListKey(pageKey: string): string {
-        return `${pageKey}${this.keySeparator}${this.groupKeyName}`;
+    public pageDimensionsDict(pageKey: string, dimensionName: string): string {
+        return `${pageKey}${this.keySeparator}${this.groupKeyName}${this.keySeparator}${dimensionName}`;
     }
 }

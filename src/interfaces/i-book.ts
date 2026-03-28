@@ -8,7 +8,7 @@ export interface IBook<PT extends IPage> {
     readonly totalPageCapacity: number;
     readonly pageSizeLimitInBytes: number;
     readonly pageActiveTimeLimitInMs: number;
-    readonly pageFactory: (pageInfo: IPageInfo, pageType: string) => Promise<PT>;
+    readonly pageFactory: (pageInfo: IPageInfo, pageType: string) => Promise<IPage>;
     readonly pagesReconcileCallback: (newPageInfo: IPageInfo | undefined, evictedPageInfo: IPageInfo[]) => Promise<void>;
 
     //navigateToWritablePage(contentSizeInBytes: number, contentCount: number): Promise<PT>;
