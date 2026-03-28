@@ -1,4 +1,4 @@
-import { IDimensionalElement } from "./cascading-data-containers/interfaces/i-dimensional-element";
+import { IDimensionalElement } from "./interfaces/i-dimensional-element";
 
 export class Utilities {
 

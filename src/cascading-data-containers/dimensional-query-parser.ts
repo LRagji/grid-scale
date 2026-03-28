@@ -1,11 +1,11 @@
-import { IDimensionalElement } from "./interfaces/i-dimensional-element.js";
+import { IDimensionalElement } from "../interfaces/i-dimensional-element.js";
 import {
     Condition,
     ConditionGroup,
     IDimensionalQuery,
     NumberCondition,
     StringCondition
-} from "./interfaces/i-dimensional-query.js";
+} from "../interfaces/i-dimensional-query.js";
 
 function isConditionGroup(condition: Condition | ConditionGroup): condition is ConditionGroup {
     return "conditions" in condition;

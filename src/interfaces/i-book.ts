@@ -1,7 +1,7 @@
 import { IDimensionalElement } from "./i-dimensional-element";
-import { IDimensionalQuery } from "./i-dimensional-query";
-import { IPage } from "./i-page";
-import { IPageInfo } from "./i-page-info";
+import { IDimensionalQuery } from "./i-dimensional-query.js";
+import { IPage } from "./i-page.js";
+import { IPageInfo } from "./i-page-info.js";
 
 export interface IBook<PT extends IPage> {
 
