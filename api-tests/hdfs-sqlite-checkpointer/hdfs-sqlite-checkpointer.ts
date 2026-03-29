@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 import { IPageInfo, RDriver } from "../../src/index.js";
-import { RedisTsPage, TimeseriesSample } from "../../src/pages/redis-ts-page.js";
+import { RedisTsPage, TimeseriesSample } from "../rest-wrapper/redis-ts-page.js";
 import { DIConstants, EnvironmentVariableConstants, PageWindowDefaults } from "./constants.js";
 import { IORedisClientPool, IRedisClientPool } from "redis-abstraction";
 

@@ -6,7 +6,7 @@ import { parseURL } from "ioredis/built/utils/index.js";
 import { BullMQOtel } from "bullmq-otel";
 
 import { IPageInfo, RDriver, RedisCascadingBook } from "../../src/index.js";
-import { RedisTsPage, TimeseriesSample } from "../../src/pages/redis-ts-page.js";
+import { RedisTsPage, TimeseriesSample } from "./redis-ts-page.js";
 import { RKeyBuilder } from "../../src/utilities/r-key-builder.js";
 import { DIConstants, EnvironmentVariableConstants, PageWindowDefaults } from "./constants.js";
 import { type IFetchRequest } from "./interfaces.js";

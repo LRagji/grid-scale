@@ -7,7 +7,7 @@ import Redis, { Cluster } from "ioredis";
 import { IRedisClientPool, IORedisClientPool, RedisClientPool } from "redis-abstraction";
 
 import { IPageInfo, RedisCascadingBook, RDriver, RKeyBuilder } from "../src/index.js";
-import { RedisTsPage, TimeseriesSample } from "../src/pages/redis-ts-page.js";
+import { RedisTsPage, TimeseriesSample } from "../api-tests/rest-wrapper/redis-ts-page.js";
 import { NodeRedisTestDriver } from "./node-redis-test-driver.js";
 
 

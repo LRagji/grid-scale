@@ -1,11 +1,11 @@
-import { IDimensionalElement } from "../interfaces/i-dimensional-element.js";
-import { IDimensionalQuery } from "../interfaces/i-dimensional-query.js";
-import { IKeyBuilder } from "../interfaces/i-key-builder.js";
-import { IPageInfo } from "../interfaces/i-page-info.js";
-import { IPage } from "../interfaces/i-page.js";
-import { IRDriver, RedisKeywords } from "../interfaces/i-r-driver.js";
-import { RKeyBuilder } from "../utilities/r-key-builder.js";
-import { ConvenienceMethods } from "../utilities/convenience-methods.js";
+import { IDimensionalElement } from "../../src/interfaces/i-dimensional-element.js";
+import { IDimensionalQuery } from "../../src/interfaces/i-dimensional-query.js";
+import { IKeyBuilder } from "../../src/interfaces/i-key-builder.js";
+import { IPageInfo } from "../../src/interfaces/i-page-info.js";
+import { IPage } from "../../src/interfaces/i-page.js";
+import { IRDriver, RedisKeywords } from "../../src/interfaces/i-r-driver.js";
+import { RKeyBuilder } from "../../src/utilities/r-key-builder.js";
+import { ConvenienceMethods } from "../../src/utilities/convenience-methods.js";
 
 export class TimeseriesSample implements IDimensionalElement {
 
