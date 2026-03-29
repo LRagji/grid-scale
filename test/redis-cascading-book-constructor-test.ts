@@ -4,7 +4,7 @@ import sinon from "sinon";
 
 import { RedisCascadingBook } from "../src/index.js";
 import type { IRDriver, IPage, IPageInfo } from "../src/index.js";
-import { Utilities } from "../src/utilities.js";
+import { ConvenienceMethods } from "../src/utilities/convenience-methods.js";
 
 const VALID_CAPACITY = 10;
 const VALID_PAGE_SIZE_BYTES = 1024;
@@ -70,7 +70,7 @@ describe("RedisCascadingBook constructor", () => {
 
         it("throws when totalPageCapacity exceeds u48In3", () => {
             assert.throws(
-                () => validBook({ totalPageCapacity: Utilities.u48In3 + 1 }),
+                () => validBook({ totalPageCapacity: ConvenienceMethods.u48In3 + 1 }),
                 /Total page capacity must be between 1 and/i
             );
         });
@@ -80,7 +80,7 @@ describe("RedisCascadingBook constructor", () => {
         });
 
         it("accepts totalPageCapacity equal to u48In3", () => {
-            assert.doesNotThrow(() => validBook({ totalPageCapacity: Utilities.u48In3 }));
+            assert.doesNotThrow(() => validBook({ totalPageCapacity: ConvenienceMethods.u48In3 }));
         });
 
     });
@@ -103,7 +103,7 @@ describe("RedisCascadingBook constructor", () => {
 
         it("throws when pageSizeLimitInBytes exceeds u48In3", () => {
             assert.throws(
-                () => validBook({ pageSizeLimitInBytes: Utilities.u48In3 + 1 }),
+                () => validBook({ pageSizeLimitInBytes: ConvenienceMethods.u48In3 + 1 }),
                 /Page size limit in bytes must be between 1 and/i
             );
         });
@@ -113,7 +113,7 @@ describe("RedisCascadingBook constructor", () => {
         });
 
         it("accepts pageSizeLimitInBytes equal to u48In3", () => {
-            assert.doesNotThrow(() => validBook({ pageSizeLimitInBytes: Utilities.u48In3 }));
+            assert.doesNotThrow(() => validBook({ pageSizeLimitInBytes: ConvenienceMethods.u48In3 }));
         });
 
     });
@@ -136,7 +136,7 @@ describe("RedisCascadingBook constructor", () => {
 
         it("throws when pageActiveTimeLimitInMs exceeds u48In3", () => {
             assert.throws(
-                () => validBook({ pageActiveTimeLimitInMs: Utilities.u48In3 + 1 }),
+                () => validBook({ pageActiveTimeLimitInMs: ConvenienceMethods.u48In3 + 1 }),
                 /Page active time limit in ms must be between 1 second and/i
             );
         });
@@ -146,7 +146,7 @@ describe("RedisCascadingBook constructor", () => {
         });
 
         it("accepts pageActiveTimeLimitInMs equal to u48In3", () => {
-            assert.doesNotThrow(() => validBook({ pageActiveTimeLimitInMs: Utilities.u48In3 }));
+            assert.doesNotThrow(() => validBook({ pageActiveTimeLimitInMs: ConvenienceMethods.u48In3 }));
         });
 
     });

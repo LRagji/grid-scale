@@ -4,7 +4,7 @@ import sinon from "sinon";
 
 import { RedisCascadingBook } from "../src/index.js";
 import type { IDimensionalElement, IPage, IPageInfo, IRDriver, IKeyBuilder } from "../src/index.js";
-import { Utilities } from "../src/utilities.js";
+import { ConvenienceMethods } from "../src/utilities/convenience-methods.js";
 
 const VALID_CAPACITY = 10;
 const VALID_PAGE_SIZE_BYTES = 100;
@@ -116,7 +116,7 @@ describe("RedisCascadingBook.upsertElements", () => {
 
     it("throws when the elements count exceeds u48In3", async () => {
         const { book } = makeBook();
-        const oversizedElements = { length: Utilities.u48In3 + 1 } as unknown as IDimensionalElement[];
+        const oversizedElements = { length: ConvenienceMethods.u48In3 + 1 } as unknown as IDimensionalElement[];
 
         await assert.rejects(
             book.upsertElements(oversizedElements),
@@ -143,7 +143,7 @@ describe("RedisCascadingBook.upsertElements", () => {
     });
 
     it("throws when the estimated size exceeds u48In3", async () => {
-        const { book } = makeBook({ sizeEstimator: () => Utilities.u48In3 + 1 });
+        const { book } = makeBook({ sizeEstimator: () => ConvenienceMethods.u48In3 + 1 });
 
         await assert.rejects(
             book.upsertElements(makeElements()),

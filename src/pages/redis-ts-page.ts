@@ -4,8 +4,8 @@ import { IKeyBuilder } from "../interfaces/i-key-builder.js";
 import { IPageInfo } from "../interfaces/i-page-info.js";
 import { IPage } from "../interfaces/i-page.js";
 import { IRDriver, RedisKeywords } from "../interfaces/i-r-driver.js";
-import { RKeyBuilder } from "../redis-wal/r-key-builder.js";
-import { Utilities } from "../utilities.js";
+import { RKeyBuilder } from "../utilities/r-key-builder.js";
+import { ConvenienceMethods } from "../utilities/convenience-methods.js";
 
 export class TimeseriesSample implements IDimensionalElement {
 
@@ -95,8 +95,8 @@ export class RedisTsPage implements IPage {
             throw new Error("Max elements per group must be greater than 0. Currently, it is set to " + maxElementsPerGroup.toString() + ".");
         }
 
-        if (startInclusiveRank >= Utilities.u48In3 || endExclusiveRank > Utilities.u48In3) {
-            throw new Error("Rank values must be less than " + Utilities.u48In3.toString() + ". Currently, start rank is " + startInclusiveRank.toString() + " and end rank is " + endExclusiveRank.toString() + ".");
+        if (startInclusiveRank >= ConvenienceMethods.u48In3 || endExclusiveRank > ConvenienceMethods.u48In3) {
+            throw new Error("Rank values must be less than " + ConvenienceMethods.u48In3.toString() + ". Currently, start rank is " + startInclusiveRank.toString() + " and end rank is " + endExclusiveRank.toString() + ".");
         }
 
         return await this.fetchElementsFromRedis(groupKeys, startInclusiveRank, endExclusiveRank, maxElementsPerGroup);

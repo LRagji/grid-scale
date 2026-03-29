@@ -7,10 +7,10 @@ import { BullMQOtel } from "bullmq-otel";
 
 import { IPageInfo, RDriver, RedisCascadingBook } from "../../src/index.js";
 import { RedisTsPage, TimeseriesSample } from "../../src/pages/redis-ts-page.js";
-import { RKeyBuilder } from "../../src/redis-wal/r-key-builder.js";
+import { RKeyBuilder } from "../../src/utilities/r-key-builder.js";
 import { DIConstants, EnvironmentVariableConstants, PageWindowDefaults } from "./constants.js";
 import { type IFetchRequest } from "./interfaces.js";
-import { Utilities } from "../../src/utilities.js";
+import { ConvenienceMethods } from "../../src/utilities/convenience-methods.js";
 
 interface IApiSample {
     tag: string;
@@ -93,7 +93,7 @@ async function initializeGridScale(DIContainer: DisposableSingletonContainer) {
         pageFactory,
         turnOverCallback,
         redisDriver,
-        Utilities.roughSizeEstimator,
+        ConvenienceMethods.roughSizeEstimator,
         keyBuilder
     ]);
 }

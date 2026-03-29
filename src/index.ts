@@ -1,6 +1,6 @@
 
-import { RKeyBuilder } from './redis-wal/r-key-builder.js';
-import { RDriver } from './redis-wal/r-driver.js';
+import { RKeyBuilder } from './utilities/r-key-builder.js';
+import { RDriver } from './utilities/r-driver.js';
 import { IRDriver } from './interfaces/i-r-driver.js';
 import { IPage } from './interfaces/i-page.js';
 import { IBook } from './interfaces/i-book.js';

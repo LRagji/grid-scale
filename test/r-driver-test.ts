@@ -4,8 +4,8 @@ import sinon from "sinon";
 import type { IRedisClientPool } from "redis-abstraction";
 
 import { RedisKeywords } from "../src/interfaces/i-r-driver.js";
-import { RDriver } from "../src/redis-wal/r-driver.js";
-import { Utilities } from "../src/utilities.js";
+import { RDriver } from "../src/utilities/r-driver.js";
+import { ConvenienceMethods } from "../src/utilities/convenience-methods.js";
 
 type RedisPoolStub = IRedisClientPool & {
     initialize: sinon.SinonStub;
@@ -71,9 +71,9 @@ describe("RDriver", () => {
         it("accepts the upper valid boundary of u48In3", () => {
             const redisPool = createRedisPoolStub();
 
-            const driver = new RDriver(redisPool, Utilities.u48In3);
+            const driver = new RDriver(redisPool, ConvenienceMethods.u48In3);
 
-            assert.equal(driver.timeToleranceInMs, Utilities.u48In3);
+            assert.equal(driver.timeToleranceInMs, ConvenienceMethods.u48In3);
         });
 
         it("throws when time tolerance is exactly 1000 ms", () => {
@@ -98,7 +98,7 @@ describe("RDriver", () => {
             const redisPool = createRedisPoolStub();
 
             assert.throws(
-                () => new RDriver(redisPool, Utilities.u48In3 + 1),
+                () => new RDriver(redisPool, ConvenienceMethods.u48In3 + 1),
                 /Time tolerance must be between 1 second and/i
             );
         });

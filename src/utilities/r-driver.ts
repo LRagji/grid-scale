@@ -1,6 +1,6 @@
 import { IRedisClientPool } from "redis-abstraction";
 import { IRDriver, RedisKeywords } from "../interfaces/i-r-driver.js";
-import { Utilities } from "../utilities.js";
+import { ConvenienceMethods } from "./convenience-methods.js";
 
 
 export class RDriver implements IRDriver {
@@ -16,9 +16,9 @@ export class RDriver implements IRDriver {
         //Defaults.
         public readonly timeToleranceInMs: number = 1 * 60 * 1000, // 1 minute
     ) {
-        if (this.timeToleranceInMs <= 1000 || this.timeToleranceInMs > Utilities.u48In3) {
+        if (this.timeToleranceInMs <= 1000 || this.timeToleranceInMs > ConvenienceMethods.u48In3) {
             this._initialized = -2;
-            throw new Error("Time tolerance must be between 1 second and " + Utilities.u48In3 + " ms. Currently, it is set to " + this.timeToleranceInMs.toString() + " ms.");
+            throw new Error("Time tolerance must be between 1 second and " + ConvenienceMethods.u48In3 + " ms. Currently, it is set to " + this.timeToleranceInMs.toString() + " ms.");
         }
 
     }
@@ -45,7 +45,7 @@ export class RDriver implements IRDriver {
         const redisMicroseconds = parseInt(redisTimeArray[1], 10);
         redisTime = (redisSeconds * 1000) + (redisMicroseconds / 1000);
 
-        return Utilities.modMinus(hostTime, this.timeToleranceInMs) == Utilities.modMinus(redisTime, this.timeToleranceInMs);
+        return ConvenienceMethods.modMinus(hostTime, this.timeToleranceInMs) == ConvenienceMethods.modMinus(redisTime, this.timeToleranceInMs);
     }
 
     public async usingRedisDriver<T>(commands: any[][], tokenName: string, type: "run" | "pipeline" = "pipeline"): Promise<T> {
@@ -69,7 +69,7 @@ export class RDriver implements IRDriver {
     }
 
     public harmonizedTimeInMs(timeInMs: number = Date.now()): number {
-        const currentTimeWithTolerance = Utilities.modMinus(timeInMs, this.timeToleranceInMs);
+        const currentTimeWithTolerance = ConvenienceMethods.modMinus(timeInMs, this.timeToleranceInMs);
         return currentTimeWithTolerance;
     }
 }

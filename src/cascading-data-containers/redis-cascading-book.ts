@@ -1,6 +1,6 @@
 import { IRDriver, RedisKeywords } from "../interfaces/i-r-driver.js";
-import { RKeyBuilder } from "../redis-wal/r-key-builder.js";
-import { Utilities } from "../utilities.js";
+import { RKeyBuilder } from "../utilities/r-key-builder.js";
+import { ConvenienceMethods } from "../utilities/convenience-methods.js";
 import { IBook } from "../interfaces/i-book.js";
 import { filterByDimensionalQuery } from "./dimensional-query-parser.js";
 import { IDimensionalElement } from "../interfaces/i-dimensional-element.js";
@@ -11,7 +11,7 @@ import { IKeyBuilder } from "../interfaces/i-key-builder.js";
 
 export class RedisCascadingBook implements IBook {
 
-    private readonly pageSerialNumberLimit = Utilities.u48In3; // This is the maximum number of elements we can have on a page before we risk overflow of the serial number counter, which can lead to empty gaps on page or worse overflows.
+    private readonly pageSerialNumberLimit = ConvenienceMethods.u48In3; // This is the maximum number of elements we can have on a page before we risk overflow of the serial number counter, which can lead to empty gaps on page or worse overflows.
     private readonly counterBytes = 6;//Only u48 so its 6 bytes
     private timeCounterBuffer = Buffer.alloc(this.counterBytes);
 
@@ -35,14 +35,14 @@ export class RedisCascadingBook implements IBook {
         private readonly sizeEstimator: (element: IDimensionalElement[]) => number = (element: IDimensionalElement[]) => 1,
         private readonly keyBuilder: IKeyBuilder = new RKeyBuilder()
     ) {
-        if (this.totalPageCapacity <= 0 || this.totalPageCapacity > Utilities.u48In3) {
-            throw new Error("Total page capacity must be between 1 and " + Utilities.u48In3 + ". Currently, it is set to " + this.totalPageCapacity + " pages.");
+        if (this.totalPageCapacity <= 0 || this.totalPageCapacity > ConvenienceMethods.u48In3) {
+            throw new Error("Total page capacity must be between 1 and " + ConvenienceMethods.u48In3 + ". Currently, it is set to " + this.totalPageCapacity + " pages.");
         }
-        if (this.pageSizeLimitInBytes <= 0 || this.pageSizeLimitInBytes > Utilities.u48In3) {
-            throw new Error("Page size limit in bytes must be between 1 and " + Utilities.u48In3 + ". Currently, it is set to " + this.pageSizeLimitInBytes.toString() + " bytes.");
+        if (this.pageSizeLimitInBytes <= 0 || this.pageSizeLimitInBytes > ConvenienceMethods.u48In3) {
+            throw new Error("Page size limit in bytes must be between 1 and " + ConvenienceMethods.u48In3 + ". Currently, it is set to " + this.pageSizeLimitInBytes.toString() + " bytes.");
         }
-        if (this.pageActiveTimeLimitInMs <= 1000 || this.pageActiveTimeLimitInMs > Utilities.u48In3) {
-            throw new Error("Page active time limit in ms must be between 1 second and " + Utilities.u48In3 + " ms. Currently, it is set to " + this.pageActiveTimeLimitInMs.toString() + " ms.");
+        if (this.pageActiveTimeLimitInMs <= 1000 || this.pageActiveTimeLimitInMs > ConvenienceMethods.u48In3) {
+            throw new Error("Page active time limit in ms must be between 1 second and " + ConvenienceMethods.u48In3 + " ms. Currently, it is set to " + this.pageActiveTimeLimitInMs.toString() + " ms.");
         }
         if (!this.pageFactory) {
             throw new Error("Page factory function must be provided.");
@@ -90,13 +90,13 @@ export class RedisCascadingBook implements IBook {
 
     public async upsertElements(elements: IDimensionalElement[]): Promise<void> {
         const numberOfElements = elements.length;
-        if (numberOfElements <= 0 || numberOfElements > Utilities.u48In3) {
-            throw new Error("Number of elements must be between 1 and " + Utilities.u48In3 + ". Currently, it is set to " + numberOfElements.toString() + ".");
+        if (numberOfElements <= 0 || numberOfElements > ConvenienceMethods.u48In3) {
+            throw new Error("Number of elements must be between 1 and " + ConvenienceMethods.u48In3 + ". Currently, it is set to " + numberOfElements.toString() + ".");
         }
 
         const totalElementSizeInBytes = this.sizeEstimator(elements);
-        if (totalElementSizeInBytes <= 0 || totalElementSizeInBytes > Utilities.u48In3) {
-            throw new Error("Estimated size must be between 1 and " + Utilities.u48In3 + ". Currently, it is set to " + totalElementSizeInBytes.toString() + " bytes.");
+        if (totalElementSizeInBytes <= 0 || totalElementSizeInBytes > ConvenienceMethods.u48In3) {
+            throw new Error("Estimated size must be between 1 and " + ConvenienceMethods.u48In3 + ". Currently, it is set to " + totalElementSizeInBytes.toString() + " bytes.");
         }
 
         const harmonizedInsertTimestamp = this.redisDriver.harmonizedTimeInMs(Date.now());
@@ -208,11 +208,11 @@ export class RedisCascadingBook implements IBook {
         const sizeCounter = RedisCascadingBook.parseRedisInteger(response[1][1], "IncrementCounter.size"); // This counter is always increasing so needs to be modded to determine page key.
         const writeCounter = RedisCascadingBook.parseRedisInteger(response[1][2], "IncrementCounter.write"); // This counter is always increasing so needs to be modded to determine page key.
 
-        const pageStartTime = Utilities.modMinus(receivedTime, this.pageActiveTimeLimitInMs);
+        const pageStartTime = ConvenienceMethods.modMinus(receivedTime, this.pageActiveTimeLimitInMs);
         const previousSize = sizeCounter - sizeInBytes;
-        const pageStartSize = Utilities.modMinus(previousSize, this.pageSizeLimitInBytes);
+        const pageStartSize = ConvenienceMethods.modMinus(previousSize, this.pageSizeLimitInBytes);
         const previousSerialNumber = writeCounter - count;
-        const pageStartSerialNumber = Utilities.modMinus(previousSerialNumber, this.pageSerialNumberLimit);
+        const pageStartSerialNumber = ConvenienceMethods.modMinus(previousSerialNumber, this.pageSerialNumberLimit);
         const pageKey = this.keyBuilder.pageKey(pageStartTime.toString(), pageStartSize.toString(), pageStartSerialNumber.toString());
 
         return { pageKey, pageStartTime, pageStartSize, pageStartSerialNumber, sequenceStartNumber: previousSerialNumber };

@@ -1,12 +1,12 @@
-import { IDimensionalElement } from "./interfaces/i-dimensional-element";
+import { IDimensionalElement } from "../interfaces/i-dimensional-element";
 
-export class Utilities {
+export class ConvenienceMethods {
 
     private static readonly utf8Encoder = new TextEncoder();
 
     public static readonly u48Max = Number("0xFFFFFFFFFFFF"); // 48-bit max value for time header and counters.
 
-    public static readonly u48In3 = Utilities.u48Max / 3; // Used for calculating time windows and tolerances to ensure we don't exceed redis sorted set score limits.
+    public static readonly u48In3 = ConvenienceMethods.u48Max / 3; // Used for calculating time windows and tolerances to ensure we don't exceed redis sorted set score limits.
 
 
     public static modMinus(value: number, divisor: number): number {
@@ -14,7 +14,7 @@ export class Utilities {
     }
 
     public static roughSizeEstimator(samples: any[]): number {
-        return Utilities.utf8Encoder.encode(JSON.stringify(samples)).byteLength;
+        return ConvenienceMethods.utf8Encoder.encode(JSON.stringify(samples)).byteLength;
     }
 
     public static hashElement(data: IDimensionalElement, identityDimSet = new Set<string>(Object.keys(data.dim))): string {
