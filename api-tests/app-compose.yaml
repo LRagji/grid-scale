@@ -49,7 +49,6 @@ services:
       TIME_TOLERANCE_IN_MS: "60000" # 1 minute
       TIME_WINDOW_IN_MS: "1200000" # 20 minutes
       SIZE_WINDOW_IN_BYTES: "314572800" # 300mb
-      WRITE_WINDOW: "10000000" # 10 million operations
       MAX_PAGES_IN_BOOK: "3"
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel:4318
       OTEL_TRACES_EXPORTER: otlp

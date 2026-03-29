@@ -5,7 +5,9 @@ import { JobsOptions, Queue } from 'bullmq';
 import { parseURL } from "ioredis/built/utils/index.js";
 import { BullMQOtel } from "bullmq-otel";
 
-import { IPageInfo, ISortedElement, RBook, RDriver, RWal } from "../../src/index.js";
+import { IPageInfo, RDriver, RedisCascadingBook } from "../../src/index.js";
+import { RedisTsPage, TimeseriesSample } from "../../src/pages/redis-ts-page.js";
+import { RKeyBuilder } from "../../src/redis-wal/r-key-builder.js";
 import { DIConstants, EnvironmentVariableConstants, PageWindowDefaults } from "./constants.js";
 import { type IFetchRequest } from "./interfaces.js";
 
@@ -42,7 +44,6 @@ async function initializeGridScale(DIContainer: DisposableSingletonContainer) {
     const timeToleranceInMs = parseInt(env.getStringOrDefault(EnvironmentVariableConstants.TimeToleranceInMs, PageWindowDefaults.timeToleranceInMs), 10);
     const timeWindowInMs = parseInt(env.getStringOrDefault(EnvironmentVariableConstants.TimeWindowInMs, PageWindowDefaults.timeWindowInMs), 10);
     const sizeWindowInBytes = parseInt(env.getStringOrDefault(EnvironmentVariableConstants.SizeWindowInBytes, PageWindowDefaults.sizeWindowInBytes), 10);
-    const writeWindow = parseInt(env.getStringOrDefault(EnvironmentVariableConstants.WriteWindow, PageWindowDefaults.writeWindow), 10);
     const maxPagesInBook = parseInt(env.getStringOrDefault(EnvironmentVariableConstants.MaxPagesInBook, PageWindowDefaults.maxPagesInBook), 10);
     const parseRedisConnectionString = (connectionString: string) => parseURL(connectionString);
     const connectionInjector = () => IORedisClientPool.IORedisClientClusterFactory([redisConnectionString], IORedis as any, Cluster as any, parseRedisConnectionString);
@@ -59,7 +60,7 @@ async function initializeGridScale(DIContainer: DisposableSingletonContainer) {
             enableMetrics: true
         })
     }]);
-    const turnOverCallback = async (newPageKey: string | undefined, trimmedPages: IPageInfo[]) => {
+    const turnOverCallback = async (newPageInfo: IPageInfo | undefined, trimmedPages: IPageInfo[]) => {
         const jobsToPublish = trimmedPages.map((pageInfo) => ({
             name: pageInfo.pageKey,
             data: pageInfo,
@@ -71,10 +72,23 @@ async function initializeGridScale(DIContainer: DisposableSingletonContainer) {
             } as JobsOptions
         }));
         await checkpointQueue.queue.addBulk(jobsToPublish);
-        console.log(`Turnover callback executed. New page: ${newPageKey}, Trimmed pages[${trimmedPages.length}]: ${trimmedPages.map(p => p.pageKey).join(", ")}`);
+        console.log(`Turnover callback executed. New page: ${newPageInfo?.pageKey ?? "none"}, Trimmed pages[${trimmedPages.length}]: ${trimmedPages.map(p => p.pageKey).join(", ")}`);
     };
-    const book = DIContainer.createInstance<RBook>(DIConstants.RBook, RBook, [redisDriver, timeWindowInMs, sizeWindowInBytes, writeWindow, maxPagesInBook, undefined, turnOverCallback]);
-    DIContainer.createInstance<RWal>(DIConstants.RWal, RWal, [book]);
+    const keyBuilder = new RKeyBuilder();
+    const pageFactory = async (pageInfo: IPageInfo): Promise<RedisTsPage> => {
+        return new RedisTsPage(pageInfo, redisDriver, keyBuilder);
+    };
+    DIContainer.createInstance<RedisCascadingBook>(DIConstants.RedisCascadingBook, RedisCascadingBook, [
+        maxPagesInBook,
+        sizeWindowInBytes,
+        timeWindowInMs,
+        "redis-ts-page",
+        pageFactory,
+        turnOverCallback,
+        redisDriver,
+        undefined,
+        keyBuilder
+    ]);
 }
 
 function setupRoutes(rootRouter: IRouter) {
@@ -85,17 +99,12 @@ function setupRoutes(rootRouter: IRouter) {
             let startTime = Date.now();
             diagnostics.set("timestamp", startTime);
             const DIContainer = req["DIProp"] as DisposableSingletonContainer;
-            const wal = DIContainer.fetchInstance<RWal>(DIConstants.RWal) as RWal;
+            const book = DIContainer.fetchInstance<RedisCascadingBook>(DIConstants.RedisCascadingBook) as RedisCascadingBook;
             //TODO: Validate only certain number of samples to come be allowed 10 tags and 1000 samples per request, configure through env vars if needed.
             const samples = req.body as IApiSample[];
-            const sortedElements = samples.map((sample) => ({
-                gk: sample.tag,
-                elementRank: sample.ts,
-                sn: 0,
-                pld: sample.pld
-            } as ISortedElement));
-            diagnostics.set("numberOfSamples", sortedElements.length);
-            await wal.append(sortedElements);
+            const dimensionalElements = samples.map((sample) => new TimeseriesSample(sample.tag, sample.ts, sample.pld));
+            diagnostics.set("numberOfSamples", dimensionalElements.length);
+            await book.upsertElements(dimensionalElements);
             let endTime = Date.now();
             diagnostics.set("durationMs", endTime - startTime);
             res.status(201) //Created
@@ -114,31 +123,31 @@ function setupRoutes(rootRouter: IRouter) {
             let startTime = Date.now();
             diagnostics.set("timestamp", startTime);
             const DIContainer = req["DIProp"] as DisposableSingletonContainer;
-            const wal = DIContainer.fetchInstance<RWal>(DIConstants.RWal) as RWal;
+            const book = DIContainer.fetchInstance<RedisCascadingBook>(DIConstants.RedisCascadingBook) as RedisCascadingBook;
             const samplesPerPage = 1000; //TODO: Make this configurable through env vars if needed.
             const fetchRequest = req.body as IFetchRequest;
-            const elements = await wal.queryByRank(fetchRequest.tagsFilter.in, fetchRequest.timeFilter.startInclusiveTime, fetchRequest.timeFilter.endExclusiveTime, samplesPerPage + 1);
+            const elements = await book.queryByRank(fetchRequest.tagsFilter.in, fetchRequest.timeFilter.startInclusiveTime, fetchRequest.timeFilter.endExclusiveTime, samplesPerPage + 1) as TimeseriesSample[];
             let morePages = false;
-            const groupedElements = new Map<string, ISortedElement[]>();
+            const groupedElements = new Map<string, TimeseriesSample[]>();
             for (const element of elements) {
-                const current = groupedElements.get(element.gk) ?? [];
+                const current = groupedElements.get(element.dim.tag) ?? [];
                 current.push(element);
-                groupedElements.set(element.gk, current);
+                groupedElements.set(element.dim.tag, current);
             }
 
             const allSamples = new Array<IApiSample>();
             for (const [groupKey, grouped] of groupedElements) {
                 morePages = grouped.length > samplesPerPage || morePages;
-                const minTs = grouped.reduce((acc, value) => Math.min(acc, value.elementRank), Number.MAX_SAFE_INTEGER);
-                const maxTs = grouped.reduce((acc, value) => Math.max(acc, value.elementRank), Number.MIN_SAFE_INTEGER);
+                const minTs = grouped.reduce((acc, value) => Math.min(acc, value.dim.time), Number.MAX_SAFE_INTEGER);
+                const maxTs = grouped.reduce((acc, value) => Math.max(acc, value.dim.time), Number.MIN_SAFE_INTEGER);
 
                 diagnostics.set(`info_count${groupKey}`, grouped.length);
                 diagnostics.set(`info_min_ts${groupKey}`, minTs);
                 diagnostics.set(`info_max_ts${groupKey}`, maxTs);
 
                 allSamples.push(...grouped.map((element) => ({
-                    tag: element.gk,
-                    ts: element.elementRank,
+                    tag: element.dim.tag,
+                    ts: element.dim.time,
                     pld: element.pld
                 })));
             }

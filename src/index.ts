@@ -1,9 +1,6 @@
 
-import { RWal } from './redis-wal/r-wal.js';
 import { type IKeyBuilder, RKeyBuilder } from './redis-wal/r-key-builder.js';
 import { ISortedElement } from './interfaces/i-sorted-element.js';
-import { IPageInfo as IOldPageInfo, RBook } from './redis-wal/r-book.js';
-import { RPage } from './redis-wal/r-page.js';
 import { RDriver } from './redis-wal/r-driver.js';
 import { IRDriver } from './interfaces/i-r-driver.js';
 import { IPage } from './interfaces/i-page.js';
@@ -16,9 +13,6 @@ import { evaluateDimensionalQuery, filterByDimensionalQuery } from './cascading-
 
 //Implementation to export
 export {
-    RWal,
-    RBook,
-    RPage,
     RDriver,
     RKeyBuilder,
     RedisCascadingBook,
@@ -31,7 +25,6 @@ export type {
     ISortedElement,
     IKeyBuilder,
     IRDriver,
-    IOldPageInfo,
     IPage,
     IBook,
     IDimensionalElement,
