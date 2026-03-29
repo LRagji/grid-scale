@@ -53,14 +53,6 @@ export class RPage {
             throw new Error("Rank values must be less than " + Utilities.u48In3.toString() + ". Currently, start rank is " + startInclusiveRank.toString() + " and end rank is " + endExclusiveRank.toString() + ".");
         }
 
-        if (endExclusiveRank <= 0) {
-            throw new Error("End rank must be greater than 0. Currently, it is set to " + endExclusiveRank.toString() + ".");
-        }
-
-        if (endExclusiveRank <= startInclusiveRank) {
-            throw new Error("End rank must be greater than start rank. Currently, start rank is " + startInclusiveRank.toString() + " and end rank is " + endExclusiveRank.toString() + ".");
-        }
-
         const finalGroupKeys = groupKeys.map(gk => this.keyBuilder.dimensionKey(this.pageBaseKey, gk));
 
         return await this.fetchElementsFromRedis(finalGroupKeys, startInclusiveRank, endExclusiveRank, maxElementsPerGroup, pageRank);

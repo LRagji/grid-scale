@@ -67,7 +67,7 @@ export class RedisTsPage implements IPage {
 
     public async dumpPage(): Promise<TimeseriesSample[]> {
         const redisKeys = await this.groupsInPage();
-        return this.fetchElementsByRange(redisKeys, 0, 0, -1);
+        return this.fetchElementsFromRedis(redisKeys, "-inf", "+inf", -1);
     }
 
     public async fetchElementsByRange(groupKeys: string[], startInclusiveRank: number, endExclusiveRank: number, maxElementsPerGroup: number): Promise<TimeseriesSample[]> {
@@ -87,14 +87,6 @@ export class RedisTsPage implements IPage {
             throw new Error("Rank values must be less than " + Utilities.u48In3.toString() + ". Currently, start rank is " + startInclusiveRank.toString() + " and end rank is " + endExclusiveRank.toString() + ".");
         }
 
-        if (endExclusiveRank <= 0) {
-            throw new Error("End rank must be greater than 0. Currently, it is set to " + endExclusiveRank.toString() + ".");
-        }
-
-        if (endExclusiveRank <= startInclusiveRank) {
-            throw new Error("End rank must be greater than start rank. Currently, start rank is " + startInclusiveRank.toString() + " and end rank is " + endExclusiveRank.toString() + ".");
-        }
-
         const finalGroupKeys = groupKeys.map(gk => this.keyBuilder.dimensionKey(this._pageInfo.pageKey, gk));
 
         return await this.fetchElementsFromRedis(finalGroupKeys, startInclusiveRank, endExclusiveRank, maxElementsPerGroup);
@@ -106,10 +98,10 @@ export class RedisTsPage implements IPage {
             expireCommands.push([RedisKeywords.PEXPIRE, this.keyBuilder.dimensionKey(this._pageInfo.pageKey, group), expireAfterInMilliseconds.toString()]);//Expire in specified time, this is to avoid blocking calls to redis and also give some buffer time for any ongoing fetches to complete.
         }
         expireCommands.push([RedisKeywords.PEXPIRE, this.keyBuilder.pageDimensionsDict(this._pageInfo.pageKey, this.dimensionNameForGrouping), expireAfterInMilliseconds.toString()]);//Expire group list as well.
-        this.redisDriver.usingRedisDriver<void>(expireCommands, 'PurgePage', 'run');
+        await this.redisDriver.usingRedisDriver<void>(expireCommands, 'PurgePage', 'pipeline');
     }
 
-    private async fetchElementsFromRedis(redisKeys: string[], startInclusiveRank: number, endExclusiveRank: number, maxElementsPerGroup: number): Promise<TimeseriesSample[]> {
+    private async fetchElementsFromRedis(redisKeys: string[], startInclusiveRank: number | "-inf", endExclusiveRank: number | "+inf", maxElementsPerGroup: number): Promise<TimeseriesSample[]> {
         const commands = redisKeys
             .map(redisKey => [RedisKeywords.ZRANGE, redisKey, startInclusiveRank.toString(), endExclusiveRank.toString(), RedisKeywords.BYSCORE,
             ...(maxElementsPerGroup <= 0 ? [] : [RedisKeywords.LIMIT, "0", maxElementsPerGroup.toString()])]);
