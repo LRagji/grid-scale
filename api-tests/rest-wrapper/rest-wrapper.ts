@@ -10,6 +10,7 @@ import { RedisTsPage, TimeseriesSample } from "../../src/pages/redis-ts-page.js"
 import { RKeyBuilder } from "../../src/redis-wal/r-key-builder.js";
 import { DIConstants, EnvironmentVariableConstants, PageWindowDefaults } from "./constants.js";
 import { type IFetchRequest } from "./interfaces.js";
+import { Utilities } from "../../src/utilities.js";
 
 interface IApiSample {
     tag: string;
@@ -75,7 +76,7 @@ async function initializeGridScale(DIContainer: DisposableSingletonContainer) {
         console.log(`Turnover callback executed. New page: ${newPageInfo?.pageKey ?? "none"}, Trimmed pages[${trimmedPages.length}]: ${trimmedPages.map(p => p.pageKey).join(", ")}`);
     };
     const keyBuilder = new RKeyBuilder();
-    const pageFactory = async (pageInfo: IPageInfo): Promise<RedisTsPage> => {
+    const pageFactory = async (pageInfo: IPageInfo, pageType: string): Promise<RedisTsPage> => {
         return new RedisTsPage(pageInfo, redisDriver, keyBuilder);
     };
     DIContainer.createInstance<RedisCascadingBook>(DIConstants.RedisCascadingBook, RedisCascadingBook, [
@@ -86,7 +87,7 @@ async function initializeGridScale(DIContainer: DisposableSingletonContainer) {
         pageFactory,
         turnOverCallback,
         redisDriver,
-        undefined,
+        Utilities.roughSizeEstimator,
         keyBuilder
     ]);
 }
