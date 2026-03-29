@@ -140,6 +140,8 @@ function dumpPageElementsToSqlite(pageInfo: IPageInfo, pageKey: string, pageElem
 
 async function checkpointHandler(job: Job<IPageInfo>, token?: string, abortSignal?: AbortSignal): Promise<void> {
 
+    const startTime = Date.now();
+    let resetAbleTime = startTime;
     const driver = (this.DIContainer as DisposableSingletonContainer).fetchInstance<RDriver>(DIConstants.DataRDriver);
     const timeToleranceInMs = (this.DIContainer as DisposableSingletonContainer).fetchInstance<number>(EnvironmentVariableConstants.TimeToleranceInMs);
     const tempCheckPointingPath = (this.DIContainer as DisposableSingletonContainer).fetchInstance<string>(EnvironmentVariableConstants.TempCheckPointingPath);
@@ -150,6 +152,8 @@ async function checkpointHandler(job: Job<IPageInfo>, token?: string, abortSigna
         abortSignal.throwIfAborted();
         return;
     }
+    console.log(`[PageDump] Checkpoint for page ${job.data.pageKey} in ${Date.now() - resetAbleTime} ms.`);
+    resetAbleTime = Date.now();
 
     dumpPageElementsToSqlite(job.data, job.data.pageKey, pageElements, tempCheckPointingPath);
     if (abortSignal?.aborted) {
@@ -157,8 +161,13 @@ async function checkpointHandler(job: Job<IPageInfo>, token?: string, abortSigna
         abortSignal.throwIfAborted();
         return;
     }
+    console.log(`[SQLDump] Checkpoint for page ${job.data.pageKey} in ${Date.now() - resetAbleTime} ms.`);
+    resetAbleTime = Date.now();
 
     await page.purgePage();//Last thing to do if everything else is successful to ensure we don't lose data if process crashes midway
+    console.log(`[PagePurge] Checkpoint for page ${job.data.pageKey} in ${Date.now() - resetAbleTime} ms.`);
+
+    console.log(`[Total] Checkpoint for page ${job.data.pageKey} completed successfully in ${Date.now() - startTime} ms.`);
 }
 
 async function appStartUp(rootRouter: IRouter, DIContainer: DisposableSingletonContainer, applicationBuilder: ApplicationBuilder) {

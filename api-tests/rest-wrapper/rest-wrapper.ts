@@ -51,10 +51,10 @@ async function initializeGridScale(DIContainer: DisposableSingletonContainer) {
     const parseRedisConnectionString = (connectionString: string) => parseURL(connectionString);
     const metaConnectionInjector = () => IORedisClientPool.IORedisClientClusterFactory([redisMetaConnectionString], IORedis as any, Cluster as any, parseRedisConnectionString);
     const dataConnectionInjector = () => IORedisClientPool.IORedisClientClusterFactory([redisDataConnectionString], IORedis as any, Cluster as any, parseRedisConnectionString);
-    const redisPoolDriver = DIContainer.createInstance<IRedisClientPool>(DIConstants.RedisClientPool, IORedisClientPool, [metaConnectionInjector]);
+    const redisPoolDriver = DIContainer.createInstance<IRedisClientPool>(DIConstants.RedisClientPool, IORedisClientPool, [metaConnectionInjector, 100]);
     const redisDriver = DIContainer.createInstance<RDriver>(DIConstants.RDriver, RDriver, [redisPoolDriver, timeToleranceInMs]);
     await redisDriver.initialize();
-    const dataRedisPoolDriver = DIContainer.createInstance<IRedisClientPool>(DIConstants.DataRedisClientPool, IORedisClientPool, [dataConnectionInjector]);
+    const dataRedisPoolDriver = DIContainer.createInstance<IRedisClientPool>(DIConstants.DataRedisClientPool, IORedisClientPool, [dataConnectionInjector, 100]);
     const dataRedisDriver = DIContainer.createInstance<RDriver>(DIConstants.DataRDriver, RDriver, [dataRedisPoolDriver, timeToleranceInMs]);
     await dataRedisDriver.initialize();
     const queName = env.getStringOrDefault(EnvironmentVariableConstants.DistributionQueueName, "distribution_queue");
@@ -75,7 +75,7 @@ async function initializeGridScale(DIContainer: DisposableSingletonContainer) {
                 lifo: false,
                 jobId: Buffer.from(pageInfo.pageKey, "utf8").toString("base64url"), // no colon,
                 removeOnComplete: true,
-                delay: 10000 // Adding a delay to ensure that the page turnover process is completed before the job is picked up by any worker. This is to avoid potential race conditions.
+                //delay: 10000 // Adding a delay to ensure that the page turnover process is completed before the job is picked up by any worker. This is to avoid potential race conditions.
             } as JobsOptions
         }));
         await checkpointQueue.queue.addBulk(jobsToPublish);

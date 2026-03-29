@@ -60,10 +60,11 @@ services:
       TIME_TOLERANCE_IN_MS: "60000" # 1 minute
       TIME_WINDOW_IN_MS: "1200000" # 20 minutes
       SIZE_WINDOW_IN_BYTES: "314572800" # 300mb
-      MAX_PAGES_IN_BOOK: "3"
+      MAX_PAGES_IN_BOOK: "2"
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel:4318
       OTEL_TRACES_EXPORTER: otlp
       OTEL_METRICS_EXPORTER: otlp
+      OTEL_METRIC_EXPORT_INTERVAL: "5000"
       OTEL_SERVICE_NAME: rest-wrapper
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:8081/health/liveliness" ]
@@ -91,6 +92,7 @@ services:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel:4318
       OTEL_TRACES_EXPORTER: otlp
       OTEL_METRICS_EXPORTER: otlp
+      OTEL_METRIC_EXPORT_INTERVAL: "5000"
       OTEL_SERVICE_NAME: hdfs-sqlite-checkpointer
       TEMP_CHECKPOINTING_PATH: /checkpoints
     volumes:
