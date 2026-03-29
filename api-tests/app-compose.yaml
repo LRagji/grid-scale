@@ -18,7 +18,6 @@ services:
       - ./data/otel/:/data/ # attach the PV here (paths inside docker)
       - ./config/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards
       - ./config/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
-      - ./config/grafana/grid-scale-1772977878374.json:/etc/grafana/provisioning/dashboards/grid-scale.json
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:3000/api/health" ]
       interval: 10s
