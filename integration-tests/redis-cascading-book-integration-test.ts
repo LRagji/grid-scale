@@ -112,8 +112,9 @@ describe(`RedisCascadingBook Integration with ${process.env.REDIS_DRIVER}`, () =
         }
     }
 
-    function makeElement(group: string, rank: number, value: number): IDimensionalElement {
+    function makeElement(group: string, rank: number, value: number, globalIdentityHash = `${group}:${rank}`): IDimensionalElement {
         return {
+            globalIdentityHash,
             dim: { group, rank, sensor: group },
             pld: { value }
         };
@@ -239,12 +240,12 @@ describe(`RedisCascadingBook Integration with ${process.env.REDIS_DRIVER}`, () =
             assert.equal(byGroup["g3"], 303);
         });
 
-        it("keeps latest value across pages for same dimension hash while still trimming by capacity", async () => {
+        it("keeps latest value across pages for same globalIdentityHash while still trimming by capacity", async () => {
             const book = await createBook({ totalPageCapacity: 2, pageSizeLimitInBytes: 1, sizeEstimator: () => 1 });
 
-            await book.upsertElements([makeElement("same", 5, 1)]);
-            await book.upsertElements([makeElement("same", 5, 2)]);
-            await book.upsertElements([makeElement("same", 5, 3)]);
+            await book.upsertElements([makeElement("same", 5, 1, "same-sensor")]);
+            await book.upsertElements([makeElement("same", 5, 2, "same-sensor")]);
+            await book.upsertElements([makeElement("same", 5, 3, "same-sensor")]);
 
             const result = await book.queryByRank(["same"], 0, 100, 10);
 

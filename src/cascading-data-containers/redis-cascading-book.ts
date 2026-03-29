@@ -32,8 +32,7 @@ export class RedisCascadingBook implements IBook {
         //Private members
         private readonly redisDriver: IRDriver,
         private readonly sizeEstimator: (element: IDimensionalElement[]) => number = (element: IDimensionalElement[]) => 1,
-        private readonly keyBuilder: IKeyBuilder = new RKeyBuilder(),
-        private readonly hashFunction: (element: IDimensionalElement) => string = Utilities.hashElement
+        private readonly keyBuilder: IKeyBuilder = new RKeyBuilder()
     ) {
         if (this.totalPageCapacity <= 0 || this.totalPageCapacity > Utilities.u48In3) {
             throw new Error("Total page capacity must be between 1 and " + Utilities.u48In3 + ". Currently, it is set to " + this.totalPageCapacity + " pages.");
@@ -129,10 +128,10 @@ export class RedisCascadingBook implements IBook {
 
             const hashedElements = new Map<string, IDimensionalElement[]>();
             for (const element of pageResult) {
-                const hash = this.hashFunction(element);
-                const clashingElements = hashedElements.get(hash) ?? [];
-                clashingElements.push(element);
-                hashedElements.set(hash, clashingElements);
+                //const hash = this.hashFunction(element);
+                // const clashingElements = hashedElements.get(hash) ?? [];
+                // clashingElements.push(element);
+                // hashedElements.set(hash, clashingElements);
             }
             returnObject.set(index, hashedElements);
         }
@@ -235,7 +234,8 @@ export class RedisCascadingBook implements IBook {
         return { newPage, trimmedPages };
     }
 
-    private async parallelQueryPages(rankedPages: IPageInfo[], deDuplicatedGroupKeys: string[], startInclusiveRank: number, endExclusiveRank: number, maxElementsPerGroup: number): Promise<Map<number, Map<string, IDimensionalElement[]>>> {
+    private async parallelQueryPages(rankedPages: IPageInfo[], deDuplicatedGroupKeys: string[], startInclusiveRank: number, endExclusiveRank: number, maxElementsPerGroup: number)
+        : Promise<Map<number, Map<string | null, IDimensionalElement[]>>> {
         const pageQueriesHandles: Array<Promise<IDimensionalElement[]>> = rankedPages.map(async (pageInfo) => {
             const page = await this.fetchPageByKey(pageInfo);
             if (page === null) {
@@ -245,18 +245,18 @@ export class RedisCascadingBook implements IBook {
         });
 
         const pageResults = await Promise.all(pageQueriesHandles);
-        const returnObject = new Map<number, Map<string, IDimensionalElement[]>>();
+        const returnObject = new Map<number, Map<string | null, IDimensionalElement[]>>();
 
         for (const [index, pageResult] of pageResults.entries()) {
             if (pageResult.length === 0) {
                 continue;
             }
-            const hashedElements = new Map<string, IDimensionalElement[]>();
+            const hashedElements = new Map<string | null, IDimensionalElement[]>();
             for (const element of pageResult) {
-                const hash = this.hashFunction(element);
-                const clashingElement = hashedElements.get(hash) ?? [];
+                //Null hash has a special meaning here, it means that the element does not have a globalIdentityHash and thus cannot be reliably deduplicated, so we will group all elements without globalIdentityHash under the same null hash key and rely on the query filters to filter them down.
+                const clashingElement = hashedElements.get(element.globalIdentityHash) ?? [];
                 clashingElement.push(element);
-                hashedElements.set(hash, clashingElement);
+                hashedElements.set(element.globalIdentityHash, clashingElement);
             }
             returnObject.set(index, hashedElements);
         }
@@ -264,12 +264,12 @@ export class RedisCascadingBook implements IBook {
         return returnObject;
     }
 
-    private aggregateRankedElements(pageResults: Map<number, Map<string, IDimensionalElement[]>>): IDimensionalElement[] {
+    private aggregateRankedElements(pageResults: Map<number, Map<string | null, IDimensionalElement[]>>): IDimensionalElement[] {
         const result: IDimensionalElement[] = [];
-        const valuesMapArray = Array.from(pageResults.values())
+        const allHashes = Array.from(pageResults.values())
             .map(hashedElementsMap => Array.from(hashedElementsMap.keys()))
             .flat();
-        const deDuplicatedHashKeys = new Set<string>(valuesMapArray);
+        const deDuplicatedHashKeys = new Set<string | null>(allHashes);
         const sortedRanks = Array.from(pageResults.keys()).sort((a, b) => a - b);
 
         for (const hashKey of deDuplicatedHashKeys) {
@@ -277,7 +277,13 @@ export class RedisCascadingBook implements IBook {
             for (const pageRank of sortedRanks) {
                 const elements = pageResults.get(pageRank)?.get(hashKey) ?? [];
                 if (elements.length > 0) {
-                    tempHashElements = elements;
+                    if (hashKey === null) {
+                        // If globalIdentityHash is not present, we cannot be sure about deduplication, so we will include all elements with the same hash (which is basically all elements without globalIdentityHash) and rely on the query filters to filter them down.
+                        tempHashElements.push(...elements);
+                    }
+                    else {
+                        tempHashElements = elements;
+                    }
                 }
             }
             if (tempHashElements.length > 0) {

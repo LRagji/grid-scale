@@ -12,10 +12,12 @@ const VALID_ACTIVE_TIME_MS = 5_000;
 const VALID_PAGE_TYPE = "test-page";
 
 // ── element fixtures ──────────────────────────────────────────────────────────
-const elemSensorA_v1: IDimensionalElement = { dim: { sensor: "A" }, pld: { value: 1 } };
-const elemSensorA_v2: IDimensionalElement = { dim: { sensor: "A" }, pld: { value: 2 } };
-const elemSensorB: IDimensionalElement = { dim: { sensor: "B" }, pld: { value: 3 } };
-const elemSensorC: IDimensionalElement = { dim: { sensor: "C" }, pld: { value: 4 } };
+const elemSensorA_v1: IDimensionalElement = { globalIdentityHash: "sensor-a", dim: { sensor: "A" }, pld: { value: 1 } };
+const elemSensorA_v2: IDimensionalElement = { globalIdentityHash: "sensor-a", dim: { sensor: "A" }, pld: { value: 2 } };
+const elemSensorB: IDimensionalElement = { globalIdentityHash: "sensor-b", dim: { sensor: "B" }, pld: { value: 3 } };
+const elemSensorC: IDimensionalElement = { globalIdentityHash: "sensor-c", dim: { sensor: "C" }, pld: { value: 4 } };
+const elemAnonymousA_v1: IDimensionalElement = { dim: { sensor: "anon-A" }, pld: { value: 11 } };
+const elemAnonymousA_v2: IDimensionalElement = { dim: { sensor: "anon-A" }, pld: { value: 12 } };
 
 // ── type aliases ──────────────────────────────────────────────────────────────
 type DriverStub = IRDriver & {
@@ -69,7 +71,6 @@ function makeBook(overrides: Partial<{
     keyBuilder: IKeyBuilder;
     pageFactory: (pageInfo: IPageInfo, pageType: string) => Promise<PageStub>;
     pagesReconcileCallback: (newPageInfo: IPageInfo | undefined, evictedPageInfo: IPageInfo[]) => Promise<void>;
-    hashFunction: (element: IDimensionalElement) => string;
 }> = {}) {
     const redisDriver = overrides.redisDriver ?? makeDriver();
     const pagesReconcileCallback = overrides.pagesReconcileCallback
@@ -79,14 +80,9 @@ function makeBook(overrides: Partial<{
     const pageFactory = overrides.pageFactory
         ?? sinon.stub<[IPageInfo, string], Promise<PageStub>>().resolves(dummyPage);
 
-    const book = overrides.hashFunction
-        ? new RedisCascadingBook(
-            VALID_CAPACITY, VALID_PAGE_SIZE_BYTES, VALID_ACTIVE_TIME_MS, VALID_PAGE_TYPE,
-            pageFactory, pagesReconcileCallback, redisDriver, () => 1, keyBuilder,
-            overrides.hashFunction)
-        : new RedisCascadingBook(
-            VALID_CAPACITY, VALID_PAGE_SIZE_BYTES, VALID_ACTIVE_TIME_MS, VALID_PAGE_TYPE,
-            pageFactory, pagesReconcileCallback, redisDriver, () => 1, keyBuilder);
+    const book = new RedisCascadingBook(
+        VALID_CAPACITY, VALID_PAGE_SIZE_BYTES, VALID_ACTIVE_TIME_MS, VALID_PAGE_TYPE,
+        pageFactory, pagesReconcileCallback, redisDriver, () => 1, keyBuilder);
 
     return { book, redisDriver, pageFactory: pageFactory as sinon.SinonStub };
 }
@@ -272,8 +268,7 @@ describe("RedisCascadingBook.queryByRank", () => {
 
     // ── MULTI-PAGE AGGREGATION ────────────────────────────────────────────────
 
-    it("returns distinct elements from multiple pages when their dim hashes do not overlap", async () => {
-        // elemSensorA and elemSensorB have different dim hashes — both must appear in result
+    it("returns distinct elements from multiple pages when their global identity hashes do not overlap", async () => {
         const page1 = makePage(); page1.fetchElementsByRange.resolves([elemSensorA_v1]);
         const page2 = makePage(); page2.fetchElementsByRange.resolves([elemSensorB]);
         const pageFactory = sinon.stub<[IPageInfo, string], Promise<PageStub>>();
@@ -287,9 +282,7 @@ describe("RedisCascadingBook.queryByRank", () => {
         assert.deepEqual(sortElements(result), sortElements([elemSensorA_v1, elemSensorB]));
     });
 
-    it("later page value replaces earlier page value when both share the same dimension hash (update scenario)", async () => {
-        // elemSensorA_v1 and elemSensorA_v2 share dim { sensor: "A" } → identical hash
-        // page2 is chronologically later so its value must win
+    it("later page value replaces earlier page value when both share the same globalIdentityHash", async () => {
         const page1 = makePage(); page1.fetchElementsByRange.resolves([elemSensorA_v1]);
         const page2 = makePage(); page2.fetchElementsByRange.resolves([elemSensorA_v2]);
         const pageFactory = sinon.stub<[IPageInfo, string], Promise<PageStub>>();
@@ -336,7 +329,7 @@ describe("RedisCascadingBook.queryByRank", () => {
     it("correctly resolves three-page chain: mixed updates and new dimensions across all pages", async () => {
         // page1: A_v1, B_v1   page2: A_v2, C   page3: B_updated
         // Expected: A from page2, B from page3, C from page2
-        const elemB_updated: IDimensionalElement = { dim: { sensor: "B" }, pld: { value: 99 } };
+        const elemB_updated: IDimensionalElement = { globalIdentityHash: "sensor-b", dim: { sensor: "B" }, pld: { value: 99 } };
         const page1 = makePage(); page1.fetchElementsByRange.resolves([elemSensorA_v1, elemSensorB]);
         const page2 = makePage(); page2.fetchElementsByRange.resolves([elemSensorA_v2, elemSensorC]);
         const page3 = makePage(); page3.fetchElementsByRange.resolves([elemB_updated]);
@@ -371,23 +364,18 @@ describe("RedisCascadingBook.queryByRank", () => {
         assert.equal(page2.fetchElementsByRange.calledOnceWithExactly(["gr-x", "gr-y"], 0, 10, 1000), true);
     });
 
-    it("replaces the entire element group when a later page returns a different-sized array for the same hash", async () => {
-        // Two elements on page1 share the same hash because we inject a custom hashFunction.
-        // page2 returns only one element for that same hash — the whole group is replaced.
-        const collidingHash = (_el: IDimensionalElement) => "collide";
-
-        const page1 = makePage(); page1.fetchElementsByRange.resolves([elemSensorA_v1, elemSensorB]); // 2 elems → "collide"
-        const page2 = makePage(); page2.fetchElementsByRange.resolves([elemSensorC]);                  // 1 elem  → "collide"
+    it("treats missing globalIdentityHash as a single dedupe bucket where later pages win", async () => {
+        const page1 = makePage(); page1.fetchElementsByRange.resolves([elemAnonymousA_v1, elemSensorB]);
+        const page2 = makePage(); page2.fetchElementsByRange.resolves([elemAnonymousA_v2, elemSensorC]);
         const pageFactory = sinon.stub<[IPageInfo, string], Promise<PageStub>>();
         pageFactory.onFirstCall().resolves(page1);
         pageFactory.onSecondCall().resolves(page2);
-        const { book, redisDriver } = makeBook({ pageFactory, hashFunction: collidingHash });
+        const { book, redisDriver } = makeBook({ pageFactory });
         stubListPages(redisDriver, [makePageInfo("pk1", 1000), makePageInfo("pk2", 2000)]);
 
         const result = await book.queryByRank(["g1"], 0, 10);
 
-        // page2's single element takes over the entire bucket for "collide"
-        assert.deepEqual(result, [elemSensorC]);
+        assert.deepEqual(sortElements(result), sortElements([elemAnonymousA_v2, elemSensorB, elemSensorC]));
     });
 
     // ── NULL / SKIPPED PAGES ──────────────────────────────────────────────────
