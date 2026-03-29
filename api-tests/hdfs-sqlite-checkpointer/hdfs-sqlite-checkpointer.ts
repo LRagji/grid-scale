@@ -37,14 +37,18 @@ async function initializeGridScale(DIContainer: DisposableSingletonContainer) {
     const tempCheckPointingPath = env.getStringOrDefault(EnvironmentVariableConstants.TempCheckPointingPath, tmpdir());
     DIContainer.createInstanceWithoutConstructor(EnvironmentVariableConstants.TempCheckPointingPath, () => tempCheckPointingPath);
     DIContainer.createInstanceWithoutConstructor(EnvironmentVariableConstants.TimeToleranceInMs, () => timeToleranceInMs);
-    const redisConnectionString = env.getStringOrDefault(EnvironmentVariableConstants.RedisConnectionString, defaultRedisConnectionString);
+    const fallbackRedisConnectionString = env.getStringOrDefault(EnvironmentVariableConstants.RedisConnectionString, defaultRedisConnectionString);
+    const redisMetaConnectionString = env.getStringOrDefault(EnvironmentVariableConstants.RedisMetaConnectionString, fallbackRedisConnectionString);
+    const redisDataConnectionString = env.getStringOrDefault(EnvironmentVariableConstants.RedisDataConnectionString, redisMetaConnectionString);
     const parseRedisConnectionString = (connectionString: string) => parseURL(connectionString);
-    const connectionInjector = () => IORedisClientPool.IORedisClientClusterFactory([redisConnectionString], IORedis as any, Cluster as any, parseRedisConnectionString);
-    const redisPoolDriver = DIContainer.createInstance<IRedisClientPool>(DIConstants.RedisClientPool, IORedisClientPool, [connectionInjector]);
-    const redisDriver = DIContainer.createInstance<RDriver>(DIConstants.RDriver, RDriver, [redisPoolDriver, timeToleranceInMs]);
-    await redisDriver.initialize();
+    const metaConnectionInjector = () => IORedisClientPool.IORedisClientClusterFactory([redisMetaConnectionString], IORedis as any, Cluster as any, parseRedisConnectionString);
+    const dataConnectionInjector = () => IORedisClientPool.IORedisClientClusterFactory([redisDataConnectionString], IORedis as any, Cluster as any, parseRedisConnectionString);
+    const redisPoolDriver = DIContainer.createInstance<IRedisClientPool>(DIConstants.RedisClientPool, IORedisClientPool, [metaConnectionInjector]);
+    const dataRedisPoolDriver = DIContainer.createInstance<IRedisClientPool>(DIConstants.DataRedisClientPool, IORedisClientPool, [dataConnectionInjector]);
+    const dataRedisDriver = DIContainer.createInstance<RDriver>(DIConstants.DataRDriver, RDriver, [dataRedisPoolDriver, timeToleranceInMs]);
+    await dataRedisDriver.initialize();
     const queName = env.getStringOrDefault(EnvironmentVariableConstants.DistributionQueueName, "distribution_queue");
-    const queConnectionParams = parseRedisConnectionString(redisConnectionString);
+    const queConnectionParams = parseRedisConnectionString(redisMetaConnectionString);
     const context = { DIContainer };
     DIContainer.createInstance<DisposableWorker>(DIConstants.CheckpointQueue, DisposableWorker, [queName, checkpointHandler.bind(context), {
         connection: queConnectionParams,
@@ -136,7 +140,7 @@ function dumpPageElementsToSqlite(pageInfo: IPageInfo, pageKey: string, pageElem
 
 async function checkpointHandler(job: Job<IPageInfo>, token?: string, abortSignal?: AbortSignal): Promise<void> {
 
-    const driver = (this.DIContainer as DisposableSingletonContainer).fetchInstance<RDriver>(DIConstants.RDriver);
+    const driver = (this.DIContainer as DisposableSingletonContainer).fetchInstance<RDriver>(DIConstants.DataRDriver);
     const timeToleranceInMs = (this.DIContainer as DisposableSingletonContainer).fetchInstance<number>(EnvironmentVariableConstants.TimeToleranceInMs);
     const tempCheckPointingPath = (this.DIContainer as DisposableSingletonContainer).fetchInstance<string>(EnvironmentVariableConstants.TempCheckPointingPath);
     const page = new RedisTsPage(job.data, driver, undefined, timeToleranceInMs * 2);

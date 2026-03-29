@@ -24,12 +24,23 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-  redis:
+  redis-meta:
     image: redis:7-alpine
     mem_limit: 1g
     cpus: "1.0"
     ports:
       - "6379:6379"
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+  redis-data:
+    image: redis:7-alpine
+    mem_limit: 1g
+    cpus: "1.0"
+    ports:
+      - "6380:6379"
     healthcheck:
       test: [ "CMD", "redis-cli", "ping" ]
       interval: 5s
@@ -45,7 +56,8 @@ services:
       - "8080:8080"
       - "8081:8081"
     environment:
-      REDIS_CONNECTION_STRING: redis://redis:6379
+      REDIS_META_CONNECTION_STRING: redis://redis-meta:6379
+      REDIS_DATA_CONNECTION_STRING: redis://redis-data:6379
       TIME_TOLERANCE_IN_MS: "60000" # 1 minute
       TIME_WINDOW_IN_MS: "1200000" # 20 minutes
       SIZE_WINDOW_IN_BYTES: "314572800" # 300mb
@@ -60,7 +72,7 @@ services:
       timeout: 3s
       retries: 5
     depends_on:
-      redis:
+      redis-meta:
         condition: service_healthy
       otel:
         condition: service_healthy
@@ -74,7 +86,8 @@ services:
       - "8082:8080"
       - "8083:8081"
     environment:
-      REDIS_CONNECTION_STRING: redis://redis:6379
+      REDIS_META_CONNECTION_STRING: redis://redis-meta:6379
+      REDIS_DATA_CONNECTION_STRING: redis://redis-data:6379
       TIME_TOLERANCE_IN_MS: "60000"
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel:4318
       OTEL_TRACES_EXPORTER: otlp
@@ -91,7 +104,7 @@ services:
     depends_on:
       rest-wrapper:
         condition: service_healthy
-      redis:
+      redis-meta:
         condition: service_healthy
       otel:
         condition: service_healthy

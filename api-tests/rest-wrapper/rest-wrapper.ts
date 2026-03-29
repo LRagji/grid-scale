@@ -41,18 +41,24 @@ const defaultRedisConnectionString = "redis://localhost:6379";
 
 async function initializeGridScale(DIContainer: DisposableSingletonContainer) {
     const env = DIContainer.createInstance<EnvironmentVariables>(DIConstants.EnvVars, EnvironmentVariables, []);
-    const redisConnectionString = env.getStringOrDefault(EnvironmentVariableConstants.RedisConnectionString, defaultRedisConnectionString);
+    const fallbackRedisConnectionString = env.getStringOrDefault(EnvironmentVariableConstants.RedisConnectionString, defaultRedisConnectionString);
+    const redisMetaConnectionString = env.getStringOrDefault(EnvironmentVariableConstants.RedisMetaConnectionString, fallbackRedisConnectionString);
+    const redisDataConnectionString = env.getStringOrDefault(EnvironmentVariableConstants.RedisDataConnectionString, redisMetaConnectionString);
     const timeToleranceInMs = parseInt(env.getStringOrDefault(EnvironmentVariableConstants.TimeToleranceInMs, PageWindowDefaults.timeToleranceInMs), 10);
     const timeWindowInMs = parseInt(env.getStringOrDefault(EnvironmentVariableConstants.TimeWindowInMs, PageWindowDefaults.timeWindowInMs), 10);
     const sizeWindowInBytes = parseInt(env.getStringOrDefault(EnvironmentVariableConstants.SizeWindowInBytes, PageWindowDefaults.sizeWindowInBytes), 10);
     const maxPagesInBook = parseInt(env.getStringOrDefault(EnvironmentVariableConstants.MaxPagesInBook, PageWindowDefaults.maxPagesInBook), 10);
     const parseRedisConnectionString = (connectionString: string) => parseURL(connectionString);
-    const connectionInjector = () => IORedisClientPool.IORedisClientClusterFactory([redisConnectionString], IORedis as any, Cluster as any, parseRedisConnectionString);
-    const redisPoolDriver = DIContainer.createInstance<IRedisClientPool>(DIConstants.RedisClientPool, IORedisClientPool, [connectionInjector]);
+    const metaConnectionInjector = () => IORedisClientPool.IORedisClientClusterFactory([redisMetaConnectionString], IORedis as any, Cluster as any, parseRedisConnectionString);
+    const dataConnectionInjector = () => IORedisClientPool.IORedisClientClusterFactory([redisDataConnectionString], IORedis as any, Cluster as any, parseRedisConnectionString);
+    const redisPoolDriver = DIContainer.createInstance<IRedisClientPool>(DIConstants.RedisClientPool, IORedisClientPool, [metaConnectionInjector]);
     const redisDriver = DIContainer.createInstance<RDriver>(DIConstants.RDriver, RDriver, [redisPoolDriver, timeToleranceInMs]);
     await redisDriver.initialize();
+    const dataRedisPoolDriver = DIContainer.createInstance<IRedisClientPool>(DIConstants.DataRedisClientPool, IORedisClientPool, [dataConnectionInjector]);
+    const dataRedisDriver = DIContainer.createInstance<RDriver>(DIConstants.DataRDriver, RDriver, [dataRedisPoolDriver, timeToleranceInMs]);
+    await dataRedisDriver.initialize();
     const queName = env.getStringOrDefault(EnvironmentVariableConstants.DistributionQueueName, "distribution_queue");
-    const queConnectionParams = parseRedisConnectionString(redisConnectionString);
+    const queConnectionParams = parseRedisConnectionString(redisMetaConnectionString);
     const checkpointQueue = DIContainer.createInstance<DisposableQue>(DIConstants.CheckpointQueue, DisposableQue, [queName, {
         connection: queConnectionParams,
         telemetry: new BullMQOtel({
@@ -77,7 +83,7 @@ async function initializeGridScale(DIContainer: DisposableSingletonContainer) {
     };
     const keyBuilder = new RKeyBuilder();
     const pageFactory = async (pageInfo: IPageInfo, pageType: string): Promise<RedisTsPage> => {
-        return new RedisTsPage(pageInfo, redisDriver, keyBuilder);
+        return new RedisTsPage(pageInfo, dataRedisDriver, keyBuilder);
     };
     DIContainer.createInstance<RedisCascadingBook>(DIConstants.RedisCascadingBook, RedisCascadingBook, [
         maxPagesInBook,

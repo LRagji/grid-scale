@@ -2,13 +2,17 @@
 export class DIConstants {
     public static readonly EnvVars = "EnvVars";
     public static readonly RedisClientPool = "RedisClientPool";
+    public static readonly DataRedisClientPool = "DataRedisClientPool";
     public static readonly RedisCascadingBook = "RedisCascadingBook";
     public static readonly CheckpointQueue = "CheckpointQueue";
     public static readonly RDriver = "RDriver";
+    public static readonly DataRDriver = "DataRDriver";
 }
 
 export class EnvironmentVariableConstants {
     public static readonly RedisConnectionString = "REDIS_CONNECTION_STRING";
+    public static readonly RedisMetaConnectionString = "REDIS_META_CONNECTION_STRING";
+    public static readonly RedisDataConnectionString = "REDIS_DATA_CONNECTION_STRING";
     public static readonly TimeToleranceInMs = "TIME_TOLERANCE_IN_MS";
     public static readonly TimeWindowInMs = "TIME_WINDOW_IN_MS";
     public static readonly SizeWindowInBytes = "SIZE_WINDOW_IN_BYTES";
