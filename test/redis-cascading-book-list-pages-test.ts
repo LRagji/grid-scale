@@ -47,7 +47,8 @@ function makePage(): PageStub {
         upsertElements: sinon.stub().resolves(),
         queryElementsByDimensions: sinon.stub().resolves([]),
         dumpPage: sinon.stub().resolves([]),
-        fetchElementsByRange: sinon.stub().resolves([])
+        fetchElementsByRange: sinon.stub().resolves([]),
+        purgePage: sinon.stub().resolves()
     } as unknown as PageStub;
 }
 

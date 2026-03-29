@@ -14,6 +14,8 @@ export interface IPage {
 
     dumpPage(): Promise<IDimensionalElement[]>;
 
+    purgePage(expireAfterInMilliseconds: number): Promise<void>
+
     //TODO: Remove this and replace with queryElementsByDimensions once the latter is implemented, but we keep it for now to ensure that functionality is not broken so a shortcut until full query parser is implemented.
     fetchElementsByRange(groupKeys: string[], startInclusiveRank: number, endExclusiveRank: number, maxElementsPerGroup: number): Promise<IDimensionalElement[]>;
 

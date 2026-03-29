@@ -88,6 +88,21 @@ class RedisIntegrationPage implements IPage {
         }
     }
 
+    public async purgePage(expireAfterInMilliseconds: number): Promise<void> {
+        const token = this.pool.generateUniqueToken("PagePurge");
+        try {
+            await this.pool.acquire(token);
+            const groups = await this.pool.run(token, ["SMEMBERS", this.redisGroupIndexKey()]) as string[];
+            for (const groupKey of groups) {
+                await this.pool.run(token, ["PEXPIRE", this.redisGroupKey(groupKey), expireAfterInMilliseconds.toString()]);
+            }
+            await this.pool.run(token, ["PEXPIRE", this.redisGroupIndexKey(), expireAfterInMilliseconds.toString()]);
+        }
+        finally {
+            await this.pool.release(token);
+        }
+    }
+
     private redisGroupKey(groupKey: string): string {
         return `${this.info.pageKey}:group:${groupKey}`;
     }
