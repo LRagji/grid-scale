@@ -1,8 +1,9 @@
+import { IKeyBuilder } from "../interfaces/i-key-builder";
 import { IPage } from "../interfaces/i-page";
 import { IPageInfo } from "../interfaces/i-page-info";
 import { IRDriver } from "../interfaces/i-r-driver";
 import { RedisTsPage } from "../pages/redis-ts-page";
-import { IKeyBuilder, RKeyBuilder } from "../redis-wal/r-key-builder";
+import { RKeyBuilder } from "../redis-wal/r-key-builder";
 
 export class PageFactory {
 

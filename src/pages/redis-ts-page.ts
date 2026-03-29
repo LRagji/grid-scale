@@ -1,9 +1,10 @@
 import { IDimensionalElement } from "../interfaces/i-dimensional-element.js";
 import { IDimensionalQuery } from "../interfaces/i-dimensional-query.js";
+import { IKeyBuilder } from "../interfaces/i-key-builder.js";
 import { IPageInfo } from "../interfaces/i-page-info.js";
 import { IPage } from "../interfaces/i-page.js";
 import { IRDriver, RedisKeywords } from "../interfaces/i-r-driver.js";
-import { IKeyBuilder, RKeyBuilder } from "../redis-wal/r-key-builder.js";
+import { RKeyBuilder } from "../redis-wal/r-key-builder.js";
 import { Utilities } from "../utilities.js";
 
 export class TimeseriesSample implements IDimensionalElement {
