@@ -1,6 +1,5 @@
 
 import { RKeyBuilder } from './redis-wal/r-key-builder.js';
-import { ISortedElement } from './interfaces/i-sorted-element.js';
 import { RDriver } from './redis-wal/r-driver.js';
 import { IRDriver } from './interfaces/i-r-driver.js';
 import { IPage } from './interfaces/i-page.js';
@@ -23,7 +22,6 @@ export {
 
 //Types to export
 export type {
-    ISortedElement,
     IKeyBuilder,
     IRDriver,
     IPage,
