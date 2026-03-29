@@ -6,111 +6,10 @@ import { createClient } from "redis";
 import Redis, { Cluster } from "ioredis";
 import { IRedisClientPool, IORedisClientPool, RedisClientPool } from "redis-abstraction";
 
-import { IDimensionalElement, IPage, IPageInfo, RedisCascadingBook, RDriver, RKeyBuilder } from "../src/index.js";
+import { IPageInfo, RedisCascadingBook, RDriver, RKeyBuilder } from "../src/index.js";
+import { RedisTsPage, TimeseriesSample } from "../src/pages/redis-ts-page.js";
 import { NodeRedisTestDriver } from "./node-redis-test-driver.js";
 
-class RedisIntegrationPage implements IPage {
-    public readonly pageType: string;
-
-    constructor(
-        public readonly info: IPageInfo,
-        pageType: string,
-        private readonly pool: IRedisClientPool
-    ) {
-        this.pageType = pageType;
-    }
-
-    public async upsertElements(elements: IDimensionalElement[], _sequenceStart: number): Promise<void> {
-        const token = this.pool.generateUniqueToken("PageUpsert");
-        try {
-            await this.pool.acquire(token);
-            for (const element of elements) {
-                const groupKey = String(element.dim.group);
-                const rank = Number(element.dim.rank);
-                const redisGroupKey = this.redisGroupKey(groupKey);
-                const serialized = JSON.stringify(element);
-                await this.pool.run(token, ["ZADD", redisGroupKey, rank.toString(), serialized]);
-                await this.pool.run(token, ["SADD", this.redisGroupIndexKey(), groupKey]);
-            }
-        }
-        finally {
-            await this.pool.release(token);
-        }
-    }
-
-    public async queryElementsByDimensions(): Promise<IDimensionalElement[]> {
-        throw new Error("Not implemented for this integration page. Use fetchElementsByRange.");
-    }
-
-    public async dumpPage(): Promise<IDimensionalElement[]> {
-        const token = this.pool.generateUniqueToken("PageDump");
-        try {
-            await this.pool.acquire(token);
-            const groups = await this.pool.run(token, ["SMEMBERS", this.redisGroupIndexKey()]) as string[];
-            const results: IDimensionalElement[] = [];
-            for (const groupKey of groups) {
-                const values = await this.pool.run(token, ["ZRANGE", this.redisGroupKey(groupKey), "0", "-1"]) as string[];
-                for (const serialized of values) {
-                    results.push(JSON.parse(serialized) as IDimensionalElement);
-                }
-            }
-            return results;
-        }
-        finally {
-            await this.pool.release(token);
-        }
-    }
-
-    public async fetchElementsByRange(groupKeys: string[], startInclusiveRank: number, endExclusiveRank: number, maxElementsPerGroup: number): Promise<IDimensionalElement[]> {
-        const token = this.pool.generateUniqueToken("PageFetchByRange");
-        try {
-            await this.pool.acquire(token);
-            const results: IDimensionalElement[] = [];
-            for (const groupKey of groupKeys) {
-                const redisGroupKey = this.redisGroupKey(groupKey);
-                const values = await this.pool.run(token, [
-                    "ZRANGEBYSCORE",
-                    redisGroupKey,
-                    startInclusiveRank.toString(),
-                    `(${endExclusiveRank.toString()}`,
-                    "LIMIT",
-                    "0",
-                    maxElementsPerGroup.toString()
-                ]) as string[];
-                for (const serialized of values) {
-                    results.push(JSON.parse(serialized) as IDimensionalElement);
-                }
-            }
-            return results;
-        }
-        finally {
-            await this.pool.release(token);
-        }
-    }
-
-    public async purgePage(expireAfterInMilliseconds: number): Promise<void> {
-        const token = this.pool.generateUniqueToken("PagePurge");
-        try {
-            await this.pool.acquire(token);
-            const groups = await this.pool.run(token, ["SMEMBERS", this.redisGroupIndexKey()]) as string[];
-            for (const groupKey of groups) {
-                await this.pool.run(token, ["PEXPIRE", this.redisGroupKey(groupKey), expireAfterInMilliseconds.toString()]);
-            }
-            await this.pool.run(token, ["PEXPIRE", this.redisGroupIndexKey(), expireAfterInMilliseconds.toString()]);
-        }
-        finally {
-            await this.pool.release(token);
-        }
-    }
-
-    private redisGroupKey(groupKey: string): string {
-        return `${this.info.pageKey}:group:${groupKey}`;
-    }
-
-    private redisGroupIndexKey(): string {
-        return `${this.info.pageKey}:groups`;
-    }
-}
 
 describe(`RedisCascadingBook Integration with ${process.env.REDIS_DRIVER}`, () => {
     let container: StartedTestContainer;
@@ -127,18 +26,14 @@ describe(`RedisCascadingBook Integration with ${process.env.REDIS_DRIVER}`, () =
         }
     }
 
-    function makeElement(group: string, rank: number, value: number, globalIdentityHash = `${group}:${rank}`): IDimensionalElement {
-        return {
-            globalIdentityHash,
-            dim: { group, rank, sensor: group },
-            pld: { value }
-        };
+    function makeElement(tag: string, time: number, value: number): TimeseriesSample {
+        return new TimeseriesSample(tag, time, { value });
     }
 
     async function createBook(params: {
         totalPageCapacity: number;
         pageSizeLimitInBytes: number;
-        sizeEstimator?: (elements: IDimensionalElement[]) => number;
+        sizeEstimator?: (elements: TimeseriesSample[]) => number;
         keyPrefix?: string;
     }): Promise<RedisCascadingBook> {
         const driver = new RDriver(pool, 60_000);
@@ -152,8 +47,8 @@ describe(`RedisCascadingBook Integration with ${process.env.REDIS_DRIVER}`, () =
             params.totalPageCapacity,
             params.pageSizeLimitInBytes,
             120_000,
-            "redis-integration-page",
-            async (pageInfo, pageType) => new RedisIntegrationPage(pageInfo, pageType, pool),
+            "redis-ts-page",
+            async (pageInfo, pageType) => new RedisTsPage(pageInfo, driver, keyBuilder),
             async () => { },
             driver,
             params.sizeEstimator ?? (() => 1),
@@ -245,7 +140,7 @@ describe(`RedisCascadingBook Integration with ${process.env.REDIS_DRIVER}`, () =
             const pages = await book.listPages();
             const result = await book.queryByRank(["g1", "g2", "g3"], 0, 100, 10);
             const byGroup = result.reduce((acc, item) => {
-                acc[String(item.dim.group)] = item.pld.value;
+                acc[String(item.dim.tag)] = item.pld.value;
                 return acc;
             }, {} as Record<string, number>);
 
@@ -258,14 +153,66 @@ describe(`RedisCascadingBook Integration with ${process.env.REDIS_DRIVER}`, () =
         it("keeps latest value across pages for same globalIdentityHash while still trimming by capacity", async () => {
             const book = await createBook({ totalPageCapacity: 2, pageSizeLimitInBytes: 1, sizeEstimator: () => 1 });
 
-            await book.upsertElements([makeElement("same", 5, 1, "same-sensor")]);
-            await book.upsertElements([makeElement("same", 5, 2, "same-sensor")]);
-            await book.upsertElements([makeElement("same", 5, 3, "same-sensor")]);
+            await book.upsertElements([makeElement("same", 5, 1)]);
+            await book.upsertElements([makeElement("same", 5, 2)]);
+            await book.upsertElements([makeElement("same", 5, 3)]);
 
             const result = await book.queryByRank(["same"], 0, 100, 10);
 
             assert.equal(result.length, 1);
             assert.equal(result[0].pld.value, 3);
+        });
+    });
+
+    describe("RedisTsPage-specific scenarios", () => {
+
+        it("dumpPage returns all elements from a page", async () => {
+            const book = await createBook({ totalPageCapacity: 5, pageSizeLimitInBytes: 100 });
+
+            await book.upsertElements([makeElement("sensor-a", 1000, 10)]);
+            await book.upsertElements([makeElement("sensor-a", 2000, 20)]);
+            await book.upsertElements([makeElement("sensor-b", 1500, 15)]);
+
+            const pages = await book.listPages();
+            assert.equal(pages.length, 1);
+
+            // Verify all elements were stored
+            const result = await book.queryByRank(["sensor-a", "sensor-b"], 0, 10000, 100);
+            assert.equal(result.length, 3);
+        });
+
+        it("handles multiple tags correctly with time-based ordering", async () => {
+            const book = await createBook({ totalPageCapacity: 5, pageSizeLimitInBytes: 200, sizeEstimator: () => 1 });
+
+            // Add elements with different tags and times
+            await book.upsertElements([makeElement("temp", 100, 25)]);
+            await book.upsertElements([makeElement("humidity", 100, 55)]);
+            await book.upsertElements([makeElement("temp", 200, 26)]);
+            await book.upsertElements([makeElement("humidity", 200, 56)]);
+
+            const result = await book.queryByRank(["temp", "humidity"], 0, 500, 100);
+
+            assert.equal(result.length, 4);
+            const tempValues = result.filter(e => e.dim.tag === "temp").map(e => e.pld.value).sort((a, b) => a - b);
+            const humidityValues = result.filter(e => e.dim.tag === "humidity").map(e => e.pld.value).sort((a, b) => a - b);
+            assert.deepEqual(tempValues, [25, 26]);
+            assert.deepEqual(humidityValues, [55, 56]);
+        });
+
+        it("correctly orders elements by time within the same tag", async () => {
+            const book = await createBook({ totalPageCapacity: 5, pageSizeLimitInBytes: 100 });
+
+            // Add elements out of chronological order
+            await book.upsertElements([makeElement("sensor-x", 300, 30)]);
+            await book.upsertElements([makeElement("sensor-x", 100, 10)]);
+            await book.upsertElements([makeElement("sensor-x", 200, 20)]);
+
+            // Query should return them ordered by time
+            const result = await book.queryByRank(["sensor-x"], 0, 1000, 100);
+
+            assert.equal(result.length, 3);
+            const values = result.map(e => e.pld.value);
+            assert.deepEqual(values, [10, 20, 30]);
         });
     });
 });
