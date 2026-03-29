@@ -83,7 +83,7 @@ function makeBook(overrides: Partial<{
     const keyBuilder = overrides.keyBuilder ?? makeKeyBuilder();
     const sizeEstimator = overrides.sizeEstimator ?? (() => 50);
 
-    const book = new RedisCascadingBook<PageStub>(
+    const book = new RedisCascadingBook(
         VALID_CAPACITY,
         VALID_PAGE_SIZE_BYTES,
         VALID_ACTIVE_TIME_MS,
@@ -232,7 +232,7 @@ describe("RedisCascadingBook.upsertElements", () => {
         const pageFactory = makePageFactory(page);
         const pagesReconcileCallback = makeReconcileCallback();
         const keyBuilder = makeKeyBuilder();
-        const book = new RedisCascadingBook<PageStub>(
+        const book = new RedisCascadingBook(
             VALID_CAPACITY,
             VALID_PAGE_SIZE_BYTES,
             VALID_ACTIVE_TIME_MS,

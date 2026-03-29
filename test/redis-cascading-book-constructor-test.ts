@@ -37,8 +37,8 @@ function validBook(overrides: Partial<{
     pagesReconcileCallback: (newPageInfo: IPageInfo | undefined, evictedPageInfo: IPageInfo[]) => Promise<void>;
     redisDriver: IRDriver;
     sizeEstimator: (elements: any[]) => number;
-}> = {}): RedisCascadingBook<IPage> {
-    return new RedisCascadingBook<IPage>(
+}> = {}): RedisCascadingBook {
+    return new RedisCascadingBook(
         overrides.totalPageCapacity ?? VALID_CAPACITY,
         overrides.pageSizeLimitInBytes ?? VALID_PAGE_SIZE_BYTES,
         overrides.pageActiveTimeLimitInMs ?? VALID_ACTIVE_TIME_MS,

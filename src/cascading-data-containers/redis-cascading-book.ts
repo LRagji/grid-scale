@@ -8,7 +8,7 @@ import { IDimensionalQuery } from "../interfaces/i-dimensional-query.js";
 import { IPage } from "../interfaces/i-page.js";
 import { IPageInfo } from "../interfaces/i-page-info.js";
 
-export class RedisCascadingBook<PT extends IPage> implements IBook<PT> {
+export class RedisCascadingBook implements IBook {
 
     private readonly pageSerialNumberLimit = Utilities.u48In3; // This is the maximum number of elements we can have on a page before we risk overflow of the serial number counter, which can lead to empty gaps on page or worse overflows.
     private readonly counterBytes = 6;//Only u48 so its 6 bytes
@@ -75,9 +75,9 @@ export class RedisCascadingBook<PT extends IPage> implements IBook<PT> {
         return sortedPageInfo;
     }
 
-    public async fetchPageByKey(pageKey: IPageInfo): Promise<PT> {
+    public async fetchPageByKey(pageKey: IPageInfo): Promise<IPage> {
         const page = await this.pageFactory(pageKey, this.pageType);
-        return page as PT;
+        return page;
     }
 
     public async removePage(pageKey: IPageInfo, invokeReconcileCallback = true): Promise<void> {
@@ -152,7 +152,7 @@ export class RedisCascadingBook<PT extends IPage> implements IBook<PT> {
     }
 
     //Private methods
-    private async navigateWriteablePage(harmonizedInsertTimestampInMs: number, sizeInBytes: number, count: number): Promise<{ page: PT, sequenceStartNumber: number }> {
+    private async navigateWriteablePage(harmonizedInsertTimestampInMs: number, sizeInBytes: number, count: number): Promise<{ page: IPage, sequenceStartNumber: number }> {
 
         const {
             pageKey,
@@ -168,7 +168,7 @@ export class RedisCascadingBook<PT extends IPage> implements IBook<PT> {
             await this.pagesReconcileCallback(bookkeepingResults.newPage ? pageInfo : undefined, bookkeepingResults.trimmedPages);
         }
 
-        const page = await this.pageFactory(pageInfo, this.pageType) as PT;
+        const page = await this.pageFactory(pageInfo, this.pageType);
 
         return { page, sequenceStartNumber };
     }

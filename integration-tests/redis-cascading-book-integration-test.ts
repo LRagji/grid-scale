@@ -124,7 +124,7 @@ describe(`RedisCascadingBook Integration with ${process.env.REDIS_DRIVER}`, () =
         pageSizeLimitInBytes: number;
         sizeEstimator?: (elements: IDimensionalElement[]) => number;
         keyPrefix?: string;
-    }): Promise<RedisCascadingBook<RedisIntegrationPage>> {
+    }): Promise<RedisCascadingBook> {
         const driver = new RDriver(pool, 60_000);
         await driver.initialize();
 
@@ -132,7 +132,7 @@ describe(`RedisCascadingBook Integration with ${process.env.REDIS_DRIVER}`, () =
             params.keyPrefix ?? `it-cb-${Date.now()}-${Math.floor(Math.random() * 100000)}`
         );
 
-        return new RedisCascadingBook<RedisIntegrationPage>(
+        return new RedisCascadingBook(
             params.totalPageCapacity,
             params.pageSizeLimitInBytes,
             120_000,

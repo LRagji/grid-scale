@@ -3,7 +3,7 @@ import { IDimensionalQuery } from "./i-dimensional-query.js";
 import { IPage } from "./i-page.js";
 import { IPageInfo } from "./i-page-info.js";
 
-export interface IBook<PT extends IPage> {
+export interface IBook {
 
     readonly totalPageCapacity: number;
     readonly pageSizeLimitInBytes: number;
@@ -11,11 +11,9 @@ export interface IBook<PT extends IPage> {
     readonly pageFactory: (pageInfo: IPageInfo, pageType: string) => Promise<IPage>;
     readonly pagesReconcileCallback: (newPageInfo: IPageInfo | undefined, evictedPageInfo: IPageInfo[]) => Promise<void>;
 
-    //navigateToWritablePage(contentSizeInBytes: number, contentCount: number): Promise<PT>;
-
     listPages(): Promise<IPageInfo[]>;
 
-    fetchPageByKey(pageKey: IPageInfo): Promise<PT | null>;
+    fetchPageByKey(pageKey: IPageInfo): Promise<IPage | null>;
 
     removePage(pageKey: IPageInfo): Promise<void>;
 

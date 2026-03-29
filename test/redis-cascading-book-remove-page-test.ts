@@ -71,7 +71,7 @@ function makeBook(overrides: Partial<{
     const pageFactory = overrides.pageFactory
         ?? sinon.stub<[IPageInfo, string], Promise<PageStub>>().resolves(dummyPage);
 
-    const book = new RedisCascadingBook<PageStub>(
+    const book = new RedisCascadingBook(
         VALID_CAPACITY, VALID_PAGE_SIZE_BYTES, VALID_ACTIVE_TIME_MS, VALID_PAGE_TYPE,
         pageFactory, pagesReconcileCallback, redisDriver, () => 1, keyBuilder);
 

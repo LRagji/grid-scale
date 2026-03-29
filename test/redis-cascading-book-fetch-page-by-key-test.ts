@@ -78,7 +78,7 @@ function makeBook(overrides: Partial<{
         ?? sinon.stub<[IPageInfo | undefined, IPageInfo[]], Promise<void>>().resolves();
     const keyBuilder = overrides.keyBuilder ?? makeKeyBuilder();
 
-    const book = new RedisCascadingBook<PageStub>(
+    const book = new RedisCascadingBook(
         VALID_CAPACITY,
         VALID_PAGE_SIZE_BYTES,
         VALID_ACTIVE_TIME_MS,
