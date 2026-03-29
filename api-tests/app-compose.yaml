@@ -80,7 +80,7 @@ services:
     build:
       context: ../
       dockerfile: ./api-tests/hdfs-sqlite-checkpointer/dockerfile
-    mem_limit: 512m
+    mem_limit: 2GB
     cpus: "1.0"
     ports:
       - "8082:8080"
