@@ -365,7 +365,8 @@ describe("RedisCascadingBook.queryByRank", () => {
         assert.equal(page2.fetchElementsByRange.calledOnceWithExactly(["gr-x", "gr-y"], 0, 10, 1000), true);
     });
 
-    it("treats missing globalIdentityHash as a single dedupe bucket where later pages win", async () => {
+    it("accumulates all elements from multiple pages when globalIdentityHash is missing", async () => {
+        // Without an identity hash we cannot deduplicate — every element must be kept from every page.
         const page1 = makePage(); page1.fetchElementsByRange.resolves([elemAnonymousA_v1, elemSensorB]);
         const page2 = makePage(); page2.fetchElementsByRange.resolves([elemAnonymousA_v2, elemSensorC]);
         const pageFactory = sinon.stub<[IPageInfo, string], Promise<PageStub>>();
@@ -376,7 +377,8 @@ describe("RedisCascadingBook.queryByRank", () => {
 
         const result = await book.queryByRank(["g1"], 0, 10);
 
-        assert.deepEqual(sortElements(result), sortElements([elemAnonymousA_v2, elemSensorB, elemSensorC]));
+        // elemAnonymousA_v1 AND elemAnonymousA_v2 are both kept; elemSensorB and elemSensorC are distinct-hash elements
+        assert.deepEqual(sortElements(result), sortElements([elemAnonymousA_v1, elemAnonymousA_v2, elemSensorB, elemSensorC]));
     });
 
     // ── NULL / SKIPPED PAGES ──────────────────────────────────────────────────

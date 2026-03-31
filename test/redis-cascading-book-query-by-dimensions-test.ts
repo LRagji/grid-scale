@@ -1,201 +1,438 @@
-// import assert from "node:assert/strict";
-// import { afterEach, describe, it } from "node:test";
-// import sinon from "sinon";
+import assert from "node:assert/strict";
+import { afterEach, describe, it } from "node:test";
+import sinon from "sinon";
 
-// import { RedisCascadingBook } from "../src/index.js";
-// import type { IDimensionalElement, IDimensionalQuery, IKeyBuilder, IPage, IPageInfo, IRDriver } from "../src/index.js";
+import { RedisCascadingBook } from "../src/index.js";
+import type { IDimensionalElement, IDimensionalQuery, IKeyBuilder, IPage, IPageInfo, IRDriver } from "../src/index.js";
 
-// const VALID_CAPACITY = 10;
-// const VALID_PAGE_SIZE_BYTES = 100;
-// const VALID_ACTIVE_TIME_MS = 5_000;
-// const VALID_PAGE_TYPE = "test-page";
 
-// type DriverStub = IRDriver & {
-//     usingRedisDriver: sinon.SinonStub;
-//     harmonizedTimeInMs: sinon.SinonStub;
-//     initialize: sinon.SinonStub;
-// };
+// ── constants ─────────────────────────────────────────────────────────────────
+const VALID_CAPACITY = 10;
+const VALID_PAGE_SIZE_BYTES = 100;
+const VALID_ACTIVE_TIME_MS = 5_000;
+const VALID_PAGE_TYPE = "test-page";
 
-// type PageStub = IPage & {
-//     upsertElements: sinon.SinonStub;
-//     queryElementsByDimensions: sinon.SinonStub;
-//     dumpPage: sinon.SinonStub;
-//     fetchElementsByRange: sinon.SinonStub;
-// };
+// ── element fixtures ──────────────────────────────────────────────────────────
+const elemSensorA_v1: IDimensionalElement = { globalIdentityHash: "sensor-a", dim: { sensor: "A" }, pld: { value: 1 } };
+const elemSensorA_v2: IDimensionalElement = { globalIdentityHash: "sensor-a", dim: { sensor: "A" }, pld: { value: 2 } };
+const elemSensorB: IDimensionalElement = { globalIdentityHash: "sensor-b", dim: { sensor: "B" }, pld: { value: 3 } };
+const elemSensorC: IDimensionalElement = { globalIdentityHash: "sensor-c", dim: { sensor: "C" }, pld: { value: 4 } };
+const elemAnonymousA_v1: IDimensionalElement = { dim: { sensor: "anon-A" }, pld: { value: 11 } };
+const elemAnonymousA_v2: IDimensionalElement = { dim: { sensor: "anon-A" }, pld: { value: 12 } };
 
-// function makeDriver(): DriverStub {
-//     return {
-//         timeToleranceInMs: 100,
-//         initialize: sinon.stub().resolves(),
-//         usingRedisDriver: sinon.stub(),
-//         harmonizedTimeInMs: sinon.stub().returns(10_000)
-//     } as unknown as DriverStub;
-// }
+// ── query fixtures ────────────────────────────────────────────────────────────
+const querySensorA: IDimensionalQuery = {
+    query: { operator: "AND", conditions: [{ dimension: "sensor", operator: "eq", value: "A" }] }
+};
+const queryAllSensors: IDimensionalQuery = {
+    query: { operator: "OR", conditions: [{ dimension: "sensor", operator: "noteq", value: "__never__" }] }
+};
 
-// function makeKeyBuilder(): IKeyBuilder {
-//     return {
-//         counterKey: sinon.stub().returns("counter-key"),
-//         pageKey: sinon.stub().callsFake((t: string, s: string, w: string) => `page:${t}:${s}:${w}`),
-//         bookKey: sinon.stub().returns("book-key"),
-//         groupKey: sinon.stub().callsFake((pk: string, tn: string) => `${pk}:${tn}`),
-//         groupListKey: sinon.stub().callsFake((pk: string) => `${pk}:groups`)
-//     };
-// }
+// ── type aliases ──────────────────────────────────────────────────────────────
+type DriverStub = IRDriver & {
+    usingRedisDriver: sinon.SinonStub;
+    harmonizedTimeInMs: sinon.SinonStub;
+    initialize: sinon.SinonStub;
+};
 
-// function makePage(elements: IDimensionalElement[]): PageStub {
-//     return {
-//         info: { pageKey: "unused", startTime: 0, startSize: 0, startSerialNumber: 0 },
-//         pageType: VALID_PAGE_TYPE,
-//         upsertElements: sinon.stub().resolves(),
-//         queryElementsByDimensions: sinon.stub().resolves([]),
-//         dumpPage: sinon.stub().resolves(elements),
-//         fetchElementsByRange: sinon.stub().resolves([])
-//     } as unknown as PageStub;
-// }
+type PageStub = IPage & {
+    queryElementsByDimensions: sinon.SinonStub;
+    fetchElementsByRange: sinon.SinonStub;
+    upsertElements: sinon.SinonStub;
+};
 
-// function makePageInfo(pageKey: string, startTime: number): IPageInfo {
-//     return { pageKey, startTime, startSize: 0, startSerialNumber: 0 };
-// }
+// ── stub factories ────────────────────────────────────────────────────────────
+function makePage(): PageStub {
+    return {
+        info: { pageKey: "unused", startTime: 0, startSize: 0, startSerialNumber: 0 },
+        pageType: VALID_PAGE_TYPE,
+        upsertElements: sinon.stub().resolves(),
+        queryElementsByDimensions: sinon.stub().resolves([]),
+        dumpPage: sinon.stub().resolves([]),
+        fetchElementsByRange: sinon.stub().resolves([]),
+        purgePage: sinon.stub().resolves()
+    } as unknown as PageStub;
+}
 
-// function makeBook(pageFactory: (pageInfo: IPageInfo, pageType: string) => Promise<PageStub>, hashFunction?: (element: IDimensionalElement) => string) {
-//     const redisDriver = makeDriver();
-//     const keyBuilder = makeKeyBuilder();
+function makeDriver(): DriverStub {
+    return {
+        timeToleranceInMs: 100,
+        initialize: sinon.stub().resolves(),
+        usingRedisDriver: sinon.stub(),
+        harmonizedTimeInMs: sinon.stub().returns(10_000)
+    } as unknown as DriverStub;
+}
 
-//     const book = hashFunction
-//         ? new RedisCascadingBook<PageStub>(
-//             VALID_CAPACITY,
-//             VALID_PAGE_SIZE_BYTES,
-//             VALID_ACTIVE_TIME_MS,
-//             VALID_PAGE_TYPE,
-//             pageFactory,
-//             sinon.stub<[IPageInfo | undefined, IPageInfo[]], Promise<void>>().resolves(),
-//             redisDriver,
-//             () => 1,
-//             keyBuilder,
-//             hashFunction
-//         )
-//         : new RedisCascadingBook<PageStub>(
-//             VALID_CAPACITY,
-//             VALID_PAGE_SIZE_BYTES,
-//             VALID_ACTIVE_TIME_MS,
-//             VALID_PAGE_TYPE,
-//             pageFactory,
-//             sinon.stub<[IPageInfo | undefined, IPageInfo[]], Promise<void>>().resolves(),
-//             redisDriver,
-//             () => 1,
-//             keyBuilder
-//         );
+function makeKeyBuilder(): IKeyBuilder {
+    return {
+        counterKey: sinon.stub().returns("counter-key"),
+        pageKey: sinon.stub().callsFake((t: string, s: string, w: string) => `page:${t}:${s}:${w}`),
+        bookKey: sinon.stub().returns("book-key"),
+        dimensionKey: sinon.stub().callsFake((pk: string, tn: string) => `${pk}:${tn}`),
+        pageDimensionsDict: sinon.stub().callsFake((pk: string) => `${pk}:groups`)
+    };
+}
 
-//     return { book, redisDriver };
-// }
+function makePageInfo(pageKey: string, startTime: number): IPageInfo {
+    return { pageKey, startTime, startSize: 0, startSerialNumber: 0 };
+}
 
-// function stubListPages(redisDriver: DriverStub, pageInfos: IPageInfo[]): void {
-//     redisDriver.usingRedisDriver.resolves(pageInfos.map(pi => JSON.stringify(pi)));
-// }
+function makeBook(overrides: Partial<{
+    redisDriver: DriverStub;
+    keyBuilder: IKeyBuilder;
+    pageFactory: (pageInfo: IPageInfo, pageType: string) => Promise<PageStub>;
+    pagesReconcileCallback: (newPageInfo: IPageInfo | undefined, evictedPageInfo: IPageInfo[]) => Promise<void>;
+}> = {}) {
+    const redisDriver = overrides.redisDriver ?? makeDriver();
+    const pagesReconcileCallback = overrides.pagesReconcileCallback
+        ?? sinon.stub<[IPageInfo | undefined, IPageInfo[]], Promise<void>>().resolves();
+    const keyBuilder = overrides.keyBuilder ?? makeKeyBuilder();
+    const dummyPage = makePage();
+    const pageFactory = overrides.pageFactory
+        ?? sinon.stub<[IPageInfo, string], Promise<PageStub>>().resolves(dummyPage);
 
-// afterEach(() => {
-//     sinon.restore();
-// });
+    const book = new RedisCascadingBook(
+        VALID_CAPACITY, VALID_PAGE_SIZE_BYTES, VALID_ACTIVE_TIME_MS, VALID_PAGE_TYPE,
+        pageFactory, pagesReconcileCallback, redisDriver, () => 1, keyBuilder);
 
-// describe("RedisCascadingBook.queryElementsByDimensions", () => {
-//     it("filters deduplicated in-memory data by dimensional query", async () => {
-//         const oldVersion = { dim: { device: "A", temp: 10 }, pld: { value: "old" } };
-//         const newVersion = { dim: { device: "A", temp: 20 }, pld: { value: "new" } };
-//         const other = { dim: { device: "B", temp: 15 }, pld: { value: "other" } };
+    return { book, redisDriver, pageFactory: pageFactory as sinon.SinonStub, pagesReconcileCallback: pagesReconcileCallback as sinon.SinonStub };
+}
 
-//         const page1 = makePage([oldVersion, other]);
-//         const page2 = makePage([newVersion]);
+function stubListPages(redisDriver: DriverStub, pageInfos: IPageInfo[]): void {
+    redisDriver.usingRedisDriver.resolves(pageInfos.map(pi => JSON.stringify(pi)));
+}
 
-//         const pageFactory = sinon.stub<[IPageInfo, string], Promise<PageStub>>();
-//         pageFactory.onFirstCall().resolves(page1);
-//         pageFactory.onSecondCall().resolves(page2);
+function sortElements(elems: IDimensionalElement[]): IDimensionalElement[] {
+    return [...elems].sort((a, b) => JSON.stringify(a.dim).localeCompare(JSON.stringify(b.dim)));
+}
 
-//         const { book, redisDriver } = makeBook(pageFactory);
-//         stubListPages(redisDriver, [makePageInfo("pk1", 1000), makePageInfo("pk2", 2000)]);
+// ── tests ─────────────────────────────────────────────────────────────────────
+afterEach(() => {
+    sinon.restore();
+});
 
-//         const query: IDimensionalQuery = {
-//             query: {
-//                 operator: "AND",
-//                 conditions: [
-//                     { dimension: "device", operator: "eq", value: "A" },
-//                     { dimension: "temp", operator: "gt", value: 15 }
-//                 ]
-//             }
-//         };
+describe("RedisCascadingBook.queryElementsByDimensions", () => {
 
-//         const result = await book.queryElementsByDimensions(query, 10);
+    // ── INPUT VALIDATION ──────────────────────────────────────────────────────
 
-//         assert.deepEqual(result, [newVersion]);
-//         assert.equal(page1.dumpPage.calledOnce, true);
-//         assert.equal(page2.dumpPage.calledOnce, true);
-//     });
+    it("throws when maxElementsCount is zero", async () => {
+        const { book } = makeBook();
+        await assert.rejects(
+            book.queryElementsByDimensions(querySensorA, 0),
+            /Max elements count must be between 1 and 10000/i
+        );
+    });
 
-//     it("respects maxElementsCount after filtering", async () => {
-//         const elements = [
-//             { dim: { country: "India", score: 90 }, pld: { id: "e1" } },
-//             { dim: { country: "USA", score: 95 }, pld: { id: "e2" } },
-//             { dim: { country: "India", score: 99 }, pld: { id: "e3" } }
-//         ];
+    it("throws when maxElementsCount is negative", async () => {
+        const { book } = makeBook();
+        await assert.rejects(
+            book.queryElementsByDimensions(querySensorA, -1),
+            /Max elements count must be between 1 and 10000/i
+        );
+    });
 
-//         const page = makePage(elements);
-//         const pageFactory = sinon.stub<[IPageInfo, string], Promise<PageStub>>().resolves(page);
-//         const { book, redisDriver } = makeBook(pageFactory);
-//         stubListPages(redisDriver, [makePageInfo("pk1", 1000)]);
+    it("throws when maxElementsCount exceeds 10000", async () => {
+        const { book } = makeBook();
+        await assert.rejects(
+            book.queryElementsByDimensions(querySensorA, 10_001),
+            /Max elements count must be between 1 and 10000/i
+        );
+    });
 
-//         const query: IDimensionalQuery = {
-//             query: {
-//                 operator: "OR",
-//                 conditions: [
-//                     { dimension: "country", operator: "eq", value: "India" },
-//                     { dimension: "score", operator: "gt", value: 90 }
-//                 ]
-//             }
-//         };
+    it("accepts maxElementsCount of 1 (lower boundary)", async () => {
+        const { book, redisDriver } = makeBook();
+        stubListPages(redisDriver, []);
+        await assert.doesNotReject(book.queryElementsByDimensions(querySensorA, 1));
+    });
 
-//         const result = await book.queryElementsByDimensions(query, 2);
+    it("accepts maxElementsCount of 10000 (upper boundary)", async () => {
+        const { book, redisDriver } = makeBook();
+        stubListPages(redisDriver, []);
+        await assert.doesNotReject(book.queryElementsByDimensions(querySensorA, 10_000));
+    });
 
-//         assert.equal(result.length, 2);
-//     });
+    // ── EMPTY / NO-MATCH SCENARIOS ────────────────────────────────────────────
 
-//     it("throws when maxElementsCount is invalid", async () => {
-//         const pageFactory = sinon.stub<[IPageInfo, string], Promise<PageStub>>().resolves(makePage([]));
-//         const { book, redisDriver } = makeBook(pageFactory);
-//         stubListPages(redisDriver, []);
+    it("returns empty array when no pages are stored", async () => {
+        const { book, redisDriver } = makeBook();
+        stubListPages(redisDriver, []);
 
-//         const query: IDimensionalQuery = {
-//             query: {
-//                 operator: "AND",
-//                 conditions: [{ dimension: "x", operator: "eq", value: "y" }]
-//             }
-//         };
+        const result = await book.queryElementsByDimensions(querySensorA);
 
-//         await assert.rejects(
-//             book.queryElementsByDimensions(query, 0),
-//             /Max elements count must be between 1 and 10000/i
-//         );
-//     });
+        assert.deepEqual(result, []);
+    });
 
-//     it("uses latest page value when multiple elements share the same hash", async () => {
-//         const first = { dim: { sensor: "A", value: 1 }, pld: { id: "old" } };
-//         const second = { dim: { sensor: "A", value: 2 }, pld: { id: "new" } };
+    it("does not call pageFactory when no pages are stored", async () => {
+        const { book, redisDriver, pageFactory } = makeBook();
+        stubListPages(redisDriver, []);
 
-//         const page1 = makePage([first]);
-//         const page2 = makePage([second]);
-//         const pageFactory = sinon.stub<[IPageInfo, string], Promise<PageStub>>();
-//         pageFactory.onFirstCall().resolves(page1);
-//         pageFactory.onSecondCall().resolves(page2);
+        await book.queryElementsByDimensions(querySensorA);
 
-//         const { book, redisDriver } = makeBook(pageFactory, () => "same-hash");
-//         stubListPages(redisDriver, [makePageInfo("pk1", 1000), makePageInfo("pk2", 2000)]);
+        assert.equal(pageFactory.called, false);
+    });
 
-//         const query: IDimensionalQuery = {
-//             query: {
-//                 operator: "AND",
-//                 conditions: [{ dimension: "sensor", operator: "eq", value: "A" }]
-//             }
-//         };
+    it("returns empty array when page returns no matching elements", async () => {
+        const page = makePage(); // queryElementsByDimensions already resolves []
+        const pageFactory = sinon.stub<[IPageInfo, string], Promise<PageStub>>().resolves(page);
+        const { book, redisDriver } = makeBook({ pageFactory });
+        stubListPages(redisDriver, [makePageInfo("pk1", 1000)]);
 
-//         const result = await book.queryElementsByDimensions(query, 10);
-//         assert.deepEqual(result, [second]);
-//     });
-// });
+        const result = await book.queryElementsByDimensions(querySensorA);
+
+        assert.deepEqual(result, []);
+    });
+
+    // ── SINGLE-PAGE DATA RETRIEVAL ────────────────────────────────────────────
+
+    it("returns all elements from a single page", async () => {
+        const page = makePage();
+        page.queryElementsByDimensions.resolves([elemSensorA_v1, elemSensorB]);
+        const pageFactory = sinon.stub<[IPageInfo, string], Promise<PageStub>>().resolves(page);
+        const { book, redisDriver } = makeBook({ pageFactory });
+        stubListPages(redisDriver, [makePageInfo("pk1", 1000)]);
+
+        const result = await book.queryElementsByDimensions(queryAllSensors);
+
+        assert.deepEqual(sortElements(result), sortElements([elemSensorA_v1, elemSensorB]));
+    });
+
+    it("passes the query object verbatim to page.queryElementsByDimensions", async () => {
+        const page = makePage();
+        const pageFactory = sinon.stub<[IPageInfo, string], Promise<PageStub>>().resolves(page);
+        const { book, redisDriver } = makeBook({ pageFactory });
+        stubListPages(redisDriver, [makePageInfo("pk1", 1000)]);
+
+        await book.queryElementsByDimensions(querySensorA, 42);
+
+        assert.equal(page.queryElementsByDimensions.calledOnceWithExactly(querySensorA, 42), true);
+    });
+
+    it("uses default maxElementsCount of 1000 when not supplied", async () => {
+        const page = makePage();
+        const pageFactory = sinon.stub<[IPageInfo, string], Promise<PageStub>>().resolves(page);
+        const { book, redisDriver } = makeBook({ pageFactory });
+        stubListPages(redisDriver, [makePageInfo("pk1", 1000)]);
+
+        await book.queryElementsByDimensions(querySensorA); // 2nd arg omitted
+
+        assert.equal(page.queryElementsByDimensions.firstCall.args[1], 1000);
+    });
+
+    it("passes an explicit maxElementsCount to page.queryElementsByDimensions", async () => {
+        const page = makePage();
+        const pageFactory = sinon.stub<[IPageInfo, string], Promise<PageStub>>().resolves(page);
+        const { book, redisDriver } = makeBook({ pageFactory });
+        stubListPages(redisDriver, [makePageInfo("pk1", 1000)]);
+
+        await book.queryElementsByDimensions(querySensorA, 99);
+
+        assert.equal(page.queryElementsByDimensions.calledOnceWithExactly(querySensorA, 99), true);
+    });
+
+    // ── MULTI-PAGE AGGREGATION (MVCC) ─────────────────────────────────────────
+
+    it("returns distinct elements from multiple pages when their global identity hashes do not overlap", async () => {
+        const page1 = makePage(); page1.queryElementsByDimensions.resolves([elemSensorA_v1]);
+        const page2 = makePage(); page2.queryElementsByDimensions.resolves([elemSensorB]);
+        const pageFactory = sinon.stub<[IPageInfo, string], Promise<PageStub>>();
+        pageFactory.onFirstCall().resolves(page1);
+        pageFactory.onSecondCall().resolves(page2);
+        const { book, redisDriver } = makeBook({ pageFactory });
+        stubListPages(redisDriver, [makePageInfo("pk1", 1000), makePageInfo("pk2", 2000)]);
+
+        const result = await book.queryElementsByDimensions(queryAllSensors);
+
+        assert.deepEqual(sortElements(result), sortElements([elemSensorA_v1, elemSensorB]));
+    });
+
+    it("later page value replaces earlier page value when both share the same globalIdentityHash", async () => {
+        const page1 = makePage(); page1.queryElementsByDimensions.resolves([elemSensorA_v1]);
+        const page2 = makePage(); page2.queryElementsByDimensions.resolves([elemSensorA_v2]);
+        const pageFactory = sinon.stub<[IPageInfo, string], Promise<PageStub>>();
+        pageFactory.onFirstCall().resolves(page1);
+        pageFactory.onSecondCall().resolves(page2);
+        const { book, redisDriver } = makeBook({ pageFactory });
+        stubListPages(redisDriver, [makePageInfo("pk1", 1000), makePageInfo("pk2", 2000)]);
+
+        const result = await book.queryElementsByDimensions(queryAllSensors);
+
+        assert.deepEqual(result, [elemSensorA_v2]);
+    });
+
+    it("retains an earlier page's value for dimensions absent from the later page", async () => {
+        // page1: A (old), B — page2: A (new) — B must be kept from page1
+        const page1 = makePage(); page1.queryElementsByDimensions.resolves([elemSensorA_v1, elemSensorB]);
+        const page2 = makePage(); page2.queryElementsByDimensions.resolves([elemSensorA_v2]);
+        const pageFactory = sinon.stub<[IPageInfo, string], Promise<PageStub>>();
+        pageFactory.onFirstCall().resolves(page1);
+        pageFactory.onSecondCall().resolves(page2);
+        const { book, redisDriver } = makeBook({ pageFactory });
+        stubListPages(redisDriver, [makePageInfo("pk1", 1000), makePageInfo("pk2", 2000)]);
+
+        const result = await book.queryElementsByDimensions(queryAllSensors);
+
+        assert.deepEqual(sortElements(result), sortElements([elemSensorA_v2, elemSensorB]));
+    });
+
+    it("accumulates new dimensions introduced by later pages alongside prior retained values", async () => {
+        // page1: A (old) — page2: A (new), B — result must be: A (new), B
+        const page1 = makePage(); page1.queryElementsByDimensions.resolves([elemSensorA_v1]);
+        const page2 = makePage(); page2.queryElementsByDimensions.resolves([elemSensorA_v2, elemSensorB]);
+        const pageFactory = sinon.stub<[IPageInfo, string], Promise<PageStub>>();
+        pageFactory.onFirstCall().resolves(page1);
+        pageFactory.onSecondCall().resolves(page2);
+        const { book, redisDriver } = makeBook({ pageFactory });
+        stubListPages(redisDriver, [makePageInfo("pk1", 1000), makePageInfo("pk2", 2000)]);
+
+        const result = await book.queryElementsByDimensions(queryAllSensors);
+
+        assert.deepEqual(sortElements(result), sortElements([elemSensorA_v2, elemSensorB]));
+    });
+
+    it("correctly resolves three-page chain: mixed updates and new dimensions across all pages", async () => {
+        // page1: A_v1, B  —  page2: A_v2, C  —  page3: B_updated
+        // Expected: A from page2, B from page3, C from page2
+        const elemB_updated: IDimensionalElement = { globalIdentityHash: "sensor-b", dim: { sensor: "B" }, pld: { value: 99 } };
+        const page1 = makePage(); page1.queryElementsByDimensions.resolves([elemSensorA_v1, elemSensorB]);
+        const page2 = makePage(); page2.queryElementsByDimensions.resolves([elemSensorA_v2, elemSensorC]);
+        const page3 = makePage(); page3.queryElementsByDimensions.resolves([elemB_updated]);
+        const pageFactory = sinon.stub<[IPageInfo, string], Promise<PageStub>>();
+        pageFactory.onFirstCall().resolves(page1);
+        pageFactory.onSecondCall().resolves(page2);
+        pageFactory.onThirdCall().resolves(page3);
+        const { book, redisDriver } = makeBook({ pageFactory });
+        stubListPages(redisDriver, [
+            makePageInfo("pk1", 1000),
+            makePageInfo("pk2", 2000),
+            makePageInfo("pk3", 3000)
+        ]);
+
+        const result = await book.queryElementsByDimensions(queryAllSensors);
+
+        assert.deepEqual(sortElements(result), sortElements([elemSensorA_v2, elemB_updated, elemSensorC]));
+    });
+
+    it("sends the same query and maxElementsCount to every page when querying multiple pages", async () => {
+        const page1 = makePage(); page1.queryElementsByDimensions.resolves([elemSensorA_v1]);
+        const page2 = makePage(); page2.queryElementsByDimensions.resolves([elemSensorB]);
+        const pageFactory = sinon.stub<[IPageInfo, string], Promise<PageStub>>();
+        pageFactory.onFirstCall().resolves(page1);
+        pageFactory.onSecondCall().resolves(page2);
+        const { book, redisDriver } = makeBook({ pageFactory });
+        stubListPages(redisDriver, [makePageInfo("pk1", 1000), makePageInfo("pk2", 2000)]);
+
+        await book.queryElementsByDimensions(querySensorA, 55);
+
+        assert.equal(page1.queryElementsByDimensions.calledOnceWithExactly(querySensorA, 55), true);
+        assert.equal(page2.queryElementsByDimensions.calledOnceWithExactly(querySensorA, 55), true);
+    });
+
+    // ── NULL / MISSING globalIdentityHash ─────────────────────────────────────
+
+    it("accumulates all elements from multiple pages when globalIdentityHash is missing", async () => {
+        // Without an identity hash we cannot deduplicate — every element must be kept from every page.
+        const page1 = makePage(); page1.queryElementsByDimensions.resolves([elemAnonymousA_v1, elemSensorB]);
+        const page2 = makePage(); page2.queryElementsByDimensions.resolves([elemAnonymousA_v2, elemSensorC]);
+        const pageFactory = sinon.stub<[IPageInfo, string], Promise<PageStub>>();
+        pageFactory.onFirstCall().resolves(page1);
+        pageFactory.onSecondCall().resolves(page2);
+        const { book, redisDriver } = makeBook({ pageFactory });
+        stubListPages(redisDriver, [makePageInfo("pk1", 1000), makePageInfo("pk2", 2000)]);
+
+        const result = await book.queryElementsByDimensions(queryAllSensors);
+
+        // elemAnonymousA_v1 AND elemAnonymousA_v2 are both kept; elemSensorB and elemSensorC are distinct-hash elements
+        assert.deepEqual(sortElements(result), sortElements([elemAnonymousA_v1, elemAnonymousA_v2, elemSensorB, elemSensorC]));
+    });
+
+    // ── NULL / SKIPPED PAGES ──────────────────────────────────────────────────
+
+    it("skips a page when the page factory resolves with null and continues with remaining pages", async () => {
+        const goodPage = makePage(); goodPage.queryElementsByDimensions.resolves([elemSensorA_v1]);
+        const pageFactory = sinon.stub<[IPageInfo, string], Promise<PageStub>>();
+        pageFactory.onFirstCall().resolves(null as unknown as PageStub);  // null → skip
+        pageFactory.onSecondCall().resolves(goodPage);
+        const { book, redisDriver } = makeBook({ pageFactory });
+        stubListPages(redisDriver, [makePageInfo("pk1", 1000), makePageInfo("pk2", 2000)]);
+
+        const result = await book.queryElementsByDimensions(queryAllSensors);
+
+        assert.deepEqual(result, [elemSensorA_v1]);
+        assert.equal(goodPage.queryElementsByDimensions.calledOnce, true);
+    });
+
+    it("returns empty array when all pages resolve to null", async () => {
+        const pageFactory = sinon.stub<[IPageInfo, string], Promise<PageStub>>();
+        pageFactory.resolves(null as unknown as PageStub);
+        const { book, redisDriver } = makeBook({ pageFactory });
+        stubListPages(redisDriver, [makePageInfo("pk1", 1000), makePageInfo("pk2", 2000)]);
+
+        const result = await book.queryElementsByDimensions(queryAllSensors);
+
+        assert.deepEqual(result, []);
+    });
+
+    // ── SIDE-EFFECT ISOLATION ─────────────────────────────────────────────────
+
+    it("does not call pagesReconcileCallback during a query", async () => {
+        const page = makePage(); page.queryElementsByDimensions.resolves([elemSensorA_v1]);
+        const pageFactory = sinon.stub<[IPageInfo, string], Promise<PageStub>>().resolves(page);
+        const { book, redisDriver, pagesReconcileCallback } = makeBook({ pageFactory });
+        stubListPages(redisDriver, [makePageInfo("pk1", 1000)]);
+
+        await book.queryElementsByDimensions(queryAllSensors);
+
+        assert.equal(pagesReconcileCallback.called, false);
+    });
+
+    // ── FAILURE PROPAGATION ───────────────────────────────────────────────────
+
+    it("propagates failures that occur while listing pages", async () => {
+        const { book, redisDriver } = makeBook();
+        redisDriver.usingRedisDriver.rejects(new Error("redis connection refused"));
+
+        await assert.rejects(
+            book.queryElementsByDimensions(querySensorA),
+            /redis connection refused/i
+        );
+    });
+
+    it("propagates failures thrown by the page factory", async () => {
+        const pageFactory = sinon.stub<[IPageInfo, string], Promise<PageStub>>();
+        pageFactory.rejects(new Error("page factory exploded"));
+        const { book, redisDriver } = makeBook({ pageFactory });
+        stubListPages(redisDriver, [makePageInfo("pk1", 1000)]);
+
+        await assert.rejects(
+            book.queryElementsByDimensions(querySensorA),
+            /page factory exploded/i
+        );
+    });
+
+    it("propagates failures thrown by page.queryElementsByDimensions", async () => {
+        const page = makePage();
+        page.queryElementsByDimensions.rejects(new Error("page query failed"));
+        const pageFactory = sinon.stub<[IPageInfo, string], Promise<PageStub>>().resolves(page);
+        const { book, redisDriver } = makeBook({ pageFactory });
+        stubListPages(redisDriver, [makePageInfo("pk1", 1000)]);
+
+        await assert.rejects(
+            book.queryElementsByDimensions(querySensorA),
+            /page query failed/i
+        );
+    });
+
+    it("propagates the first failure when multiple pages fail concurrently", async () => {
+        const pageFactory = sinon.stub<[IPageInfo, string], Promise<PageStub>>();
+        pageFactory.onFirstCall().callsFake(async () => { throw new Error("first page error"); });
+        pageFactory.onSecondCall().callsFake(async () => { throw new Error("second page error"); });
+        const { book, redisDriver } = makeBook({ pageFactory });
+        stubListPages(redisDriver, [makePageInfo("pk1", 1000), makePageInfo("pk2", 2000)]);
+
+        await assert.rejects(
+            book.queryElementsByDimensions(querySensorA),
+            /first page error|second page error/i
+        );
+    });
+
+});

@@ -106,7 +106,7 @@ export class RedisCascadingBook implements IBook {
     }
 
     public async queryElementsByDimensions(query: IDimensionalQuery, maxElementsCount: number = 1000): Promise<IDimensionalElement[]> {
-        throw new Error("Method not implemented.");
+
         if (maxElementsCount <= 0 || maxElementsCount > 10000) {
             throw new Error("Max elements count must be between 1 and 10000. Currently, it is set to " + maxElementsCount.toString() + ".");
         }
@@ -114,37 +114,6 @@ export class RedisCascadingBook implements IBook {
         const rankedPages = await this.listPagesSorted();
         const rankedPageResults = await this.parallelQueryPages(rankedPages, async (page) => await page.queryElementsByDimensions(query, maxElementsCount) as IDimensionalElement[]);
         return rankedPageResults;
-
-        // const rankedPages = await this.listPagesSorted();
-        const pageQueriesHandles: Array<Promise<IDimensionalElement[]>> = rankedPages.map(async (pageInfo) => {
-            const page = await this.fetchPageByKey(pageInfo);
-            if (page === null) {
-                return [];
-            }
-            return await page.queryElementsByDimensions(query, maxElementsCount);
-        });
-
-        const pageResults = await Promise.all(pageQueriesHandles);
-        const returnObject = new Map<number, Map<string, IDimensionalElement[]>>();
-
-        for (const [index, pageResult] of pageResults.entries()) {
-            if (pageResult.length === 0) {
-                continue;
-            }
-
-            const hashedElements = new Map<string, IDimensionalElement[]>();
-            for (const element of pageResult) {
-                //const hash = this.hashFunction(element);
-                // const clashingElements = hashedElements.get(hash) ?? [];
-                // clashingElements.push(element);
-                // hashedElements.set(hash, clashingElements);
-            }
-            returnObject.set(index, hashedElements);
-        }
-
-        // const deDuplicatedElements = this.applyMVCCAcrossPages(returnObject);
-        // return filterByDimensionalQuery(deDuplicatedElements, query, maxElementsCount);
-        return [] as IDimensionalElement[]; // Placeholder until implementation is complete.
     }
 
     public async queryByRank(groupKeys: string[], startInclusiveRank: number, endExclusiveRank: number, maxElementsPerGroup: number = 1000): Promise<IDimensionalElement[]> {
@@ -258,8 +227,7 @@ export class RedisCascadingBook implements IBook {
             for (const element of pageResult) {
                 //Null hash has a special meaning here, it means that the element does not have a globalIdentityHash and thus cannot be reliably deduplicated, so we will group all elements without globalIdentityHash under the same null hash key and rely on the query filters to filter them down.
                 let clashingElement = hashedElements.get(element.globalIdentityHash) ?? [];
-                if (element.globalIdentityHash === null) {
-                    // If globalIdentityHash is not present, we cannot be sure about deduplication, so we will include all elements with the same hash (which is basically all elements without globalIdentityHash) and rely on the query filters to filter them down.
+                if (element.globalIdentityHash == null) { // covers both null and undefined: cannot deduplicate, accumulate all
                     clashingElement.push(element);
                 }
                 else {
