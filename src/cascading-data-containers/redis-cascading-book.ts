@@ -58,7 +58,7 @@ export class RedisCascadingBook implements IBook {
         }
     }
 
-    public async listPages(): Promise<IPageInfo[]> {
+    public async listPagesSorted(): Promise<IPageInfo[]> {
         const bookKey = this.keyBuilder.bookKey();
         const pageKeys = await this.redisDriver.usingRedisDriver<string[]>([[RedisKeywords.ZRANGE, bookKey, "0", "-1"]], 'FetchAllPagesWithRanks', "run");
         const sortedPageInfo = pageKeys
@@ -89,6 +89,7 @@ export class RedisCascadingBook implements IBook {
     }
 
     public async upsertElements(elements: IDimensionalElement[]): Promise<void> {
+        //Takes 6 redis commands to write a page
         const numberOfElements = elements.length;
         if (numberOfElements <= 0 || numberOfElements > ConvenienceMethods.u48In3) {
             throw new Error("Number of elements must be between 1 and " + ConvenienceMethods.u48In3 + ". Currently, it is set to " + numberOfElements.toString() + ".");
@@ -110,7 +111,7 @@ export class RedisCascadingBook implements IBook {
             throw new Error("Max elements count must be between 1 and 10000. Currently, it is set to " + maxElementsCount.toString() + ".");
         }
 
-        const rankedPages = await this.listPages();
+        const rankedPages = await this.listPagesSorted();
         const pageQueriesHandles: Array<Promise<IDimensionalElement[]>> = rankedPages.map(async (pageInfo) => {
             const page = await this.fetchPageByKey(pageInfo);
             if (page === null) {
@@ -144,7 +145,7 @@ export class RedisCascadingBook implements IBook {
     public async queryByRank(groupKeys: string[], startInclusiveRank: number, endExclusiveRank: number, maxElementsPerGroup: number = 1000): Promise<IDimensionalElement[]> {
 
         const deDuplicatedGroupKeys = this.validateQueryRangeParams(groupKeys, startInclusiveRank, endExclusiveRank, maxElementsPerGroup);
-        const rankedPages = await this.listPages();
+        const rankedPages = await this.listPagesSorted();
         const rankedPageResults = await this.parallelQueryPages(rankedPages, deDuplicatedGroupKeys, startInclusiveRank, endExclusiveRank, maxElementsPerGroup);
         const result: IDimensionalElement[] = this.aggregateRankedElements(rankedPageResults);
 

@@ -107,7 +107,7 @@ describe(`RedisCascadingBook Integration with ${process.env.REDIS_DRIVER}`, () =
 
             await book.upsertElements([makeElement("g1", 10, 101)]);
 
-            const pages = await book.listPages();
+            const pages = await book.listPagesSorted();
             const result = await book.queryByRank(["g1"], 0, 100, 10);
 
             assert.equal(pages.length, 1);
@@ -121,7 +121,7 @@ describe(`RedisCascadingBook Integration with ${process.env.REDIS_DRIVER}`, () =
             await book.upsertElements([makeElement("g1", 1, 11)]);
             await book.upsertElements([makeElement("g1", 2, 22)]);
 
-            const pages = await book.listPages();
+            const pages = await book.listPagesSorted();
             const result = await book.queryByRank(["g1"], 0, 100, 10);
             const values = result.map((item) => item.pld.value).sort((a, b) => a - b);
 
@@ -137,7 +137,7 @@ describe(`RedisCascadingBook Integration with ${process.env.REDIS_DRIVER}`, () =
             await book.upsertElements([makeElement("g2", 2, 202)]);
             await book.upsertElements([makeElement("g3", 3, 303)]);
 
-            const pages = await book.listPages();
+            const pages = await book.listPagesSorted();
             const result = await book.queryByRank(["g1", "g2", "g3"], 0, 100, 10);
             const byGroup = result.reduce((acc, item) => {
                 acc[String(item.dim.tag)] = item.pld.value;
@@ -173,7 +173,7 @@ describe(`RedisCascadingBook Integration with ${process.env.REDIS_DRIVER}`, () =
             await book.upsertElements([makeElement("sensor-a", 2000, 20)]);
             await book.upsertElements([makeElement("sensor-b", 1500, 15)]);
 
-            const pages = await book.listPages();
+            const pages = await book.listPagesSorted();
             assert.equal(pages.length, 1);
 
             // Verify all elements were stored

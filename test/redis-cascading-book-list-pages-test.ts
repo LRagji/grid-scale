@@ -97,7 +97,7 @@ describe("RedisCascadingBook.listPages", () => {
         const { book, redisDriver } = makeBook();
         redisDriver.usingRedisDriver.resolves([]);
 
-        const result = await book.listPages();
+        const result = await book.listPagesSorted();
 
         assert.deepEqual(result, []);
         assert.equal(redisDriver.usingRedisDriver.calledOnceWithExactly(
@@ -112,7 +112,7 @@ describe("RedisCascadingBook.listPages", () => {
         const { book, redisDriver } = makeBook({ keyBuilder });
         redisDriver.usingRedisDriver.resolves([]);
 
-        await book.listPages();
+        await book.listPagesSorted();
 
         assert.equal((keyBuilder.bookKey as sinon.SinonStub).calledOnce, true);
     });
@@ -122,7 +122,7 @@ describe("RedisCascadingBook.listPages", () => {
         const page = makePageInfo("p1", 1000, 10, 1);
         redisDriver.usingRedisDriver.resolves(serializePages([page]));
 
-        const result = await book.listPages();
+        const result = await book.listPagesSorted();
 
         assert.deepEqual(result, [page]);
     });
@@ -134,7 +134,7 @@ describe("RedisCascadingBook.listPages", () => {
         const p3 = makePageInfo("p-mid", 2000, 500, 500);
         redisDriver.usingRedisDriver.resolves(serializePages([p1, p2, p3]));
 
-        const result = await book.listPages();
+        const result = await book.listPagesSorted();
 
         assert.deepEqual(result.map((p) => p.pageKey), ["p-early", "p-mid", "p-late"]);
     });
@@ -146,7 +146,7 @@ describe("RedisCascadingBook.listPages", () => {
         const p3 = makePageInfo("p-size-50", 1000, 50, 1);
         redisDriver.usingRedisDriver.resolves(serializePages([p1, p2, p3]));
 
-        const result = await book.listPages();
+        const result = await book.listPagesSorted();
 
         assert.deepEqual(result.map((p) => p.pageKey), ["p-size-10", "p-size-50", "p-size-90"]);
     });
@@ -158,7 +158,7 @@ describe("RedisCascadingBook.listPages", () => {
         const p3 = makePageInfo("p-serial-5", 1000, 10, 5);
         redisDriver.usingRedisDriver.resolves(serializePages([p1, p2, p3]));
 
-        const result = await book.listPages();
+        const result = await book.listPagesSorted();
 
         assert.deepEqual(result.map((p) => p.pageKey), ["p-serial-1", "p-serial-5", "p-serial-9"]);
     });
@@ -174,7 +174,7 @@ describe("RedisCascadingBook.listPages", () => {
         ];
         redisDriver.usingRedisDriver.resolves(serializePages(pages));
 
-        const result = await book.listPages();
+        const result = await book.listPagesSorted();
 
         assert.deepEqual(result.map((p) => p.pageKey), [
             "t1-s1-sn2",
@@ -190,7 +190,7 @@ describe("RedisCascadingBook.listPages", () => {
         const page = makePageInfo("dup", 1000, 1, 1);
         redisDriver.usingRedisDriver.resolves(serializePages([page, page, page]));
 
-        const result = await book.listPages();
+        const result = await book.listPagesSorted();
 
         assert.equal(result.length, 3);
         assert.deepEqual(result, [page, page, page]);
@@ -203,7 +203,7 @@ describe("RedisCascadingBook.listPages", () => {
         const p2 = makePageInfo("zero", 0, 0, 0);
         redisDriver.usingRedisDriver.resolves(serializePages([p1, p2]));
 
-        const result = await book.listPages();
+        const result = await book.listPagesSorted();
 
         assert.deepEqual(result.map((p) => p.pageKey), ["zero", "max"]);
     });
@@ -213,7 +213,7 @@ describe("RedisCascadingBook.listPages", () => {
         redisDriver.usingRedisDriver.rejects(new Error("redis timeout"));
 
         await assert.rejects(
-            book.listPages(),
+            book.listPagesSorted(),
             /redis timeout/i
         );
     });
@@ -226,7 +226,7 @@ describe("RedisCascadingBook.listPages", () => {
         ]);
 
         await assert.rejects(
-            book.listPages(),
+            book.listPagesSorted(),
             /SyntaxError|JSON|Expected property name/i
         );
     });
@@ -237,7 +237,7 @@ describe("RedisCascadingBook.listPages", () => {
         const { book, redisDriver } = makeBook({ pageFactory, pagesReconcileCallback });
         redisDriver.usingRedisDriver.resolves([]);
 
-        await book.listPages();
+        await book.listPagesSorted();
 
         assert.equal(pageFactory.called, false);
         assert.equal(pagesReconcileCallback.called, false);

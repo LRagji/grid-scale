@@ -11,7 +11,7 @@ export interface IBook {
     readonly pageFactory: (pageInfo: IPageInfo, pageType: string) => Promise<IPage>;
     readonly pagesReconcileCallback: (newPageInfo: IPageInfo | undefined, evictedPageInfo: IPageInfo[]) => Promise<void>;
 
-    listPages(): Promise<IPageInfo[]>;
+    listPagesSorted(): Promise<IPageInfo[]>;
 
     fetchPageByKey(pageKey: IPageInfo): Promise<IPage | null>;
 
