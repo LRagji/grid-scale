@@ -73,7 +73,7 @@ export class RedisTsPage implements IPage {
         await this.redisDriver.usingRedisDriver<void>(commands, 'DumpDataToPage', 'pipeline')
     }
 
-    public queryElementsByDimensions(query: IDimensionalQuery): Promise<TimeseriesSample[]> {
+    public queryElementsByDimensions(query: IDimensionalQuery, maxElementsCount: number): Promise<TimeseriesSample[]> {
         throw new Error("Method not implemented.");
     }
 

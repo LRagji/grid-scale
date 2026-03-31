@@ -10,7 +10,7 @@ export interface IPage {
 
     upsertElements(elements: IDimensionalElement[], sequenceStart: number): Promise<void>;
 
-    queryElementsByDimensions(query: IDimensionalQuery): Promise<IDimensionalElement[]>;
+    queryElementsByDimensions(query: IDimensionalQuery, maxElementsCount: number): Promise<IDimensionalElement[]>;
 
     dumpPage(): Promise<IDimensionalElement[]>;
 

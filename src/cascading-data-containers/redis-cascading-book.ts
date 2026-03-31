@@ -106,18 +106,22 @@ export class RedisCascadingBook implements IBook {
     }
 
     public async queryElementsByDimensions(query: IDimensionalQuery, maxElementsCount: number = 1000): Promise<IDimensionalElement[]> {
-        throw new Error("This code path needs to be tested, Not implemented yet.");
+        throw new Error("Method not implemented.");
         if (maxElementsCount <= 0 || maxElementsCount > 10000) {
             throw new Error("Max elements count must be between 1 and 10000. Currently, it is set to " + maxElementsCount.toString() + ".");
         }
 
         const rankedPages = await this.listPagesSorted();
+        const rankedPageResults = await this.parallelQueryPages(rankedPages, async (page) => await page.queryElementsByDimensions(query, maxElementsCount) as IDimensionalElement[]);
+        return rankedPageResults;
+
+        // const rankedPages = await this.listPagesSorted();
         const pageQueriesHandles: Array<Promise<IDimensionalElement[]>> = rankedPages.map(async (pageInfo) => {
             const page = await this.fetchPageByKey(pageInfo);
             if (page === null) {
                 return [];
             }
-            return await page.dumpPage();
+            return await page.queryElementsByDimensions(query, maxElementsCount);
         });
 
         const pageResults = await Promise.all(pageQueriesHandles);
@@ -138,18 +142,16 @@ export class RedisCascadingBook implements IBook {
             returnObject.set(index, hashedElements);
         }
 
-        const deDuplicatedElements = this.aggregateRankedElements(returnObject);
-        return filterByDimensionalQuery(deDuplicatedElements, query, maxElementsCount);
+        // const deDuplicatedElements = this.applyMVCCAcrossPages(returnObject);
+        // return filterByDimensionalQuery(deDuplicatedElements, query, maxElementsCount);
+        return [] as IDimensionalElement[]; // Placeholder until implementation is complete.
     }
 
     public async queryByRank(groupKeys: string[], startInclusiveRank: number, endExclusiveRank: number, maxElementsPerGroup: number = 1000): Promise<IDimensionalElement[]> {
-
         const deDuplicatedGroupKeys = this.validateQueryRangeParams(groupKeys, startInclusiveRank, endExclusiveRank, maxElementsPerGroup);
         const rankedPages = await this.listPagesSorted();
-        const rankedPageResults = await this.parallelQueryPages(rankedPages, deDuplicatedGroupKeys, startInclusiveRank, endExclusiveRank, maxElementsPerGroup);
-        const result: IDimensionalElement[] = this.aggregateRankedElements(rankedPageResults);
-
-        return result;
+        const rankedPageResults = await this.parallelQueryPages(rankedPages, async (page) => await page.fetchElementsByRange(deDuplicatedGroupKeys, startInclusiveRank, endExclusiveRank, maxElementsPerGroup));
+        return rankedPageResults;
     }
 
     //Private methods
@@ -236,64 +238,40 @@ export class RedisCascadingBook implements IBook {
         return { newPage, trimmedPages };
     }
 
-    private async parallelQueryPages(rankedPages: IPageInfo[], deDuplicatedGroupKeys: string[], startInclusiveRank: number, endExclusiveRank: number, maxElementsPerGroup: number)
-        : Promise<Map<number, Map<string | null, IDimensionalElement[]>>> {
+    private async parallelQueryPages(rankedPages: IPageInfo[], queryFunction: (page: IPage) => Promise<IDimensionalElement[]>): Promise<IDimensionalElement[]> {
         const pageQueriesHandles: Array<Promise<IDimensionalElement[]>> = rankedPages.map(async (pageInfo) => {
             const page = await this.fetchPageByKey(pageInfo);
             if (page === null) {
                 return [];
             }
-            return await page.fetchElementsByRange(deDuplicatedGroupKeys, startInclusiveRank, endExclusiveRank, maxElementsPerGroup);
+            return await queryFunction(page);
+            //return await page.fetchElementsByRange(deDuplicatedGroupKeys, startInclusiveRank, endExclusiveRank, maxElementsPerGroup);
         });
 
         const pageResults = await Promise.all(pageQueriesHandles);
-        const returnObject = new Map<number, Map<string | null, IDimensionalElement[]>>();
+        const hashedElements = new Map<string | null, IDimensionalElement[]>();;
 
-        for (const [index, pageResult] of pageResults.entries()) {
+        for (const pageResult of pageResults) {//We are moving in ascending order so MVCC is automatically applied as we overwrite with newer versions of the same element as we move along the pages.
             if (pageResult.length === 0) {
                 continue;
             }
-            const hashedElements = new Map<string | null, IDimensionalElement[]>();
             for (const element of pageResult) {
                 //Null hash has a special meaning here, it means that the element does not have a globalIdentityHash and thus cannot be reliably deduplicated, so we will group all elements without globalIdentityHash under the same null hash key and rely on the query filters to filter them down.
-                const clashingElement = hashedElements.get(element.globalIdentityHash) ?? [];
-                clashingElement.push(element);
+                let clashingElement = hashedElements.get(element.globalIdentityHash) ?? [];
+                if (element.globalIdentityHash === null) {
+                    // If globalIdentityHash is not present, we cannot be sure about deduplication, so we will include all elements with the same hash (which is basically all elements without globalIdentityHash) and rely on the query filters to filter them down.
+                    clashingElement.push(element);
+                }
+                else {
+                    clashingElement = [element];
+                }
                 hashedElements.set(element.globalIdentityHash, clashingElement);
             }
-            returnObject.set(index, hashedElements);
         }
 
-        return returnObject;
-    }
+        const deDuplicatedElements = Array.from(hashedElements.values()).flat();;
 
-    private aggregateRankedElements(pageResults: Map<number, Map<string | null, IDimensionalElement[]>>): IDimensionalElement[] {
-        const result: IDimensionalElement[] = [];
-        const allHashes = Array.from(pageResults.values())
-            .map(hashedElementsMap => Array.from(hashedElementsMap.keys()))
-            .flat();
-        const deDuplicatedHashKeys = new Set<string | null>(allHashes);
-        const sortedRanks = Array.from(pageResults.keys()).sort((a, b) => a - b);
-
-        for (const hashKey of deDuplicatedHashKeys) {
-            let tempHashElements = new Array<IDimensionalElement>();
-            for (const pageRank of sortedRanks) {
-                const elements = pageResults.get(pageRank)?.get(hashKey) ?? [];
-                if (elements.length > 0) {
-                    if (hashKey === null) {
-                        // If globalIdentityHash is not present, we cannot be sure about deduplication, so we will include all elements with the same hash (which is basically all elements without globalIdentityHash) and rely on the query filters to filter them down.
-                        tempHashElements.push(...elements);
-                    }
-                    else {
-                        tempHashElements = elements;
-                    }
-                }
-            }
-            if (tempHashElements.length > 0) {
-                result.push(...tempHashElements);
-            }
-        }
-
-        return result;
+        return deDuplicatedElements;
     }
 
     private validateQueryRangeParams(groupKeys: string[], startInclusiveRank: number, endExclusiveRank: number, maxElementsPerGroup: number): string[] {
