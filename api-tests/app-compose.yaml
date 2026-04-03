@@ -18,6 +18,7 @@ services:
       - ./data/otel/:/data/ # attach the PV here (paths inside docker)
       - ./config/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards
       - ./config/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
+      - ./config/prometheus/prometheus.yaml:/otel-lgtm/prometheus.yaml:ro
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:3000/api/health" ]
       interval: 10s
@@ -45,6 +46,20 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+  redis-exporter-meta:
+    image: oliver006/redis_exporter:latest
+    environment:
+      REDIS_ADDR: redis://redis-meta:6379
+    depends_on:
+      redis-meta:
+        condition: service_healthy
+  redis-exporter-data:
+    image: oliver006/redis_exporter:latest
+    environment:
+      REDIS_ADDR: redis://redis-data:6379
+    depends_on:
+      redis-data:
+        condition: service_healthy
   rest-wrapper:
     build:
       context: ../
