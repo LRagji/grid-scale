@@ -1,7 +1,8 @@
 services:
   k6-single:
     image: grafana/k6:latest
-    container_name: k6-seq-single
+    deploy:
+      replicas: 1
     volumes:
       - ../dist/api-tests/seq-single-write-range-read-tests.js:/scripts/seq-single-write-range-read-tests.js:ro
     environment:
@@ -20,7 +21,8 @@ services:
       - /scripts/seq-single-write-range-read-tests.js
   k6-bulk-time:
     image: grafana/k6:latest
-    container_name: k6-seq-bulk-time
+    deploy:
+      replicas: 1
     volumes:
       - ../dist/api-tests/seq-bulk-time-write-range-read-tests.js:/scripts/seq-bulk-time-write-range-read-tests.js:ro
     environment:
@@ -40,7 +42,8 @@ services:
       - /scripts/seq-bulk-time-write-range-read-tests.js
   k6-bulk-tag:
     image: grafana/k6:latest
-    container_name: k6-seq-bulk-tag
+    deploy:
+      replicas: 2
     volumes:
       - ../dist/api-tests/seq-bulk-tag-write-range-read-tests.js:/scripts/seq-bulk-tag-write-range-read-tests.js:ro
     environment:
