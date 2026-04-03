@@ -81,12 +81,12 @@ export default function (setupData: [string, unknown][]) {
     //Read Cumulative & Check length and random sample value
     const queryURL = context.get("baseURL") + "/v1/series/fetch";
     const requestPayload = {
-        "tagsFilter": {
-            "in": [tagName]
-        },
-        "timeFilter": {
-            "startInclusiveTime": startTime,
-            "endExclusiveTime": computedTime + 1
+        query: {
+            operator: "AND",
+            conditions: [
+                { dimension: "tag", operator: "in", value: [tagName] },
+                { dimension: "time", operator: "between", value: [startTime, computedTime] }
+            ]
         }
     };
     const queryResponse = http.post(queryURL, JSON.stringify(requestPayload), { headers });
@@ -94,7 +94,7 @@ export default function (setupData: [string, unknown][]) {
     const maxSamplesPerRequest = 1000;
     check(queryResponse, {
         "Query should return status is 200 or 206": (res) => (res.status === 200 || res.status === 206),
-        "Query should return elapsed time data points": (res) => queryResponseBody.samples.length === Math.min((requestPayload.timeFilter.endExclusiveTime - requestPayload.timeFilter.startInclusiveTime), maxSamplesPerRequest),
+        "Query should return elapsed time data points": (res) => queryResponseBody.samples.length === Math.min(computedTime - startTime + 1, maxSamplesPerRequest),
         "Query should return correct tag in data points": (res) => queryResponseBody.samples.every(sample => sample.tag === tagName),
         "Query should return correct time range in data points": (res) => queryResponseBody.samples.every(sample => sample.ts >= startTime && sample.ts <= computedTime),
         "Query should return correct nV value in data points": (res) => queryResponseBody.samples.every(sample => sample.pld.nV <= computedTime && sample.pld.nV >= 0)

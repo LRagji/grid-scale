@@ -5,11 +5,10 @@ import { JobsOptions, Queue } from 'bullmq';
 import { parseURL } from "ioredis/built/utils/index.js";
 import { BullMQOtel } from "bullmq-otel";
 
-import { IPageInfo, RDriver, RedisCascadingBook } from "../../src/index.js";
+import { IDimensionalQuery, IPageInfo, RDriver, RedisCascadingBook } from "../../src/index.js";
 import { RedisTsPage, TimeseriesSample } from "./redis-ts-page.js";
 import { RKeyBuilder } from "../../src/utilities/r-key-builder.js";
 import { DIConstants, EnvironmentVariableConstants, PageWindowDefaults } from "./constants.js";
-import { type IFetchRequest } from "./interfaces.js";
 import { ConvenienceMethods } from "../../src/utilities/convenience-methods.js";
 
 interface IApiSample {
@@ -132,8 +131,8 @@ function setupRoutes(rootRouter: IRouter) {
             const DIContainer = req["DIProp"] as DisposableSingletonContainer;
             const book = DIContainer.fetchInstance<RedisCascadingBook>(DIConstants.RedisCascadingBook) as RedisCascadingBook;
             const samplesPerPage = 1000; //TODO: Make this configurable through env vars if needed.
-            const fetchRequest = req.body as IFetchRequest;
-            const elements = await book.queryByRank(fetchRequest.tagsFilter.in, fetchRequest.timeFilter.startInclusiveTime, fetchRequest.timeFilter.endExclusiveTime, samplesPerPage + 1) as TimeseriesSample[];
+            const fetchRequest = req.body as IDimensionalQuery;
+            const elements = await book.queryElementsByDimensions(fetchRequest, samplesPerPage + 1) as TimeseriesSample[];
             let morePages = false;
             const groupedElements = new Map<string, TimeseriesSample[]>();
             for (const element of elements) {

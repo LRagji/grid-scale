@@ -89,24 +89,25 @@ export default function (setupData: [string, unknown][]) {
     const tagNameSet = new Set(tagNames.slice(randomStartingArrayIndex, randomStartingArrayIndex + 10));
     const queryURL = context.get("baseURL") + "/v1/series/fetch";
     const requestPayload = {
-        "tagsFilter": {
-            "in": Array.from(tagNameSet) // Query with at most 10 tags to avoid overwhelming the system
-        },
-        "timeFilter": {
-            "startInclusiveTime": startTime,
-            "endExclusiveTime": computedTime + 1
+        query: {
+            operator: "AND",
+            conditions: [
+                { dimension: "tag", operator: "in", value: Array.from(tagNameSet) }, // Query with at most 10 tags to avoid overwhelming the system
+                { dimension: "time", operator: "between", value: [startTime, computedTime] }
+            ]
         }
     };
     const queryResponse = http.post(queryURL, JSON.stringify(requestPayload), { headers });
     const queryResponseBody = queryResponse.json() as unknown as IQueryResponse;
     const maxSamplesPerRequest = 1000;
-    if (queryResponseBody.samples.length !== Math.min((requestPayload.timeFilter.endExclusiveTime - requestPayload.timeFilter.startInclusiveTime) * tagNameSet.size, (maxSamplesPerRequest * tagNameSet.size) + tagNameSet.size)) {
-        console.error(`Unexpected number of samples returned. Expected: ${Math.min((requestPayload.timeFilter.endExclusiveTime - requestPayload.timeFilter.startInclusiveTime) * tagNameSet.size, (maxSamplesPerRequest * tagNameSet.size) + tagNameSet.size)}, Actual: ${queryResponseBody.samples.length}`);
+    const expectedSamples = Math.min((computedTime - startTime + 1) * tagNameSet.size, (maxSamplesPerRequest * tagNameSet.size) + tagNameSet.size);
+    if (queryResponseBody.samples.length !== expectedSamples) {
+        console.error(`Unexpected number of samples returned. Expected: ${expectedSamples}, Actual: ${queryResponseBody.samples.length}`);
         console.error(JSON.stringify(requestPayload));
     }
     check(queryResponse, {
         "Query should return status is 200 or 206": (res) => (res.status === 200 || res.status === 206),
-        "Query should return elapsed time data points": (res) => queryResponseBody.samples.length === Math.min((requestPayload.timeFilter.endExclusiveTime - requestPayload.timeFilter.startInclusiveTime) * tagNameSet.size, (maxSamplesPerRequest * tagNameSet.size) + tagNameSet.size),
+        "Query should return elapsed time data points": (res) => queryResponseBody.samples.length === expectedSamples,
         "Query should return correct tag in data points": (res) => queryResponseBody.samples.every(sample => tagNameSet.has(sample.tag)),
         "Query should return correct time range in data points": (res) => queryResponseBody.samples.every(sample => sample.ts >= startTime && sample.ts <= computedTime),
         "Query should return correct nV value in data points": (res) => queryResponseBody.samples.every(sample => sample.pld.nV <= computedTime && sample.pld.nV >= 0)
