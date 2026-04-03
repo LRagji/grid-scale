@@ -17,7 +17,7 @@ export class TimeseriesSample implements IDimensionalElement {
     }
 
     public get globalIdentityHash(): string {
-        return `${this.dim.tag}-${this.dim.time}`;
+        return `${this.tagName}-${this.time}`;
     }
 
     constructor(private tagName: string, private time: number, public pld: any, public mvccId: number = -1) {
@@ -53,16 +53,17 @@ export class RedisTsPage implements IPage {
         let elementCounter = sequenceStart;
 
         for (const element of elements) {
-            const elementGroupKey = this.keyBuilder.dimensionKey(this._pageInfo.pageKey, element.dim.tag);
+            const { tag, time } = element.dim; // single allocation per element
+            const elementGroupKey = this.keyBuilder.dimensionKey(this._pageInfo.pageKey, tag);
             const existingCommands = pageUpsertCommands.get(elementGroupKey) || [RedisKeywords.ZADD, elementGroupKey];
             // Store a serializable object that includes tag and time
             const storableElement: IStoredSample = {
                 p: element.pld,
                 mvccId: elementCounter
             };
-            existingCommands.push(element.dim.time.toString(), JSON.stringify(storableElement));
+            existingCommands.push(time.toString(), JSON.stringify(storableElement));
             pageUpsertCommands.set(elementGroupKey, existingCommands);
-            tagSet.add(element.dim.tag);
+            tagSet.add(tag);
             elementCounter++;
         }
         const groupListKey = this.keyBuilder.pageDimensionsDict(this._pageInfo.pageKey, this.dimensionNameForGrouping);
@@ -204,14 +205,14 @@ export class RedisTsPage implements IPage {
                 const time = parseInt(elementsWithScores[++j], 10);//Time is the score of the sorted set entry
                 const stored = JSON.parse(stringifiedElement) as IStoredSample;
                 const element = new TimeseriesSample(tagName, time, stored.p, stored.mvccId);
-                const existingGroupedElements = rankedResults.get(element.dim.tag) ?? new Map<number, TimeseriesSample>();
-                const existingElement = existingGroupedElements.get(element.dim.time);
+                const existingGroupedElements = rankedResults.get(tagName) ?? new Map<number, TimeseriesSample>();
+                const existingElement = existingGroupedElements.get(time);
                 const newElementAddition = existingElement === undefined && (existingGroupedElements.size < maxElementsPerGroup || maxElementsPerGroup <= 0); //New element addition, we can add if we have not reached the max elements per group limit.
                 const existingElementWithinPageUpdate = existingElement !== undefined && existingElement.mvccId < element.mvccId; //Update within same page, This may also mean we may have less samples as they were updated of the same timestamp.
 
                 if (newElementAddition || existingElementWithinPageUpdate) {
-                    existingGroupedElements.set(element.dim.time, element);
-                    rankedResults.set(element.dim.tag, existingGroupedElements);
+                    existingGroupedElements.set(time, element);
+                    rankedResults.set(tagName, existingGroupedElements);
                     continue;
                 }
             }

@@ -212,26 +212,25 @@ export class RedisCascadingBook implements IBook {
         });
 
         const pageResults = await Promise.all(pageQueriesHandles);
-        const hashedElements = new Map<string | null, IDimensionalElement[]>();;
+        // Keyed elements: one entry per hash (last write = newest page wins = MVCC).
+        // Null-hash elements cannot be deduplicated so they are accumulated separately.
+        const hashedElements = new Map<string, IDimensionalElement>();
+        const nullHashElements: IDimensionalElement[] = [];
 
         for (const pageResult of pageResults) {//We are moving in ascending order so MVCC is automatically applied as we overwrite with newer versions of the same element as we move along the pages.
             if (pageResult.length === 0) {
                 continue;
             }
             for (const element of pageResult) {
-                //Null hash has a special meaning here, it means that the element does not have a globalIdentityHash and thus cannot be reliably deduplicated, so we will group all elements without globalIdentityHash under the same null hash key and rely on the query filters to filter them down.
-                let clashingElement = hashedElements.get(element.globalIdentityHash) ?? [];
                 if (element.globalIdentityHash == null) { // covers both null and undefined: cannot deduplicate, accumulate all
-                    clashingElement.push(element);
+                    nullHashElements.push(element);
+                } else {
+                    hashedElements.set(element.globalIdentityHash, element);
                 }
-                else {
-                    clashingElement = [element];
-                }
-                hashedElements.set(element.globalIdentityHash, clashingElement);
             }
         }
 
-        const deDuplicatedElements = Array.from(hashedElements.values()).flat();;
+        const deDuplicatedElements = [...hashedElements.values(), ...nullHashElements];
 
         return deDuplicatedElements;
     }

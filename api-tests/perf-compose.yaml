@@ -43,7 +43,7 @@ services:
   k6-bulk-tag:
     image: grafana/k6:latest
     deploy:
-      replicas: 2
+      replicas: 1
     volumes:
       - ../dist/api-tests/seq-bulk-tag-write-range-read-tests.js:/scripts/seq-bulk-tag-write-range-read-tests.js:ro
     environment:
