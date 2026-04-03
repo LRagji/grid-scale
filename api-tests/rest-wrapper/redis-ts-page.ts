@@ -1,5 +1,5 @@
 import { IDimensionalElement } from "../../src/interfaces/i-dimensional-element.js";
-import { IDimensionalQuery } from "../../src/interfaces/i-dimensional-query.js";
+import { IDimensionalQuery, ConditionGroup } from "../../src/interfaces/i-dimensional-query.js";
 import { IKeyBuilder } from "../../src/interfaces/i-key-builder.js";
 import { IPageInfo } from "../../src/interfaces/i-page-info.js";
 import { IPage } from "../../src/interfaces/i-page.js";
@@ -73,8 +73,81 @@ export class RedisTsPage implements IPage {
         await this.redisDriver.usingRedisDriver<void>(commands, 'DumpDataToPage', 'pipeline')
     }
 
-    public queryElementsByDimensions(query: IDimensionalQuery, maxElementsCount: number): Promise<TimeseriesSample[]> {
-        throw new Error("Method not implemented.");
+    public async queryElementsByDimensions(query: IDimensionalQuery, maxElementsCount: number): Promise<TimeseriesSample[]> {
+        const allTags = await this.groupsInPage();
+        if (allTags.length === 0) return [];
+
+        // Narrow the tag set and score range from AND-resolvable conditions so Redis
+        // does the heavy lifting instead of loading the entire page into memory.
+        const candidateTags = this.extractCandidateTags(query, allTags);
+        if (candidateTags.length === 0) return [];
+
+        const { start, end } = this.extractScoreRange(query);
+        const results = await this.fetchElementsFromRedis(candidateTags, start, end, maxElementsCount);
+        return results;
+        //return filterByDimensionalQuery(rawResults, query, maxElementsCount) as TimeseriesSample[];
+    }
+
+    // Walks AND groups to narrow the working tag set using tag-dimension conditions.
+    // OR groups are skipped — they cannot safely narrow the set without union logic.
+    private extractCandidateTags(query: IDimensionalQuery, allTags: string[]): string[] {
+        const tagSet = new Set(allTags);
+        this.applyTagConstraints(query.query, tagSet);
+        return Array.from(tagSet);
+    }
+
+    private applyTagConstraints(group: ConditionGroup, tagSet: Set<string>): void {
+        if (group.operator !== "AND") return;
+        for (const condition of group.conditions) {
+            if ("conditions" in condition) {
+                this.applyTagConstraints(condition, tagSet);
+                continue;
+            }
+            if (condition.dimension !== this.dimensionNameForGrouping) continue;
+            if (condition.operator === "eq" && typeof condition.value === "string") {
+                for (const t of tagSet) if (t !== condition.value) tagSet.delete(t);
+            } else if (condition.operator === "in" && Array.isArray(condition.value)) {
+                const allowed = new Set(condition.value as string[]);
+                for (const t of tagSet) if (!allowed.has(t)) tagSet.delete(t);
+            } else if (condition.operator === "noteq" && typeof condition.value === "string") {
+                tagSet.delete(condition.value);
+            } else if (condition.operator === "notin" && Array.isArray(condition.value)) {
+                for (const v of condition.value as string[]) tagSet.delete(v);
+            }
+        }
+    }
+
+    // Walks AND groups to derive the tightest BYSCORE window from time-dimension conditions.
+    // OR groups are skipped — they cannot safely narrow the range without union logic.
+    private extractScoreRange(query: IDimensionalQuery): { start: number | "-inf", end: number | "+inf" } {
+        const range = { start: -Infinity, end: Infinity };
+        this.applyTimeConstraints(query.query, range);
+        return {
+            start: range.start === -Infinity ? "-inf" : range.start,
+            end: range.end === Infinity ? "+inf" : range.end
+        };
+    }
+
+    private applyTimeConstraints(group: ConditionGroup, range: { start: number, end: number }): void {
+        if (group.operator !== "AND") return;
+        for (const condition of group.conditions) {
+            if ("conditions" in condition) {
+                this.applyTimeConstraints(condition, range);
+                continue;
+            }
+            if (condition.dimension !== "time") continue;
+            if (condition.operator === "eq" && typeof condition.value === "number") {
+                range.start = Math.max(range.start, condition.value);
+                range.end = Math.min(range.end, condition.value);
+            } else if (condition.operator === "gt" && typeof condition.value === "number") {
+                range.start = Math.max(range.start, condition.value + 1);
+            } else if (condition.operator === "lt" && typeof condition.value === "number") {
+                range.end = Math.min(range.end, condition.value - 1);
+            } else if (condition.operator === "between" && Array.isArray(condition.value)) {
+                range.start = Math.max(range.start, (condition.value as [number, number])[0]);
+                range.end = Math.min(range.end, (condition.value as [number, number])[1]);
+            }
+        }
     }
 
     public async dumpPage(): Promise<TimeseriesSample[]> {

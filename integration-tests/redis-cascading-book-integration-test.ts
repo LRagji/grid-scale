@@ -6,7 +6,7 @@ import { createClient } from "redis";
 import Redis, { Cluster } from "ioredis";
 import { IRedisClientPool, IORedisClientPool, RedisClientPool } from "redis-abstraction";
 
-import { IPageInfo, RedisCascadingBook, RDriver, RKeyBuilder } from "../src/index.js";
+import { IDimensionalQuery, IPageInfo, RedisCascadingBook, RDriver, RKeyBuilder } from "../src/index.js";
 import { RedisTsPage, TimeseriesSample } from "../api-tests/rest-wrapper/redis-ts-page.js";
 import { NodeRedisTestDriver } from "./node-redis-test-driver.js";
 
@@ -28,6 +28,18 @@ describe(`RedisCascadingBook Integration with ${process.env.REDIS_DRIVER}`, () =
 
     function makeElement(tag: string, time: number, value: number): TimeseriesSample {
         return new TimeseriesSample(tag, time, { value });
+    }
+
+    function makeTagTimeRangeQuery(tags: string[], startInclusiveTime: number, endInclusiveTime: number): IDimensionalQuery {
+        return {
+            query: {
+                operator: "AND",
+                conditions: [
+                    { dimension: "tag", operator: "in", value: tags },
+                    { dimension: "time", operator: "between", value: [startInclusiveTime, endInclusiveTime] }
+                ]
+            }
+        };
     }
 
     async function createBook(params: {
@@ -100,15 +112,15 @@ describe(`RedisCascadingBook Integration with ${process.env.REDIS_DRIVER}`, () =
         await container.stop();
     });
 
-    describe("upsertPageInfo behavior through upsertElements/queryByRank", () => {
+    describe("upsertPageInfo behavior through upsertElements/queryElementsByDimensions", () => {
 
-        it("creates a new page on first write and returns data through queryByRank", async () => {
+        it("creates a new page on first write and returns data through queryElementsByDimensions", async () => {
             const book = await createBook({ totalPageCapacity: 5, pageSizeLimitInBytes: 100 });
 
             await book.upsertElements([makeElement("g1", 10, 101)]);
 
             const pages = await book.listPagesSorted();
-            const result = await book.queryByRank(["g1"], 0, 100, 10);
+            const result = await book.queryElementsByDimensions(makeTagTimeRangeQuery(["g1"], 0, 100), 10);
 
             assert.equal(pages.length, 1);
             assert.equal(result.length, 1);
@@ -122,7 +134,7 @@ describe(`RedisCascadingBook Integration with ${process.env.REDIS_DRIVER}`, () =
             await book.upsertElements([makeElement("g1", 2, 22)]);
 
             const pages = await book.listPagesSorted();
-            const result = await book.queryByRank(["g1"], 0, 100, 10);
+            const result = await book.queryElementsByDimensions(makeTagTimeRangeQuery(["g1"], 0, 100), 10);
             const values = result.map((item) => item.pld.value).sort((a, b) => a - b);
 
             assert.equal(pages.length, 1);
@@ -138,7 +150,7 @@ describe(`RedisCascadingBook Integration with ${process.env.REDIS_DRIVER}`, () =
             await book.upsertElements([makeElement("g3", 3, 303)]);
 
             const pages = await book.listPagesSorted();
-            const result = await book.queryByRank(["g1", "g2", "g3"], 0, 100, 10);
+            const result = await book.queryElementsByDimensions(makeTagTimeRangeQuery(["g1", "g2", "g3"], 0, 100), 10);
             const byGroup = result.reduce((acc, item) => {
                 acc[String(item.dim.tag)] = item.pld.value;
                 return acc;
@@ -157,7 +169,7 @@ describe(`RedisCascadingBook Integration with ${process.env.REDIS_DRIVER}`, () =
             await book.upsertElements([makeElement("same", 5, 2)]);
             await book.upsertElements([makeElement("same", 5, 3)]);
 
-            const result = await book.queryByRank(["same"], 0, 100, 10);
+            const result = await book.queryElementsByDimensions(makeTagTimeRangeQuery(["same"], 0, 100), 10);
 
             assert.equal(result.length, 1);
             assert.equal(result[0].pld.value, 3);
@@ -177,7 +189,7 @@ describe(`RedisCascadingBook Integration with ${process.env.REDIS_DRIVER}`, () =
             assert.equal(pages.length, 1);
 
             // Verify all elements were stored
-            const result = await book.queryByRank(["sensor-a", "sensor-b"], 0, 10000, 100);
+            const result = await book.queryElementsByDimensions(makeTagTimeRangeQuery(["sensor-a", "sensor-b"], 0, 10000), 100);
             assert.equal(result.length, 3);
         });
 
@@ -190,7 +202,7 @@ describe(`RedisCascadingBook Integration with ${process.env.REDIS_DRIVER}`, () =
             await book.upsertElements([makeElement("temp", 200, 26)]);
             await book.upsertElements([makeElement("humidity", 200, 56)]);
 
-            const result = await book.queryByRank(["temp", "humidity"], 0, 500, 100);
+            const result = await book.queryElementsByDimensions(makeTagTimeRangeQuery(["temp", "humidity"], 0, 500), 100);
 
             assert.equal(result.length, 4);
             const tempValues = result.filter(e => e.dim.tag === "temp").map(e => e.pld.value).sort((a, b) => a - b);
@@ -208,7 +220,7 @@ describe(`RedisCascadingBook Integration with ${process.env.REDIS_DRIVER}`, () =
             await book.upsertElements([makeElement("sensor-x", 200, 20)]);
 
             // Query should return them ordered by time
-            const result = await book.queryByRank(["sensor-x"], 0, 1000, 100);
+            const result = await book.queryElementsByDimensions(makeTagTimeRangeQuery(["sensor-x"], 0, 1000), 100);
 
             assert.equal(result.length, 3);
             const values = result.map(e => e.pld.value);

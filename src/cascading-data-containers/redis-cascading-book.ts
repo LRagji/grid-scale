@@ -2,7 +2,6 @@ import { IRDriver, RedisKeywords } from "../interfaces/i-r-driver.js";
 import { RKeyBuilder } from "../utilities/r-key-builder.js";
 import { ConvenienceMethods } from "../utilities/convenience-methods.js";
 import { IBook } from "../interfaces/i-book.js";
-import { filterByDimensionalQuery } from "./dimensional-query-parser.js";
 import { IDimensionalElement } from "../interfaces/i-dimensional-element.js";
 import { IDimensionalQuery } from "../interfaces/i-dimensional-query.js";
 import { IPage } from "../interfaces/i-page.js";
