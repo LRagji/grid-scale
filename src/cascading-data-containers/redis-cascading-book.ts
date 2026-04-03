@@ -115,12 +115,7 @@ export class RedisCascadingBook implements IBook {
         return rankedPageResults;
     }
 
-    public async queryByRank(groupKeys: string[], startInclusiveRank: number, endExclusiveRank: number, maxElementsPerGroup: number = 1000): Promise<IDimensionalElement[]> {
-        const deDuplicatedGroupKeys = this.validateQueryRangeParams(groupKeys, startInclusiveRank, endExclusiveRank, maxElementsPerGroup);
-        const rankedPages = await this.listPagesSorted();
-        const rankedPageResults = await this.parallelQueryPages(rankedPages, async (page) => await page.fetchElementsByRange(deDuplicatedGroupKeys, startInclusiveRank, endExclusiveRank, maxElementsPerGroup));
-        return rankedPageResults;
-    }
+
 
     //Private methods
     private async navigateWriteablePage(harmonizedInsertTimestampInMs: number, sizeInBytes: number, count: number): Promise<{ page: IPage, sequenceStartNumber: number }> {

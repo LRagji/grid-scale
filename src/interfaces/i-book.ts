@@ -20,8 +20,4 @@ export interface IBook {
     upsertElements(elements: IDimensionalElement[]): Promise<void>;
 
     queryElementsByDimensions(query: IDimensionalQuery, maxElementsCount: number): Promise<IDimensionalElement[]>;
-
-    //TODO:This should be deleted and replaced by queryElementsByDimensions once the latter is implemented, but we keep it for now to ensure that functionality is not broken so a shortcut until full query parser is implemented.
-    queryByRank(groupKeys: string[], startInclusiveRank: number, endExclusiveRank: number, maxElementsPerGroup: number): Promise<IDimensionalElement[]>
-
 }

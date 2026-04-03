@@ -8,16 +8,13 @@ import { IDimensionalElement } from './interfaces/i-dimensional-element.js';
 import { IDimensionalQuery } from './interfaces/i-dimensional-query.js';
 import { RedisCascadingBook } from './cascading-data-containers/redis-cascading-book.js';
 import { IPageInfo } from './interfaces/i-page-info.js';
-import { evaluateDimensionalQuery, filterByDimensionalQuery } from './cascading-data-containers/dimensional-query-parser.js';
 import { IKeyBuilder } from './interfaces/i-key-builder.js';
 
 //Implementation to export
 export {
     RDriver,
     RKeyBuilder,
-    RedisCascadingBook,
-    evaluateDimensionalQuery,
-    filterByDimensionalQuery
+    RedisCascadingBook
 };
 
 //Types to export
