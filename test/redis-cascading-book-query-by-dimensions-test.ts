@@ -19,6 +19,7 @@ const elemSensorB: IDimensionalElement = { globalIdentityHash: "sensor-b", dim: 
 const elemSensorC: IDimensionalElement = { globalIdentityHash: "sensor-c", dim: { sensor: "C" }, pld: { value: 4 } };
 const elemAnonymousA_v1: IDimensionalElement = { dim: { sensor: "anon-A" }, pld: { value: 11 } };
 const elemAnonymousA_v2: IDimensionalElement = { dim: { sensor: "anon-A" }, pld: { value: 12 } };
+const elemAnonymousNullHash: IDimensionalElement = { globalIdentityHash: null, dim: { sensor: "anon-null" }, pld: { value: 13 } };
 
 // ── query fixtures ────────────────────────────────────────────────────────────
 const querySensorA: IDimensionalQuery = {
@@ -327,6 +328,50 @@ describe("RedisCascadingBook.queryElementsByDimensions", () => {
         assert.equal(page2.queryElementsByDimensions.calledOnceWithExactly(querySensorA, 55), true);
     });
 
+    it("uses lower-boundary maxElementsCount=1 with non-empty multi-page data", async () => {
+        const page1 = makePage(); page1.queryElementsByDimensions.resolves([elemSensorA_v1]);
+        const page2 = makePage(); page2.queryElementsByDimensions.resolves([elemSensorB]);
+        const pageFactory = sinon.stub<[IPageInfo, string], Promise<PageStub>>();
+        pageFactory.onFirstCall().resolves(page1);
+        pageFactory.onSecondCall().resolves(page2);
+        const { book, redisDriver } = makeBook({ pageFactory });
+        stubListPages(redisDriver, [makePageInfo("pk1", 1000), makePageInfo("pk2", 2000)]);
+
+        const result = await book.queryElementsByDimensions(queryAllSensors, 1);
+
+        assert.deepEqual(sortElements(result), sortElements([elemSensorA_v1, elemSensorB]));
+        assert.equal(page1.queryElementsByDimensions.calledOnceWithExactly(queryAllSensors, 1), true);
+        assert.equal(page2.queryElementsByDimensions.calledOnceWithExactly(queryAllSensors, 1), true);
+    });
+
+    it("uses upper-boundary maxElementsCount=10000 with non-empty multi-page data", async () => {
+        const page1 = makePage(); page1.queryElementsByDimensions.resolves([elemSensorA_v1]);
+        const page2 = makePage(); page2.queryElementsByDimensions.resolves([elemSensorB]);
+        const pageFactory = sinon.stub<[IPageInfo, string], Promise<PageStub>>();
+        pageFactory.onFirstCall().resolves(page1);
+        pageFactory.onSecondCall().resolves(page2);
+        const { book, redisDriver } = makeBook({ pageFactory });
+        stubListPages(redisDriver, [makePageInfo("pk1", 1000), makePageInfo("pk2", 2000)]);
+
+        const result = await book.queryElementsByDimensions(queryAllSensors, 10_000);
+
+        assert.deepEqual(sortElements(result), sortElements([elemSensorA_v1, elemSensorB]));
+        assert.equal(page1.queryElementsByDimensions.calledOnceWithExactly(queryAllSensors, 10_000), true);
+        assert.equal(page2.queryElementsByDimensions.calledOnceWithExactly(queryAllSensors, 10_000), true);
+    });
+
+    it("keeps the latest duplicate globalIdentityHash from a single page result", async () => {
+        const page = makePage();
+        page.queryElementsByDimensions.resolves([elemSensorA_v1, elemSensorA_v2, elemSensorB]);
+        const pageFactory = sinon.stub<[IPageInfo, string], Promise<PageStub>>().resolves(page);
+        const { book, redisDriver } = makeBook({ pageFactory });
+        stubListPages(redisDriver, [makePageInfo("pk1", 1000)]);
+
+        const result = await book.queryElementsByDimensions(queryAllSensors);
+
+        assert.deepEqual(sortElements(result), sortElements([elemSensorA_v2, elemSensorB]));
+    });
+
     // ── NULL / MISSING globalIdentityHash ─────────────────────────────────────
 
     it("accumulates all elements from multiple pages when globalIdentityHash is missing", async () => {
@@ -343,6 +388,20 @@ describe("RedisCascadingBook.queryElementsByDimensions", () => {
 
         // elemAnonymousA_v1 AND elemAnonymousA_v2 are both kept; elemSensorB and elemSensorC are distinct-hash elements
         assert.deepEqual(sortElements(result), sortElements([elemAnonymousA_v1, elemAnonymousA_v2, elemSensorB, elemSensorC]));
+    });
+
+    it("accumulates elements with explicit null globalIdentityHash", async () => {
+        const page1 = makePage(); page1.queryElementsByDimensions.resolves([elemAnonymousNullHash, elemSensorB]);
+        const page2 = makePage(); page2.queryElementsByDimensions.resolves([elemAnonymousA_v1, elemSensorC]);
+        const pageFactory = sinon.stub<[IPageInfo, string], Promise<PageStub>>();
+        pageFactory.onFirstCall().resolves(page1);
+        pageFactory.onSecondCall().resolves(page2);
+        const { book, redisDriver } = makeBook({ pageFactory });
+        stubListPages(redisDriver, [makePageInfo("pk1", 1000), makePageInfo("pk2", 2000)]);
+
+        const result = await book.queryElementsByDimensions(queryAllSensors);
+
+        assert.deepEqual(sortElements(result), sortElements([elemAnonymousNullHash, elemAnonymousA_v1, elemSensorB, elemSensorC]));
     });
 
     // ── NULL / SKIPPED PAGES ──────────────────────────────────────────────────

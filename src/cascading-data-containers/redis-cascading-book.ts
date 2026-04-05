@@ -234,29 +234,4 @@ export class RedisCascadingBook implements IBook {
 
         return deDuplicatedElements;
     }
-
-    private validateQueryRangeParams(groupKeys: string[], startInclusiveRank: number, endExclusiveRank: number, maxElementsPerGroup: number): string[] {
-
-        if (groupKeys.length === 0) {
-            throw new Error("At least one group key must be specified for querying.");
-        }
-        if (startInclusiveRank < 0 || endExclusiveRank < 0) {
-            throw new Error("Start rank and end rank must be non-negative.");
-        }
-        if (endExclusiveRank < startInclusiveRank) {
-            throw new Error("End rank must be greater than or equal to start rank.");
-        }
-        if ((endExclusiveRank - startInclusiveRank) === 0) {
-            throw new Error(`The difference between end rank and start rank must be greater than 0. Currently, it is ${endExclusiveRank - startInclusiveRank}.`);
-        }
-        if (groupKeys.length > 10) {
-            throw new Error("A maximum of 10 group keys can be specified for querying to prevent excessive load. Currently, " + groupKeys.length + " group keys were provided.");
-        }
-        if (maxElementsPerGroup <= 0 || maxElementsPerGroup > 10000) {
-            throw new Error("Max elements must be between 1 and 10000. Currently, it is set to " + maxElementsPerGroup.toString() + ".");
-        }
-
-        return [...(new Set(groupKeys)).values()]
-    }
-
 }
