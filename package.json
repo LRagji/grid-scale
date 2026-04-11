@@ -18,7 +18,11 @@
     "docker-api": "docker build -f ./api-tests/rest-wrapper/dockerfile -t rest-wrapper-svc:local .",
     "api": "npm run build-test && node ./dist/api-tests/rest-wrapper/rest-wrapper.js",
     "docker-api:run": "npm run docker-api && docker run -p 8080:8080 -p 8081:8081 rest-wrapper-svc:local",
-    "k6": "npm run build-test && K6_OTEL_GRPC_EXPORTER_INSECURE=true K6_OTEL_METRIC_PREFIX=k6_ K6_OTEL_GRPC_EXPORTER_ENDPOINT=localhost:4317 k6 run --tag test-id=123 -o opentelemetry ./dist/api-tests/seq-single-write-range-read-tests.js"
+    "k6": "npm run build-test && K6_OTEL_GRPC_EXPORTER_INSECURE=true K6_OTEL_METRIC_PREFIX=k6_ K6_OTEL_GRPC_EXPORTER_ENDPOINT=localhost:4317 k6 run --tag test-id=123 -o opentelemetry ./dist/api-tests/seq-single-write-range-read-tests.js",
+    "saturation:diagnose": "npm run build-test && node ./dist/api-tests/diagnose-saturation.js",
+    "saturation:diagnose:help": "npm run build-test && node ./dist/api-tests/diagnose-saturation.js --help",
+    "saturation:find": "npm run build-test && node ./dist/api-tests/find-saturation.js",
+    "saturation:find:help": "npm run build-test && node ./dist/api-tests/find-saturation.js --help"
   },
   "keywords": [],
   "author": "Laukik",
