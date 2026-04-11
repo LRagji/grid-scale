@@ -37,6 +37,10 @@ export class RedisTsPage implements IPage {
     }
 
     public get pageType(): string {
+        return RedisTsPage.pageType;
+    }
+
+    public static get pageType(): string {
         return "REDIS_TIMESERIES_PAGE";
     }
 
