@@ -1,10 +1,33 @@
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 type CommandResult = {
     code: number;
     stdout: string;
     stderr: string;
 };
+
+const __filename = fileURLToPath(import.meta.url);
+const SCRIPT_DIR = dirname(__filename);
+
+function findRepoRoot(startDir: string): string {
+    let currentDir = resolve(startDir);
+    while (true) {
+        if (existsSync(join(currentDir, "package.json"))) {
+            return currentDir;
+        }
+        const parentDir = dirname(currentDir);
+        if (parentDir === currentDir) {
+            throw new Error(`Unable to locate package.json from ${startDir}`);
+        }
+        currentDir = parentDir;
+    }
+}
+
+const REPO_ROOT = findRepoRoot(process.cwd());
+const APP_COMPOSE_FILE = resolve(REPO_ROOT, "api-tests", "app-compose.yaml");
 
 const GRAFANA_URL = process.env.GRAFANA_URL ?? "http://localhost:3000";
 const GRAFANA_CREDS = process.env.GRAFANA_CREDS ?? "admin:admin";
@@ -42,7 +65,7 @@ function log(message: string): void {
 
 async function runCommand(command: string, args: string[]): Promise<CommandResult> {
     return await new Promise((resolve) => {
-        const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
+        const child = spawn(command, args, { cwd: REPO_ROOT, stdio: ["ignore", "pipe", "pipe"] });
         let stdout = "";
         let stderr = "";
 
@@ -181,7 +204,7 @@ async function main(): Promise<void> {
     if (!compose) {
         log("  (docker compose/docker-compose not available)");
     } else {
-        const ps = await runCommand(compose.command, [...compose.argsPrefix, "-f", "api-tests/app-compose.yaml", "ps"]);
+        const ps = await runCommand(compose.command, [...compose.argsPrefix, "-f", APP_COMPOSE_FILE, "ps"]);
         if (ps.code === 0) {
             process.stdout.write(ps.stdout);
         } else {

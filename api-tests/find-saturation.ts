@@ -29,7 +29,24 @@ type CliArgs = {
 
 const __filename = fileURLToPath(import.meta.url);
 const SCRIPT_DIR = dirname(__filename);
-const REPO_ROOT = resolve(SCRIPT_DIR, "..");
+
+function findRepoRoot(startDir: string): string {
+    let currentDir = resolve(startDir);
+    while (true) {
+        if (existsSync(join(currentDir, "package.json"))) {
+            return currentDir;
+        }
+        const parentDir = dirname(currentDir);
+        if (parentDir === currentDir) {
+            throw new Error(`Unable to locate package.json from ${startDir}`);
+        }
+        currentDir = parentDir;
+    }
+}
+
+const REPO_ROOT = findRepoRoot(process.cwd());
+const API_TESTS_DIR = resolve(REPO_ROOT, "api-tests");
+const APP_COMPOSE_FILE = resolve(API_TESTS_DIR, "app-compose.yaml");
 
 const THR_CPU = 0.8;
 const THR_EVLOOP = 0.8;
@@ -144,7 +161,7 @@ async function detectComposeCommand(): Promise<{ command: string; argsPrefix: st
 }
 
 async function composeRun(compose: { command: string; argsPrefix: string[] }, args: string[]): Promise<CommandResult> {
-    return await runCommand(compose.command, [...compose.argsPrefix, ...args], SCRIPT_DIR);
+    return await runCommand(compose.command, [...compose.argsPrefix, ...args], REPO_ROOT);
 }
 
 function parseCreds(creds: string): { user: string; password: string } {
@@ -285,12 +302,12 @@ async function checkPrereqs(): Promise<{ compose: { command: string; argsPrefix:
 
 async function startStack(compose: { command: string; argsPrefix: string[] }): Promise<void> {
     log("Starting Docker Compose stack...");
-    let result = await composeRun(compose, ["-f", "app-compose.yaml", "up", "-d"]);
+    let result = await composeRun(compose, ["-f", APP_COMPOSE_FILE, "up", "-d"]);
 
     if (result.code !== 0 && /incorrect label com\.docker\.compose\.network/.test(result.stdout + result.stderr)) {
         log(`  Found stale Docker network '${DOCKER_NETWORK}'; recreating it for compose`);
         await runCommand("docker", ["network", "rm", DOCKER_NETWORK]);
-        result = await composeRun(compose, ["-f", "app-compose.yaml", "up", "-d"]);
+        result = await composeRun(compose, ["-f", APP_COMPOSE_FILE, "up", "-d"]);
     }
 
     if (result.code !== 0) {
@@ -374,7 +391,7 @@ async function ensureRestWrapperOnNetwork(compose: { command: string; argsPrefix
     }
 
     log(`  rest-wrapper not attached to '${DOCKER_NETWORK}'; recovering service network`);
-    const recover = await composeRun(compose, ["-f", "app-compose.yaml", "up", "-d", "rest-wrapper"]);
+    const recover = await composeRun(compose, ["-f", APP_COMPOSE_FILE, "up", "-d", "rest-wrapper"]);
     writeFileSync(RECOVER_LOG, `${recover.stdout}\n${recover.stderr}`);
     if (recover.code !== 0) {
         throw new Error(`Failed to recover rest-wrapper network attachment. Recovery log: ${RECOVER_LOG}`);
