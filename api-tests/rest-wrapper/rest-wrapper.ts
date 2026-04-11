@@ -1,6 +1,6 @@
 import { ApplicationBuilder, ApplicationStartupStatus, ApplicationTypes, Convenience, DisposableSingletonContainer, EnvironmentVariables, IRouter, Request, Response } from "express-service-bootstrap";
 import { IORedisClientPool, type IRedisClientPool } from "redis-abstraction";
-import IORedis, { Cluster } from "ioredis";
+import IORedis, { Cluster, Redis } from "ioredis";
 import { JobsOptions, Queue } from 'bullmq';
 import { parseURL } from "ioredis/built/utils/index.js";
 import { BullMQOtel } from "bullmq-otel";
@@ -10,6 +10,7 @@ import { RedisTsPage, TimeseriesSample } from "./redis-ts-page.js";
 import { RKeyBuilder } from "../../src/utilities/r-key-builder.js";
 import { DIConstants, EnvironmentVariableConstants, PageWindowDefaults } from "./constants.js";
 import { ConvenienceMethods } from "../../src/utilities/convenience-methods.js";
+import { InMemoryTsPage } from "./in-memory-ts-page.js";
 
 interface IApiSample {
     tag: string;
@@ -36,6 +37,7 @@ const applicationName = process.env.OTEL_SERVICE_NAME || "RestWrapper";
 const app = new ApplicationBuilder(applicationName);
 const utilities = new Convenience();
 const defaultRedisConnectionString = "redis://localhost:6379";
+const pageCache = new Map<string, RedisTsPage | InMemoryTsPage>();
 
 
 async function initializeGridScale(DIContainer: DisposableSingletonContainer) {
@@ -81,14 +83,28 @@ async function initializeGridScale(DIContainer: DisposableSingletonContainer) {
         console.log(`Turnover callback executed. New page: ${newPageInfo?.pageKey ?? "none"}, Trimmed pages[${trimmedPages.length}]: ${trimmedPages.map(p => p.pageKey).join(", ")}`);
     };
     const keyBuilder = new RKeyBuilder();
-    const pageFactory = async (pageInfo: IPageInfo, pageType: string): Promise<RedisTsPage> => {
-        return new RedisTsPage(pageInfo, dataRedisDriver, keyBuilder);
+    const pageFactory = async (pageInfo: IPageInfo, pageType: string): Promise<RedisTsPage | InMemoryTsPage> => {
+        //return new RedisTsPage(pageInfo, dataRedisDriver, keyBuilder);
+        let page = pageCache.get(pageInfo.pageKey);
+        if (page === undefined) {
+            if (RedisTsPage.pageType === pageType) {
+                page = new RedisTsPage(pageInfo, dataRedisDriver, keyBuilder);
+                pageCache.set(pageInfo.pageKey, page);
+            } else if (InMemoryTsPage.pageType === pageType) {
+                page = new InMemoryTsPage(pageInfo);
+                pageCache.set(pageInfo.pageKey, page);
+            }
+            else {
+                throw new Error(`Unknown page type ${pageType} for page key ${pageInfo.pageKey}`);
+            }
+        }
+        return page;
     };
     DIContainer.createInstance<RedisCascadingBook>(DIConstants.RedisCascadingBook, RedisCascadingBook, [
         maxPagesInBook,
         sizeWindowInBytes,
         timeWindowInMs,
-        "redis-ts-page",
+        InMemoryTsPage.pageType,
         pageFactory,
         turnOverCallback,
         redisDriver,
