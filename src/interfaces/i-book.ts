@@ -1,4 +1,4 @@
-import { IDimensionalElement } from "./i-dimensional-element";
+import { IDimensionalElement } from "./i-dimensional-element.js";
 import { IDimensionalQuery } from "./i-dimensional-query.js";
 import { IPage } from "./i-page.js";
 import { IPageInfo } from "./i-page-info.js";

@@ -1,6 +1,6 @@
-import { IDimensionalElement } from "./i-dimensional-element";
-import { IDimensionalQuery } from "./i-dimensional-query";
-import { IPageInfo } from "./i-page-info";
+import { IDimensionalElement } from "./i-dimensional-element.js";
+import { IDimensionalQuery } from "./i-dimensional-query.js";
+import { IPageInfo } from "./i-page-info.js";
 
 
 export interface IPage {

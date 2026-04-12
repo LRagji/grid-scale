@@ -1,4 +1,4 @@
-import { IDimensionalElement } from "../interfaces/i-dimensional-element";
+import { IDimensionalElement } from "../interfaces/i-dimensional-element.js";
 
 export class ConvenienceMethods {
 
