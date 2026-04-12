@@ -16,7 +16,7 @@ export interface IPolicyEvaluator<ActionCallbackType extends (policyMeta: any) =
 
     registerPolicy(policy: IPolicy): void;
 
-    evaluatePolicies(meta: EvaluationMetaType): string[];
+    evaluatePolicies(meta: EvaluationMetaType): Promise<string[]>;
 
 }
 
