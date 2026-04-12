@@ -88,8 +88,7 @@ async function initializeGridScale(DIContainer: DisposableSingletonContainer) {
         let page = pageCache.get(pageInfo.pageKey);
         if (page === undefined) {
             if (RedisTsPage.pageType === pageType) {
-                page = new RedisTsPage(pageInfo, dataRedisDriver, keyBuilder);
-                pageCache.set(pageInfo.pageKey, page);
+                return new RedisTsPage(pageInfo, dataRedisDriver, keyBuilder);
             } else if (InMemoryTsPage.pageType === pageType) {
                 page = new InMemoryTsPage(pageInfo);
                 pageCache.set(pageInfo.pageKey, page);

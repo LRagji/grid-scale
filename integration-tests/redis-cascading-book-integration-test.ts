@@ -6,9 +6,10 @@ import { createClient } from "redis";
 import Redis, { Cluster } from "ioredis";
 import { IRedisClientPool, IORedisClientPool, RedisClientPool } from "redis-abstraction";
 
-import { IDimensionalQuery, IPageInfo, RedisCascadingBook, RDriver, RKeyBuilder } from "../src/index.js";
+import { IDimensionalQuery, IPageInfo, RedisCascadingBook, RDriver, RKeyBuilder, IDimensionalElement } from "../src/index.js";
 import { RedisTsPage, TimeseriesSample } from "../api-tests/rest-wrapper/redis-ts-page.js";
 import { NodeRedisTestDriver } from "./node-redis-test-driver.js";
+import { InMemoryTsPage } from "../api-tests/rest-wrapper/in-memory-ts-page.js";
 
 
 describe(`RedisCascadingBook Integration with ${process.env.REDIS_DRIVER}`, () => {
@@ -55,15 +56,31 @@ describe(`RedisCascadingBook Integration with ${process.env.REDIS_DRIVER}`, () =
             params.keyPrefix ?? `it-cb-${Date.now()}-${Math.floor(Math.random() * 100000)}`
         );
 
+        const pageCache = new Map<string, InMemoryTsPage>();
+
         return new RedisCascadingBook(
             params.totalPageCapacity,
             params.pageSizeLimitInBytes,
             120_000,
-            "redis-ts-page",
-            async (pageInfo, pageType) => new RedisTsPage(pageInfo, driver, keyBuilder),
+            RedisTsPage.pageType,
+            async (pageInfo, pageType) => {
+                let page = pageCache.get(pageInfo.pageKey);
+                if (page === undefined) {
+                    if (RedisTsPage.pageType === pageType) {
+                        return new RedisTsPage(pageInfo, driver, keyBuilder);
+                    } else if (InMemoryTsPage.pageType === pageType) {
+                        page = new InMemoryTsPage(pageInfo);
+                        pageCache.set(pageInfo.pageKey, page);
+                    }
+                    else {
+                        throw new Error(`Unknown page type ${pageType} for page key ${pageInfo.pageKey}`);
+                    }
+                }
+                return page;
+            },
             async () => { },
             driver,
-            params.sizeEstimator ?? (() => 1),
+            (params.sizeEstimator ?? (() => 1)) as (elements: IDimensionalElement[]) => number,
             keyBuilder
         );
     }
