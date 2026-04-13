@@ -10,9 +10,9 @@ export interface IPolicy {
     evaluate(meta: IMetadata): Promise<boolean>;
 }
 
-export interface IPolicyEvaluator<ActionCallbackType extends (flushReasons: string[], actionMeta: any) => Promise<void>, EvaluationMetaType> {
+export interface IPolicyEvaluator<EvaluationMetaType> {
 
-    initialize(actionCallback: ActionCallbackType): void;
+    initialize(actionCallback: (triggerReasons: string[], actionMeta?: any) => Promise<void>): void;
 
     registerPolicy(policy: IPolicy): void;
 
@@ -22,8 +22,7 @@ export interface IPolicyEvaluator<ActionCallbackType extends (flushReasons: stri
 
 export interface IQAcc {
 
-    initialize(containerFactory: IQContainerFactory, containerMetadata: IMetadata,
-        flushPolicyEvaluator: IPolicyEvaluator<(flushedContainerIds: string[], flushReasons: string[]) => Promise<void>, IMetadata>): Promise<void>;
+    initialize(containerFactory: IQContainerFactory, containerMetadata: IMetadata, flushPolicyEvaluator: IPolicyEvaluator<IMetadata>): Promise<void>;
 
     accumulate(elements: IDimensionalElement[]): Promise<void>;
 

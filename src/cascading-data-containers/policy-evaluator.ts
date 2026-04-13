@@ -4,12 +4,12 @@ import { IMetadata, IPolicy, IPolicyEvaluator } from "../interfaces/i-q-acc.js";
  * Evaluates registered policies and invokes the action callback whenever one or
  * more policies are satisfied.
  */
-export class PolicyEvaluator implements IPolicyEvaluator<(policyMeta: string[]) => Promise<void>, IMetadata> {
+export class PolicyEvaluator implements IPolicyEvaluator<IMetadata> {
 
     private readonly policies: IPolicy[] = [];
-    private actionCallback: (policyMeta: string[]) => Promise<void> = async () => { };
+    private actionCallback: (triggerReasons: string[], actionMeta?: any) => Promise<void> = async () => { };
 
-    public initialize(actionCallback: (policyMeta: string[]) => Promise<void>): void {
+    public initialize(actionCallback: (triggerReasons: string[], actionMeta?: any) => Promise<void>): void {
         this.actionCallback = actionCallback;
     }
 

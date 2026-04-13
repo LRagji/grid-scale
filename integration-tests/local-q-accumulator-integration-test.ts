@@ -190,7 +190,7 @@ describe("LocalQAccumulator + PolicyEvaluator + InMemoryTimeseriesQContainer", (
             const flushedIds: string[] = [];
             const acc = await buildAccumulator({
                 policies: [makeCountPolicy(3)],
-                onFlushed: async (ids) => { flushedIds.push(...ids); }
+                onFlushed: async (_reasons, ids) => { flushedIds.push(...ids); }
             });
 
             // First batch: triggers flush
@@ -260,8 +260,12 @@ describe("LocalQAccumulator + PolicyEvaluator + InMemoryTimeseriesQContainer", (
 
         it("calls action callback with matched policy names", async () => {
             const triggered: string[] = [];
+            const actionMeta: unknown[] = [];
             const evaluator = new PolicyEvaluator();
-            evaluator.initialize(async (names) => { triggered.push(...names); });
+            evaluator.initialize(async (names, meta) => {
+                triggered.push(...names);
+                actionMeta.push(meta);
+            });
             evaluator.registerPolicy(makeCountPolicy(1));
             evaluator.registerPolicy(makeSizePolicy(999_999)); // will not fire
 
@@ -270,6 +274,7 @@ describe("LocalQAccumulator + PolicyEvaluator + InMemoryTimeseriesQContainer", (
 
             assert.deepEqual(matched, ["count-policy"]);
             assert.deepEqual(triggered, ["count-policy"]);
+            assert.deepEqual(actionMeta, [undefined]);
         });
 
         it("does not call action callback when no policy is satisfied", async () => {
