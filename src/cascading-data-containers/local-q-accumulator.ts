@@ -13,7 +13,7 @@ export class LocalQAccumulator implements IQAcc {
 
     private containerFactory: IQContainerFactory | null = null;
     private containerMetadata: IMetadata = {};
-    private flushPolicyEvaluator: IPolicyEvaluator<(flushedContainerIds: string[]) => Promise<void>, IMetadata> | null = null;
+    private flushPolicyEvaluator: IPolicyEvaluator<(flushReasons: string[], flushedContainerIds: string[]) => Promise<void>, IMetadata> | null = null;
     private currentContainer: IQContainer | null = null;
     private initialized = false;
     private flushInProgress = false;
@@ -28,9 +28,9 @@ export class LocalQAccumulator implements IQAcc {
 
     constructor(
         private readonly elementSizeEstimator: (elements: IDimensionalElement[]) => number = (elements: IDimensionalElement[]) => Buffer.byteLength(JSON.stringify(elements), "utf8"),
-        private readonly onFlushedContainers: (flushedContainerIds: string[]) => Promise<void> = async (flushedContainerIds: string[]) => { console.log(`Flushed containers: ${flushedContainerIds.join(", ")}`) }) { }
+        private readonly onFlushedContainers: (flushReasons: string[], flushedContainerIds: string[]) => Promise<void> = async (flushReasons: string[], flushedContainerIds: string[]) => { console.log(`Flushed containers: ${flushedContainerIds.join(", ")} for reasons: ${flushReasons.join(", ")}`) }) { }
 
-    public async initialize(containerFactory: IQContainerFactory, containerMetadata: IMetadata, flushPolicyEvaluator: IPolicyEvaluator<(flushedContainerIds: string[]) => Promise<void>, IMetadata>): Promise<void> {
+    public async initialize(containerFactory: IQContainerFactory, containerMetadata: IMetadata, flushPolicyEvaluator: IPolicyEvaluator<(flushReasons: string[], flushedContainerIds: string[]) => Promise<void>, IMetadata>): Promise<void> {
 
         if (containerFactory === null) {
             throw new Error("containerFactory cannot be null.");
@@ -40,10 +40,10 @@ export class LocalQAccumulator implements IQAcc {
         this.containerMetadata = { ...containerMetadata };
         this.flushPolicyEvaluator = flushPolicyEvaluator;
 
-        this.flushPolicyEvaluator.initialize(async (_triggeredPolicyNames: string[]) => {
+        this.flushPolicyEvaluator.initialize(async (triggeredPolicyNames: string[]) => {
             const flushedContainerIds = await this.flushCurrentContainer();
             if (flushedContainerIds.length > 0) {
-                await this.onFlushedContainers(flushedContainerIds);
+                await this.onFlushedContainers(triggeredPolicyNames, flushedContainerIds);
             }
         });
 
